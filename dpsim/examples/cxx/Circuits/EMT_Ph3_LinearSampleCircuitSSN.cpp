@@ -92,7 +92,7 @@ void EMT_Ph1_SSN_RLC_VS()
 	vs0->setParameters(CPS::Math::polar(1.0,0.0),50.0);
 
 	auto rlc = Ph1::SSN::Full_Serial_RLC::make("RLC");
-	rlc->setParameters(10. * param, 0.02 * param, 0.001 * param);
+	rlc->setParameters(1. * param, 0.05 * param, 0.01 * param);
 
 	// Topology
 	vs0->connect(CPS::EMT::SimNode::List{ n1, CPS::EMT::SimNode::GND });
