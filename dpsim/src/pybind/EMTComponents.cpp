@@ -72,14 +72,6 @@ void addEMTPh1Components(py::module_ mEMTPh1) {
       .def_property("f_src", createAttributeGetter<CPS::Real>("f_src"),
                     createAttributeSetter<CPS::Real>("f_src"));
 
-	py::class_<CPS::EMT::Ph1::CurrentSource, std::shared_ptr<CPS::EMT::Ph1::CurrentSource>, CPS::SimPowerComp<CPS::Real>>(mEMTPh1, "CurrentSource", py::multiple_inheritance())
-        .def(py::init<std::string>())
-		.def(py::init<std::string, CPS::Logger::Level>())
-        .def("set_parameters", &CPS::EMT::Ph1::CurrentSource::setParameters, "I_ref"_a, "f_src"_a = -1)
-		.def("connect", &CPS::EMT::Ph1::CurrentSource::connect)
-		.def_property("I_ref", createAttributeGetter<CPS::Complex>("I_ref"), createAttributeSetter<CPS::Complex>("I_ref"))
-		.def_property("f_src", createAttributeGetter<CPS::Real>("f_src"), createAttributeSetter<CPS::Real>("f_src"));
-
   py::class_<CPS::EMT::Ph1::Resistor, std::shared_ptr<CPS::EMT::Ph1::Resistor>,
              CPS::SimPowerComp<CPS::Real>>(mEMTPh1, "Resistor",
                                            py::multiple_inheritance())
@@ -118,6 +110,13 @@ void addEMTPh1Components(py::module_ mEMTPh1) {
 		.def_property("R", createAttributeGetter<CPS::Real>("R"), createAttributeSetter<CPS::Real>("R"))
 		.def_property("L", createAttributeGetter<CPS::Real>("L"), createAttributeSetter<CPS::Real>("L"))
 		.def_property("C", createAttributeGetter<CPS::Real>("C"), createAttributeSetter<CPS::Real>("C"));
+
+	py::class_<CPS::EMT::Ph1::Switch, std::shared_ptr<CPS::EMT::Ph1::Switch>, CPS::SimPowerComp<CPS::Real>, CPS::Base::Ph1::Switch>(mEMTPh1, "Switch", py::multiple_inheritance())
+        .def(py::init<std::string, CPS::Logger::Level>(), "name"_a, "loglevel"_a = CPS::Logger::Level::off)
+        .def("set_parameters", &CPS::EMT::Ph1::Switch::setParameters, "open_resistance"_a, "closed_resistance"_a, "closed"_a = false) // cppcheck-suppress assignBoolToPointer
+		.def("open", &CPS::EMT::Ph1::Switch::open)
+		.def("close", &CPS::EMT::Ph1::Switch::close)
+		.def("connect", &CPS::EMT::Ph1::Switch::connect);
 }
 
 void addEMTPh3Components(py::module_ mEMTPh3) {
@@ -137,6 +136,14 @@ void addEMTPh3Components(py::module_ mEMTPh3) {
       .def_property("f_src", createAttributeGetter<CPS::Real>("f_src"),
                     createAttributeSetter<CPS::Real>("f_src"));
 
+	py::class_<CPS::EMT::Ph3::CurrentSource, std::shared_ptr<CPS::EMT::Ph3::CurrentSource>, CPS::SimPowerComp<CPS::Real>>(mEMTPh3, "CurrentSource", py::multiple_inheritance())
+        .def(py::init<std::string>())
+		.def(py::init<std::string, CPS::Logger::Level>())
+        .def("set_parameters", py::overload_cast<CPS::MatrixComp, CPS::Real>(&CPS::EMT::Ph3::CurrentSource::setParameters), "I_ref"_a, "f_src"_a = 50)
+		.def("connect", &CPS::EMT::Ph3::VoltageSource::connect)
+		.def_property("I_ref", createAttributeGetter<CPS::MatrixComp>("I_ref"), createAttributeSetter<CPS::MatrixComp>("V_ref"))
+		.def_property("f_src", createAttributeGetter<CPS::Real>("f_src"), createAttributeSetter<CPS::Real>("f_src"));
+
   py::class_<CPS::EMT::Ph3::Resistor, std::shared_ptr<CPS::EMT::Ph3::Resistor>,
              CPS::SimPowerComp<CPS::Real>>(mEMTPh3, "Resistor",
                                            py::multiple_inheritance())
@@ -144,7 +151,7 @@ void addEMTPh3Components(py::module_ mEMTPh3) {
       .def(py::init<std::string, CPS::Logger::Level>())
       .def("set_parameters", &CPS::EMT::Ph3::Resistor::setParameters, "R"_a)
       .def("connect", &CPS::EMT::Ph3::Resistor::connect);
-  ;
+  
 
   py::class_<CPS::EMT::Ph3::Capacitor,
              std::shared_ptr<CPS::EMT::Ph3::Capacitor>,
@@ -450,12 +457,4 @@ void addEMTPh3Components(py::module_ mEMTPh3) {
 		.def_property("R", createAttributeGetter<CPS::Real>("R"), createAttributeSetter<CPS::Real>("R"))
 		.def_property("L", createAttributeGetter<CPS::Real>("L"), createAttributeSetter<CPS::Real>("L"))
 		.def_property("C", createAttributeGetter<CPS::Real>("C"), createAttributeSetter<CPS::Real>("C"));
-
-	py::class_<CPS::EMT::Ph3::CurrentSource, std::shared_ptr<CPS::EMT::Ph3::CurrentSource>, CPS::SimPowerComp<CPS::Real>>(mEMTPh3, "CurrentSource", py::multiple_inheritance())
-        .def(py::init<std::string>())
-		.def(py::init<std::string, CPS::Logger::Level>())
-        .def("set_parameters", py::overload_cast<CPS::MatrixComp, CPS::Real>(&CPS::EMT::Ph3::CurrentSource::setParameters), "I_ref"_a, "f_src"_a = 50)
-		.def("connect", &CPS::EMT::Ph3::VoltageSource::connect)
-		.def_property("I_ref", createAttributeGetter<CPS::MatrixComp>("I_ref"), createAttributeSetter<CPS::MatrixComp>("V_ref"))
-		.def_property("f_src", createAttributeGetter<CPS::Real>("f_src"), createAttributeSetter<CPS::Real>("f_src"));
 }

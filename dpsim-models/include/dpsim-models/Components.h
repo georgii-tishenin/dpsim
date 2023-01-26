@@ -88,6 +88,7 @@
 #include <dpsim-models/EMT/EMT_Ph1_VoltageSourceNorton.h>
 #include <dpsim-models/EMT/EMT_Ph1_VoltageSourceRamp.h>
 #include <dpsim-models/EMT/EMT_Ph1_SSN_Full_Serial_RLC.h>
+#include <dpsim-models/EMT/EMT_Ph1_Switch.h>
 
 #include <dpsim-models/EMT/EMT_Ph3_AvVoltSourceInverterStateSpace.h>
 #include <dpsim-models/EMT/EMT_Ph3_AvVoltageSourceInverterDQ.h>
