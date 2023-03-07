@@ -51,27 +51,53 @@ namespace Ph1 {
 		/// Update interface current from MNA system result
 		void mnaUpdateCurrent(const Matrix& leftVector);
 
-		// #### MNA section for switches ####
-		/// Check if switch is closed
-		Bool mnaIsClosed() override;
-		/// Stamps system matrix considering the defined switch position
-		void mnaApplySwitchSystemMatrixStamp(Bool closed, Matrix& systemMatrix, Int freqIdx);
+		// // #### MNA section for switches ####
+		// /// Check if switch is closed
+		// Bool mnaIsClosed() override;
+		// /// Stamps system matrix considering the defined switch position
+		// void mnaApplySwitchSystemMatrixStamp(Bool closed, Matrix& systemMatrix, Int freqIdx);
+
+		// class MnaPostStep : public Task {
+		// public:
+		// 	MnaPostStep(Switch& switchRef, Attribute<Matrix>::Ptr leftSideVector) :
+		// 		Task(**switchRef.mName + ".MnaPostStep"), mSwitch(switchRef), mLeftVector(leftSideVector) {
+		// 		mAttributeDependencies.push_back(mLeftVector);
+		// 		mModifiedAttributes.push_back(mSwitch.mIntfVoltage);
+		// 		mModifiedAttributes.push_back(mSwitch.mIntfCurrent);
+		// 	}
+
+		// 	void execute(Real time, Int timeStepCount);
+
+		// private:
+		// 	Switch& mSwitch;
+		// 	Attribute<Matrix>::Ptr mLeftVector;
+		// };
+
+		/// MNA post step operations
+		void mnaPostStep(Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector);
+		/// Add MNA post step dependencies
+		void mnaAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
+			AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes,
+			Attribute<Matrix>::Ptr &leftVector);
 
 		class MnaPostStep : public Task {
 		public:
 			MnaPostStep(Switch& switchRef, Attribute<Matrix>::Ptr leftSideVector) :
 				Task(**switchRef.mName + ".MnaPostStep"), mSwitch(switchRef), mLeftVector(leftSideVector) {
-				mAttributeDependencies.push_back(mLeftVector);
-				mModifiedAttributes.push_back(mSwitch.mIntfVoltage);
-				mModifiedAttributes.push_back(mSwitch.mIntfCurrent);
+				mSwitch.mnaAddPostStepDependencies(mPrevStepDependencies, mAttributeDependencies, mModifiedAttributes, mLeftVector);
 			}
-
-			void execute(Real time, Int timeStepCount);
+			void execute(Real time, Int timeStepCount) { mSwitch.mnaPostStep(time, timeStepCount, mLeftVector); }
 
 		private:
 			Switch& mSwitch;
 			Attribute<Matrix>::Ptr mLeftVector;
 		};
+
+		// #### MNA section for switch ####
+		/// Check if switch is closed
+		Bool mnaIsClosed();
+		/// Stamps system matrix considering the defined switch position
+		void mnaApplySwitchSystemMatrixStamp(Bool closed, Matrix& systemMatrix, Int freqIdx);
 	};
 }
 }

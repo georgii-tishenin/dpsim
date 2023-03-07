@@ -79,7 +79,7 @@ void EMT::Ph1::Switch::mnaApplySystemMatrixStamp(Matrix& systemMatrix) {
 
 void EMT::Ph1::Switch::mnaApplySwitchSystemMatrixStamp(Bool closed, Matrix& systemMatrix, Int freqIdx) {
 	Matrix conductance = Matrix::Zero(1, 1); 
-	conductance(0, 0) = (**mIsClosed) ?
+	conductance(0, 0) = (closed) ?
 		1./(**mClosedResistance) : 1./(**mOpenResistance);
 
 	// Set diagonal entries
@@ -103,10 +103,7 @@ void EMT::Ph1::Switch::mnaApplySwitchSystemMatrixStamp(Bool closed, Matrix& syst
 
 void EMT::Ph1::Switch::mnaApplyRightSideVectorStamp(Matrix& rightVector) { }
 
-void EMT::Ph1::Switch::MnaPostStep::execute(Real time, Int timeStepCount) {
-	mSwitch.mnaUpdateVoltage(**mLeftVector);
-	mSwitch.mnaUpdateCurrent(**mLeftVector);
-}
+
 
 void EMT::Ph1::Switch::mnaUpdateVoltage(const Matrix& leftVector) {
 	// Voltage across component is defined as V1 - V0
@@ -123,4 +120,18 @@ void EMT::Ph1::Switch::mnaUpdateCurrent(const Matrix& leftVector) {
 	(**mIntfCurrent)(0, 0) = (**mIsClosed) ?
 		(**mIntfVoltage)(0, 0)/(**mClosedResistance):
 		(**mIntfVoltage)(0, 0)/(**mOpenResistance);
+}
+
+void EMT::Ph1::Switch::mnaAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
+	AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes,
+	Attribute<Matrix>::Ptr &leftVector) {
+
+	attributeDependencies.push_back(leftVector);
+	modifiedAttributes.push_back(mIntfVoltage);
+	modifiedAttributes.push_back(mIntfCurrent);
+}
+
+void EMT::Ph1::Switch::mnaPostStep(Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) {
+	mnaUpdateVoltage(**leftVector);
+	mnaUpdateCurrent(**leftVector);
 }
