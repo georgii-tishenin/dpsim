@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <dpsim-models/SimPowerComp.h>
+#include <dpsim-models/MNASimPowerComp.h>
 #include <dpsim-models/Solver/MNAInterface.h>
 #include <dpsim-models/Base/Base_Ph3_Capacitor.h>
 
@@ -16,21 +16,34 @@ namespace CPS {
 	namespace EMT {
 		namespace Ph3 {
             namespace SSN{
+			/// \brief Capacitor model
+			///
+			/// The SSN-capacitor is represented by a DC equivalent circuit which corresponds to one
+			/// iteration of the trapezoidal integration method.
+			/// The equivalent DC circuit is a resistance in series with a voltage source (real voltage source).
+			/// The resistance is constant for a defined time step and system
+			/// frequency and the voltage source changes for each iteration.
+			/// This component is meant to show an I-type SSN model
+			/// implementation based on a simple example element. The RC model should be used
+			/// over this if focussing on SSN model implementation is not the circuit's goal since
+			/// this model increases the system matrix dimensions by 1x1 (added virtual node, 
+			/// real voltage source MNA scheme).			
 			    class Capacitor :
-				    public Base::Ph3::Capacitor,
-				    public MNAInterface,
-				    public SimPowerComp<Real>,
+				    public MNASimPowerComp<Real>,
+					public Base::Ph3::Capacitor,
 				    public SharedFactory<Capacitor> {
 			    protected:
 					Matrix Dufour_B_k_hat = Matrix::Zero(3, 3);
 					Matrix Dufour_W_k_n = Matrix::Zero(3, 3);
+                    //rightsideVector history term
                     Matrix mHistoricVoltage = Matrix::Zero(3, 1);
 					
 		        public:
 				    /// Defines UID, name and logging level
 				    Capacitor(String uid, String name, Logger::Level logLevel = Logger::Level::off);
 				    /// Defines name and logging level
-				    Capacitor(String name, Logger::Level logLevel = Logger::Level::off);
+				    Capacitor(String name, Logger::Level logLevel = Logger::Level::off)
+						: Capacitor(name, name, logLevel) { }
 
 				    SimPowerComp<Real>::Ptr clone(String name);
 
@@ -40,51 +53,28 @@ namespace CPS {
 
 				    // #### MNA section ####
 				    /// Initializes internal variables of the component
-				    void mnaInitialize(Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector);
+				    void mnaCompInitialize(Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) override;
 				    /// Stamps system matrix
-				    void mnaApplySystemMatrixStamp(Matrix& systemMatrix);
+				    void mnaCompApplySystemMatrixStamp(SparseMatrixRow& systemMatrix) override;
 				    /// Stamps right side (source) vector
-				    void mnaApplyRightSideVectorStamp(Matrix& rightVector);
+				    void mnaCompApplyRightSideVectorStamp(Matrix& rightVector) override;
 				    /// Update interface voltage from MNA system result
-				    void mnaUpdateVoltage(const Matrix& leftVector);
+				    void mnaCompUpdateVoltage(const Matrix& leftVector) override;
 				    /// Update interface current from MNA system result
-				    void mnaUpdateCurrent(const Matrix& leftVector);
+				    void mnaCompUpdateCurrent(const Matrix& leftVector) override;
 				    /// MNA pre step operations
-				    void mnaPreStep(Real time, Int timeStepCount);
+				    void mnaCompPreStep(Real time, Int timeStepCount) override;
 				    /// MNA post step operations
-				    void mnaPostStep(Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector);
+				    void mnaCompPostStep(Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) override;
 				    /// Add MNA pre step dependencies
-				    void mnaAddPreStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes);
+				    void mnaCompAddPreStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes) override;
 				    /// Add MNA post step dependencies
-				    void mnaAddPostStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes, Attribute<Matrix>::Ptr &leftVector);
+				    void mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes, Attribute<Matrix>::Ptr &leftVector) override;
 
 					bool isLinear() const
 					{
 						return true;
 					}
-
-				    class MnaPreStep : public Task {
-				    public:
-				    	MnaPreStep(Capacitor& capacitor)
-						    : Task(**capacitor.mName + ".MnaPreStep"), mCapacitor(capacitor) {
-						    	mCapacitor.mnaAddPreStepDependencies(mPrevStepDependencies, mAttributeDependencies, mModifiedAttributes);
-					    }
-					    void execute(Real time, Int timeStepCount) { mCapacitor.mnaPreStep(time, timeStepCount); };
-				    private:
-					    Capacitor& mCapacitor;
-			    	};
-
-				    class MnaPostStep : public Task {
-				    public:
-					    MnaPostStep(Capacitor& capacitor, Attribute<Matrix>::Ptr leftVector)
-					    	: Task(**capacitor.mName + ".MnaPostStep"), mCapacitor(capacitor), mLeftVector(leftVector) {
-						    	mCapacitor.mnaAddPostStepDependencies(mPrevStepDependencies, mAttributeDependencies, mModifiedAttributes, mLeftVector);
-					    }
-					    void execute(Real time, Int timeStepCount) { mCapacitor.mnaPostStep(time, timeStepCount, mLeftVector); };
-				    private:
-					    Capacitor& mCapacitor;
-					    Attribute<Matrix>::Ptr mLeftVector;
-				    };
 			    };
             }
 		}

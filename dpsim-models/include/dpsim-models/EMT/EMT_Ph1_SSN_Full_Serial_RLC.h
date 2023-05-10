@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <dpsim-models/SimPowerComp.h>
+#include <dpsim-models/MNASimPowerComp.h>
 #include <dpsim-models/Solver/MNAInterface.h>
 #include <dpsim-models/Base/Base_Ph1_Inductor.h>
 #include <dpsim-models/Base/Base_Ph1_Capacitor.h>
@@ -18,13 +18,23 @@ namespace CPS {
 namespace EMT {
 namespace Ph1 {
 namespace SSN {
-	class Full_Serial_RLC :
+	/// \brief Full_Serial_RLC
+	///
+	/// This element represents an one port circuit consisting of a resistor,
+	/// an inductor and a capacitor connected in series. The terminals are at
+	/// the beginning and the end of the component chain.
+	///	The states are the capacitor voltage and the inductor current, the output
+	/// is the latter of those states (inductor current). The input is the voltage
+	/// across the whole circuit. States and past inputs are updated after each
+	/// time step and are used to calculate the current (input) voltage, 
+	/// represented as MNA node voltages.
+	class Full_Serial_RLC:
+		public MNASimPowerComp<Real>,
+		public SharedFactory<Full_Serial_RLC>,
 		public Base::Ph1::Inductor,
         public Base::Ph1::Capacitor,
-        public Base::Ph1::Resistor,
-		public MNAInterface,
-		public SimPowerComp<Real>,
-		public SharedFactory<Full_Serial_RLC> {
+        public Base::Ph1::Resistor
+		{
 	protected:
         Matrix State = Matrix::Zero(2, 1);
         Matrix yHistory =  Matrix::Zero(1, 1);
@@ -43,9 +53,8 @@ namespace SSN {
 		Full_Serial_RLC(String name, Logger::Level logLevel = Logger::Level::off)
 			: Full_Serial_RLC(name, name, logLevel) { }
 
-        void setParameters(Real resistance, Real inductance, Real capacitance);
-
 		SimPowerComp<Real>::Ptr clone(String name);
+        void setParameters(Real resistance, Real inductance, Real capacitance);
 
 		// #### General ####
 		/// Initializes component from power flow data
@@ -53,53 +62,29 @@ namespace SSN {
 
 		// #### MNA section ####
 		/// Initializes internal variables of the component
-		void mnaInitialize(Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector);
+		void mnaCompInitialize(Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) override;
 		/// Stamps system matrix
-		void mnaApplySystemMatrixStamp(Matrix& systemMatrix);
+		void mnaCompApplySystemMatrixStamp(SparseMatrixRow& systemMatrix) override;
 		/// Stamps right side (source) vector
-		void mnaApplyRightSideVectorStamp(Matrix& rightVector);
+		void mnaCompApplyRightSideVectorStamp(Matrix& rightVector) override;
 		/// Update interface voltage from MNA system result
-		void mnaUpdateVoltage(const Matrix& leftVector);
+		void mnaCompUpdateVoltage(const Matrix& leftVector) override;
 		/// Update interface current from MNA system result
-		void mnaUpdateCurrent(const Matrix& leftVector);
+		void mnaCompUpdateCurrent(const Matrix& leftVector) override;
+		/// MNA pre step operations
+		void mnaCompPreStep(Real time, Int timeStepCount) override;
+		/// MNA post step operations
+		void mnaCompPostStep(Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) override;
+		/// Add MNA pre step dependencies
+		void mnaCompAddPreStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes) override;
+		/// Add MNA post step dependencies
+		void mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes, Attribute<Matrix>::Ptr &leftVector) override;		
 
 		void ssnUpdateState();
 		bool isLinear() const
 		{
 			return true;
 		}		
-
-		class MnaPreStep : public Task {
-		public:
-			MnaPreStep(Full_Serial_RLC& full_Serial_RLC) :
-				Task(**full_Serial_RLC.mName + ".MnaPreStep"), mFull_Serial_RLC(full_Serial_RLC) {
-
-				mModifiedAttributes.push_back(full_Serial_RLC.attribute("right_vector"));
-				mPrevStepDependencies.push_back(full_Serial_RLC.attribute("i_intf"));
-				mPrevStepDependencies.push_back(full_Serial_RLC.attribute("v_intf"));
-			}
-
-			void execute(Real time, Int timeStepCount);
-
-		private:
-			Full_Serial_RLC& mFull_Serial_RLC;
-		};
-
-		class MnaPostStep : public Task {
-		public:
-			MnaPostStep(Full_Serial_RLC& full_Serial_RLC, Attribute<Matrix>::Ptr leftVector) :
-				Task(**full_Serial_RLC.mName + ".MnaPostStep"), mFull_Serial_RLC(full_Serial_RLC), mLeftVector(leftVector) {
-				mAttributeDependencies.push_back(mLeftVector);
-				mModifiedAttributes.push_back(mFull_Serial_RLC.attribute("v_intf"));
-				mModifiedAttributes.push_back(mFull_Serial_RLC.attribute("i_intf"));
-			}
-
-			void execute(Real time, Int timeStepCount);
-
-		private:
-			Full_Serial_RLC& mFull_Serial_RLC;
-			Attribute<Matrix>::Ptr mLeftVector;
-		};
 	};
 }
 }
