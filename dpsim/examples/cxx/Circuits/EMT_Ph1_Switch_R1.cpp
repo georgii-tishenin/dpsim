@@ -54,7 +54,7 @@ void EMT_Ph1_SwitchTest(String simName, Real timeStep, Real finalTime, Real swit
 	sim.setFinalTime(finalTime);
 	sim.setDomain(Domain::EMT);
 	sim.doInitFromNodesAndTerminals(false);
-	sim.setMnaSolverImplementation(DPsim::MnaSolverFactory::EigenSparse);
+	sim.setDirectLinearSolverImplementation(DPsim::DirectLinearSolverImpl::SparseLU);
 	sim.addLogger(logger);
 	sim.addEvent(sw_event);
 	sim.run();
