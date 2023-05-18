@@ -79,7 +79,6 @@ void EMT_Ph1_SSN_RLC_VS()
 	Real timeStep = 0.0001;
 	Real finalTime = 100.;
 	String simName = "EMT_Ph3_LinearSampleCircuitSSN";
-	Logger::setLogDir("logs/" + simName);
 
 	// Nodes
 	auto n1 = CPS::EMT::SimNode::make("n1", PhaseType::Single);
@@ -103,6 +102,7 @@ void EMT_Ph1_SSN_RLC_VS()
 	auto sys = SystemTopology(50, SystemNodeList{n1}, SystemComponentList{vs0, rlc});
 
 	// Logging
+	Logger::setLogDir("logs/" + simName);
 	auto logger = DataLogger::make(simName);
 	logger->logAttribute("I_RLC_SSN", rlc->attribute("i_intf"));
 
@@ -122,7 +122,6 @@ void EMT_Ph3_SSN_RLC_VS()
 	Real timeStep = 0.0001;
 	Real finalTime = 0.1;
 	String simName = "EMT_Ph3_LinearSampleCircuitSSN";
-	Logger::setLogDir("logs/" + simName);
 
 	// Nodes
 	auto n1 = CPS::EMT::SimNode::make("n1", PhaseType::ABC);
@@ -152,6 +151,7 @@ void EMT_Ph3_SSN_RLC_VS()
 
 	// Logging
 	auto logger = DataLogger::make(simName);
+	Logger::setLogDir("logs/" + simName);
 	logger->logAttribute("I_RLC_SSN", rlc->attribute("i_intf"));
 
 	Simulation sim(simName, Logger::Level::info);

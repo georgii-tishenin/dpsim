@@ -40,7 +40,7 @@ void EMT_Ph1_SwitchTest(String simName, Real timeStep, Real finalTime, Real swit
 			SystemComponentList{vs, r1, sw});
 
 	// Logging
-	//Logger::setLogDir("dpsim/examples/Notebooks/Circuits/logs/EMT_Ph1_SwitchTest");
+	Logger::setLogDir("logs/" + simName);
 	auto logger = DataLogger::make(simName);
 	logger->logAttribute("I", r1->attribute("i_intf"));
 
@@ -64,7 +64,7 @@ void EMT_Ph1_SwitchTest(String simName, Real timeStep, Real finalTime, Real swit
 int main(int argc, char* argv[]) {
 
 	//Simultion parameters
-	String simName ="EMT_Ph1_SwitchTest";
+	String simName ="EMT_Ph1_Switch_R1";
 	Real finalTime = 0.1;
 	Real timeStep = 0.001;
 	Real switch_close_time = 0.06;
