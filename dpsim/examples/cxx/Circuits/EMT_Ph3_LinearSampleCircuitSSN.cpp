@@ -150,8 +150,8 @@ void EMT_Ph3_SSN_RLC_VS()
 	auto sys = SystemTopology(50, SystemNodeList{n1}, SystemComponentList{vs0, rlc});
 
 	// Logging
-	auto logger = DataLogger::make(simName);
 	Logger::setLogDir("logs/" + simName);
+	auto logger = DataLogger::make(simName);
 	logger->logAttribute("I_RLC_SSN", rlc->attribute("i_intf"));
 
 	Simulation sim(simName, Logger::Level::info);
