@@ -9,8 +9,8 @@
 #pragma once
 
 #include <dpsim-models/Base/Base_Ph3_PiLine.h>
+#include <dpsim-models/CompositePowerComp.h>
 #include <dpsim-models/EMT/EMT_Ph3_Capacitor.h>
-#include <dpsim-models/EMT/EMT_Ph3_Inductor.h>
 #include <dpsim-models/EMT/EMT_Ph3_ResIndSeries.h>
 #include <dpsim-models/EMT/EMT_Ph3_Resistor.h>
 #include <dpsim-models/Solver/MNAInterface.h>
