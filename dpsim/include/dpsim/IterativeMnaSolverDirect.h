@@ -52,7 +52,7 @@ namespace DPsim{
 
         IterativeMnaSolverDirect(
         String name, 
-        CPS::Domain domain = CPS::Domain::DP, 
+        CPS::Domain domain = CPS::Domain::EMT, 
         CPS::Logger::Level logLevel = CPS::Logger::Level::info):
             MnaSolverDirect<VarType>(name, domain, logLevel) { }
 
