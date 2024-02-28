@@ -59,7 +59,15 @@ protected:
     double omega_old;
 
 private:
-
+    //constants
+    const double C_d = (mTimeStep*X_D)/(2.*T_d0*X_D+mTimeStep*X_d);
+    const double C_dd = (mTimeStep*(X_d-X_D))/(2.*T_d0*X_D+mTimeStep*X_d);
+    const double C_0dd = (2.*T_d0*X_D-mTimeStep*X_d)/(2.*T_d0*X_D+mTimeStep*X_d);
+    const double C_qq = (mTimeStep*(X_q-X_Q))/(2.*T_q0*X_Q+mTimeStep*X_q);
+    const double C_0qq = (2.*T_q0*X_Q-mTimeStep*X_q)/(2.*T_q0*X_Q+mTimeStep*X_q);
+    const double C_wbq = (mTimeStep*mTimeStep*omega_base)/(4.*H*X_Q);
+    const double C_wbd = (mTimeStep*mTimeStep*omega_base)/(4.*H*X_D);
+    const double C_wb = (mTimeStep*mTimeStep*omega_base)/(8.*H);
 }
 }
 }
