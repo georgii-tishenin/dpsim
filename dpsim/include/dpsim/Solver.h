@@ -75,7 +75,7 @@ public:
   // #### Solver settings ####
   /// Solver types:
   /// Modified Nodal Analysis, Differential Algebraic, Newton Raphson
-  enum class Type { MNA, DAE, NRP };
+  enum class Type { MNA, ITERATIVEMNA, DAE, NRP };
   ///
   void setTimeStep(Real timeStep) { mTimeStep = timeStep; }
   ///
@@ -89,22 +89,28 @@ public:
     mSystemMatrixRecomputation = value;
   }
 
-		// #### Solver settings ####
-		/// Solver types:
-		/// Modified Nodal Analysis, Differential Algebraic, Newton Raphson
-		enum class Type { MNA, ITERATIVEMNA, DAE, NRP };
-		///
-		void setTimeStep(Real timeStep) {
-			mTimeStep = timeStep;
-		}
-		///
-		void doFrequencyParallelization(Bool freqParallel) {
-			mFrequencyParallel = freqParallel;
-		}
-		///
-		virtual void setSystem(const CPS::SystemTopology &system) {}
-		///
-		void doSystemMatrixRecomputation(Bool value) { mSystemMatrixRecomputation = value; }
+  // #### Initialization ####
+  ///
+  virtual void initialize() {}
+  /// activate steady state initialization
+  void doSteadyStateInit(Bool f) { mSteadyStateInit = f; }
+  /// set steady state initialization time limit
+  void setSteadStIniTimeLimit(Real v) { mSteadStIniTimeLimit = v; }
+  /// set steady state initialization accuracy limit
+  void setSteadStIniAccLimit(Real v) { mSteadStIniAccLimit = v; }
+  /// set solver and component to initialization or simulation behaviour
+  virtual void setSolverAndComponentBehaviour(Solver::Behaviour behaviour) {}
+  /// activate powerflow initialization
+  void doInitFromNodesAndTerminals(Bool f) { mInitFromNodesAndTerminals = f; }
+  /// set direct linear solver configuration (only available in MNA for now)
+  virtual void
+  setDirectLinearSolverConfiguration(DirectLinearSolverConfiguration &) {
+    // not every derived class has a linear solver configuration option
+  }
+  /// log LU decomposition times, if applicable
+  virtual void logLUTimes() {
+    // no default implementation for all types of solvers
+  }
 
   // #### Simulation ####
   /// Get tasks for scheduler
