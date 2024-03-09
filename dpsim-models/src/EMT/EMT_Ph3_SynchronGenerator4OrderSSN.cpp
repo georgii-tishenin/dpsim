@@ -12,27 +12,15 @@ CPS::EMT::Ph3::SynchronGenerator4OrderSSN::SynchronGenerator4OrderSSN(String uid
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::calculateNonlinearFunctionResult()
 {
+    **intfCurrent(0,0) = ((Eq-Vq)/mLd)*cos(theta) - ((Vd-Ed)/mLq)*sin(theta);
+    **intfCurrent(1,0) = ((Eq-Vq)/mLd)*cos(theta - (2*M_PI/3)) - ((Vd-Ed)/mLq)*sin(theta - (2*M_PI/3));
+    **intfCurrent(2,0) = ((Eq-Vq)/mLd)*cos(theta + (2*M_PI/3)) - ((Vd-Ed)/mLq)*sin(theta + (2*M_PI/3));
 
-    double Vd = mIntfVoltage(0,0)*cos(theta)+mIntfVoltage(1,0)*cos(theta-(2*M_PI/3))+mIntfVoltage(2,0)*cos(theta+(2*M_PI/3));
-    double Vq = -(mIntfVoltage(0,0)*sin(theta)+mIntfVoltage(1,0)*sin(theta-(2*M_PI/3))+mIntfVoltage(2,0)*sin(theta+(2*M_PI/3)));
-
-    **intfCurrent(0,0) = ((Eq-Vq)/Xd)*cos(theta) - ((Vd-Ed)/Xq)*sin(theta);
-    **intfCurrent(1,0) = ((Eq-Vq)/Xd)*cos(theta - (2*M_PI/3)) - ((Vd-Ed)/Xq)*sin(theta - (2*M_PI/3));
-    **intfCurrent(2,0) = ((Eq-Vq)/Xd)*cos(theta + (2*M_PI/3)) - ((Vd-Ed)/Xq)*sin(theta + (2*M_PI/3));
-
-	///FIXME: f_theta instead of theta
-	theta = ((mTimeStep*mTimeStep*omega_base)/(8.*H))*P_mech - ((mTimeStep*mTimeStep*omega_base)/(8.*H))*((Vd*Vd)/Xq_dash)
-			+((mTimeStep*mTimeStep*omega_base)/(8.*H))*((Vd)/Xq_dash)*(
-			((mTimeStep*(Xq-Xq_dash))/(2*Tq0_dash*Xq_dash+mTimeStep*Xq))*Vd+((mTimeStep*(Xq-Xq_dash))/(2.*Tq0_dash*Xq_dash+mTimeStep*Xq))*Vd_old
-			+((2*Tq0_dash*Xq_dash-Xq*mTimeStep)/(2.*Tq0_dash*Xq_dash+mTimeStep*Xq))*Ed_dash_old)
-			-((mTimeStep*mTimeStep*omega_base)/(8.*H))*(Vq/Xd_dash)*(
-			((mTimeStep*(Xd-Xd_dash))/(2*Td0_dash*Xd_dash+mTimeStep*Xd))*Vq+((mTimeStep*Xd_dash)/(2.*Td0_dash*Xd_dash+mTimeStep*Xd))*Ef
-			+((2*Td0_dash*Xd_dash-mTimeStep*Xd)/(2.*Td0_dash*Xd_dash+mTimeStep*Xd))*Eq_dash_old
-			+((mTimeStep*(Xd-Xd_dash))/(2.*Td0_dash*Xd_dash+mTimeStep*Xd))*Vq_old
-			+((mTimeStep*Xd_dash)/(2.*Td0_dash*Xd_dash+mTimeStep*Xd))*Ef_old)
-			+((mTimeStep*mTimeStep*omega_base)/(8.*H))*((Vq*Vq)/Xd_dash)
-			+((mTimeStep*mTimeStep*omega_base)/(8.*H))*(P_mech_old-((Vd_old*Vd_old)/Xq_dash)+((Vd_old*Ed_dash_old)/Xq_dash)-((Vq_old*Eq_dash_old)/Xd_dash)+(Vq_old*Vq_old)/Xd_dash)
-			+((mTimeStep*omega_base)/2.)*omega_old+((mTimeStep*omega_base*(omega_old-2.))/2.)+theta_old;
+	double f_theta = C_wb*P_mech - C_wb*((Vd*Vd)/mLq_t)
+			+C_wb*((Vd)/mLq_t)*(C_qq*Vd+C_qq*Vd_old+C_0qq*Ed_old)
+			-C_wb*(Vq/mLd_t)*(C_dd*Vq+C_d*Ef+C_0dd*Eq_old+C_dd*Vq_old+C_d*Ef_old)
+			+C_wb*((Vq*Vq)/mLd_t)
+			-theta;
 
     if (terminalNotGrounded(0)) {
 		Math::setVectorElement(mNonlinearFunctionStamp, matrixNodeIndex(0, 0), -(**intfCurrent)(0,0));
@@ -44,7 +32,7 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::calculateNonlinearFunctionResult
 		Math::setVectorElement(mNonlinearFunctionStamp, matrixNodeIndex(1, 1), (**intfCurrent)(1,0));
 		Math::setVectorElement(mNonlinearFunctionStamp, matrixNodeIndex(1, 2), (**intfCurrent)(2,0));
 	}
-	Math::setVectorElement(mNonlinearFunctionStamp, mVirtualNodes[0]->matrixNodeIndex(PhaseType::Single), theta);
+	Math::setVectorElement(mNonlinearFunctionStamp, mVirtualNodes[0]->matrixNodeIndex(PhaseType::Single), f_theta);
 }
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompApplySystemMatrixStamp(Matrix& systemMatrix) {
@@ -133,9 +121,9 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompApplyRightSideVectorStamp
 	//Math::setVectorElement(rightVector, matrixNodeIndex(0, PhaseType::B), 0.);
 	//Math::setVectorElement(rightVector, matrixNodeIndex(0, PhaseType::C), 0.);
 
-	//Equation for theta does contain constant history terms:
+	//Equation for theta does contain constant history term:
 
-	double linear_theta_hist = -C_wb*(P_mech_old-(V_d_old*V_d_old/X_Q)+(V_d_old*E_d_old/X_Q)-(V_q_old*E_q_old/X_D)+(V_q*V_q/X_D))-(0.5*timeStep*omega_old)-(0.5*timeStep*omega_base(omega_old-2.))-omega_old-1.;
+	double linear_theta_hist = -C_wb*(P_mech_old-(Vd_old*Vd_old/mLq_t)+(Vd_old*Ed_old/mLq_t)-(Vq_old*Eq_old/mLd_t)+(Vq*Vq/mLd_t))-(0.5*mTimeStep*mBase_OmElec*omega_old)-(0.5*mTimeStep*mBase_OmElec*(omega_old-2.))-omega_old-1.;
 	Math::setVectorElement(rightVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::Single), linear_theta_hist);
 }
 
@@ -157,7 +145,7 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompAddPostStepDependencies(A
 }
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompPostStep(Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) {
-    updateStates();
+    updateOldStates();
 	mnaCompUpdateVoltage(**leftVector);
 	mnaCompUpdateCurrent(**leftVector);
 }
@@ -173,43 +161,67 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompUpdateVoltage(const Matri
 		(**mIntfVoltage)(0,0) = (**mIntfVoltage)(0,0) - Math::realFromVectorElement(leftVector, matrixNodeIndex(0,0));
         (**mIntfVoltage)(1,0) = (**mIntfVoltage)(1,0) - Math::realFromVectorElement(leftVector, matrixNodeIndex(0,1));
         (**mIntfVoltage)(2,0) = (**mIntfVoltage)(2,0) - Math::realFromVectorElement(leftVector, matrixNodeIndex(0,2));
+
+    Vd = mIntfVoltage(0,0)*cos(theta)+mIntfVoltage(1,0)*cos(theta-(2.*M_PI/3.))+mIntfVoltage(2,0)*cos(theta+(2.*M_PI/3.));
+    Vq = -(mIntfVoltage(0,0)*sin(theta)+mIntfVoltage(1,0)*sin(theta-(2.*M_PI/3.))+mIntfVoltage(2,0)*sin(theta+(2.*M_PI/3.)));
 }
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompUpdateCurrent(const Matrix& leftVector) {
-	calculateNonlinearFunctionResult();
+	///FIXME: Is done every iteration anyways; do we need it here?
+	calculateNonlinearFunctionResult(); 
 }
-
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::iterationUpdate(const Matrix& leftVector)
 {
     mnaCompUpdateVoltage(leftVector);
+	updateImplicitStates(leftVector);
+	updateCurrentStates();
 	calculateNonlinearFunctionResult();
 	updateJacobian();
 }
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::updateJacobian()
 {
-	Jacobian(0,0)=(cos(theta)*sin(theta)*(1.-C_dd)/X_D)-(cos(theta)*sin(theta)*(1.-C_qq)/X_Q);
-	Jacobian(0,1)=(cos(theta)*sin(theta-(2.*M_PI/3.))*(1.-C_dd)/X_D)-(cos(theta-(2.*M_PI/3.))*sin(theta)*(1.-C_qq)/X_Q);
-	Jacobian(0,2)=(cos(theta)*sin(theta+(2.*M_PI/3.))*(1.-C_dd)/X_D)-(cos(theta+(2.*M_PI/3.))*sin(theta)*(1.-C_qq)/X_Q);
-	Jacobian(0,3)=(cos(theta)/X_D)*(V_a*cos(theta)+V_b*cos(theta-(2.*M_PI/3.))+V_c*cos(theta+(2.*M_PI/3.)))*(1.-C_dd)-(sin(theta)/X_D)*(E_q-V_q)+(sin(theta)/X_Q)*(V_a*sin(theta)+V_b*sin(theta-(2.*M_PI/3.))+V_c*sin(theta+(2.*M_PI/3.)))*(1.-C_qq)+(cos(theta)/X_Q)*(E_d-V_d);
-	Jacobian(1,0)=(cos(theta-(2.*M_PI/3.))*sin(theta)*(1.-C_dd)/X_D)-(cos(theta)*sin(theta-(2.*M_PI/3.))*(1.-C_qq)/X_Q);
-	Jacobian(1,1)=(cos(theta-(2.*M_PI/3.))*sin(theta-(2.*M_PI/3.))*(1.-C_dd)/X_D)-(cos(theta-(2.*M_PI/3.))*sin(theta-(2.*M_PI/3.))*(1.-C_qq)/X_Q);
-	Jacobian(1,2)=(cos(theta-(2.*M_PI/3.))*sin(theta+(2.*M_PI/3.))*(1.-C_dd)/X_D)-(cos(theta+(2.*M_PI/3.))*sin(theta-(2.*M_PI/3.))*(1.-C_qq)/X_Q);
-	Jacobian(1,3)=(cos(theta-(2.*M_PI/3.))/X_D)*(V_a*cos(theta)+V_b*cos(theta-(2.*M_PI/3.))+V_c*cos(theta+(2.*M_PI/3.)))*(1.-C_dd)-(sin(theta-(2.*M_PI/3.))/X_D)*(E_q-V_q)+(sin(theta-(2.*M_PI/3.))/X_Q)*(V_a*sin(theta)+V_b*sin(theta-(2.*M_PI/3.))+V_c*sin(theta+(2.*M_PI/3.)))*(1.-C_qq)+(cos(theta-(2.*M_PI/3.))/X_Q)*(E_d-V_d);
-	Jacobian(2,0)=(cos(theta+(2.*M_PI/3.))*sin(theta)*(1.-C_dd)/X_D)-(cos(theta)*sin(theta+(2.*M_PI/3.))*(1.-C_qq)/X_Q);
-	Jacobian(2,1)=(cos(theta+(2.*M_PI/3.))*sin(theta-(2.*M_PI/3.))*(1.-C_dd)/X_D)-(cos(theta-(2.*M_PI/3.))*sin(theta+(2.*M_PI/3.))*(1.-C_qq)/X_Q);
-	Jacobian(2,2)=(cos(theta+(2.*M_PI/3.))*sin(theta+(2.*M_PI/3.))*(1.-C_dd)/X_D)-(cos(theta+(2.*M_PI/3.))*sin(theta+(2.*M_PI/3.))*(1.-C_qq)/X_Q);
-	Jacobian(2,3)=(cos(theta+(2.*M_PI/3.))/X_D)*(V_a*cos(theta)+V_b*cos(theta-(2.*M_PI/3.))+V_c*cos(theta+(2.*M_PI/3.)))*(1.-C_dd)-(sin(theta+(2.*M_PI/3.))/X_D)*(E_q-V_q)+(sin(theta+(2.*M_PI/3.))/X_Q)*(V_a*sin(theta)+V_b*sin(theta-(2.*M_PI/3.))+V_c*sin(theta+(2.*M_PI/3.)))*(1.-C_qq)+(cos(theta+(2.*M_PI/3.))/X_Q)*(E_d-V_d);
-	Jacobian(3,0)=C_wbq*V_d*cos(theta)*(1.-C_qq)-0.5*C_wbq*cos(theta)*(C_qq*V_d_old+C_0qq*E_d_old)-C_wbd*V_q*sin(theta)*(C_dd-1.)-0.5*C_wbd*sin(theta)*(C_d*(E_f+E_f_old)+C_0dd*E_q_old+C_dd*V_q_old);
-	Jacobian(3,1)=C_wbq*V_d*cos(theta-(2.*M_PI/3.))*(1.-C_qq)-0.5*C_wbq*cos(theta-(2.*M_PI/3.))*(C_qq*V_d_old+C_0qq*E_d_old)-C_wbd*V_q*sin(theta-(2.*M_PI/3.))*(C_dd-1.)-0.5*C_wbd*sin(theta-(2.*M_PI/3.))*(C_d*(E_f+E_f_old)+C_0dd*E_q_old+C_dd*V_q_old);
-	Jacobian(3,2)=C_wbq*V_d*cos(theta+(2.*M_PI/3.))*(1.-C_qq)-0.5*C_wbq*cos(theta+(2.*M_PI/3.))*(C_qq*V_d_old+C_0qq*E_d_old)-C_wbd*V_q*sin(theta+(2.*M_PI/3.))*(C_dd-1.)-0.5*C_wbd*sin(theta+(2.*M_PI/3.))*(C_d*(E_f+E_f_old)+C_0dd*E_q_old+C_dd*V_q_old);
-	Jacobian(3,3)=C_wbq*V_d*(V_a*sin(theta)+V_b*sin(theta-(2.*M_PI/3.))+V_c*sin(theta+(2.*M_PI/3.)))*(1.-C_qq)-0.5*C_wbq*(V_a*sin(theta)+V_b*sin(theta-(2.*M_PI/3.))+V_c*sin(theta+(2.*M_PI/3.)))*(C_qq*V_d_old+C_0qq*E_d_old)+C_wbd*V_q*(V_a*cos(theta)+V_b*cos(theta-(2.*M_PI/3.))+V_c*cos(theta+(2.*M_PI/3.)))*(C_dd-1.)+0.5*C_wbd*(V_a*cos(theta)+V_b*cos(theta-(2.*M_PI/3.))+V_c*cos(theta+(2.*M_PI/3.)))*(C_d*(E_f+E_f_old)+C_0dd*E_q_old+C_dd*V_q_old)-1.;
+	double V_a = intfVoltage(0,0);
+	double V_b = intfVoltage(1,0);
+	double V_c = intfVoltage(2,0);
+
+	Jacobian(0,0)=(cos(theta)*sin(theta)*(1.-C_dd)/mLd_t)-(cos(theta)*sin(theta)*(1.-C_qq)/mLq_t);
+	Jacobian(0,1)=(cos(theta)*sin(theta-(2.*M_PI/3.))*(1.-C_dd)/mLd_t)-(cos(theta-(2.*M_PI/3.))*sin(theta)*(1.-C_qq)/mLq_t);
+	Jacobian(0,2)=(cos(theta)*sin(theta+(2.*M_PI/3.))*(1.-C_dd)/mLd_t)-(cos(theta+(2.*M_PI/3.))*sin(theta)*(1.-C_qq)/mLq_t);
+	Jacobian(0,3)=(cos(theta)/mLd_t)*(V_a*cos(theta)+V_b*cos(theta-(2.*M_PI/3.))+V_c*cos(theta+(2.*M_PI/3.)))*(1.-C_dd)-(sin(theta)/mLd_t)*(Eq-Vq)+(sin(theta)/mLq_t)*(V_a*sin(theta)+V_b*sin(theta-(2.*M_PI/3.))+V_c*sin(theta+(2.*M_PI/3.)))*(1.-C_qq)+(cos(theta)/mLq_t)*(Ed-Vd);
+	Jacobian(1,0)=(cos(theta-(2.*M_PI/3.))*sin(theta)*(1.-C_dd)/mLd_t)-(cos(theta)*sin(theta-(2.*M_PI/3.))*(1.-C_qq)/mLq_t);
+	Jacobian(1,1)=(cos(theta-(2.*M_PI/3.))*sin(theta-(2.*M_PI/3.))*(1.-C_dd)/mLd_t)-(cos(theta-(2.*M_PI/3.))*sin(theta-(2.*M_PI/3.))*(1.-C_qq)/mLq_t);
+	Jacobian(1,2)=(cos(theta-(2.*M_PI/3.))*sin(theta+(2.*M_PI/3.))*(1.-C_dd)/mLd_t)-(cos(theta+(2.*M_PI/3.))*sin(theta-(2.*M_PI/3.))*(1.-C_qq)/mLq_t);
+	Jacobian(1,3)=(cos(theta-(2.*M_PI/3.))/mLd_t)*(V_a*cos(theta)+V_b*cos(theta-(2.*M_PI/3.))+V_c*cos(theta+(2.*M_PI/3.)))*(1.-C_dd)-(sin(theta-(2.*M_PI/3.))/mLd_t)*(Eq-Vq)+(sin(theta-(2.*M_PI/3.))/mLq_t)*(V_a*sin(theta)+V_b*sin(theta-(2.*M_PI/3.))+V_c*sin(theta+(2.*M_PI/3.)))*(1.-C_qq)+(cos(theta-(2.*M_PI/3.))/mLq_t)*(Ed-Vd);
+	Jacobian(2,0)=(cos(theta+(2.*M_PI/3.))*sin(theta)*(1.-C_dd)/mLd_t)-(cos(theta)*sin(theta+(2.*M_PI/3.))*(1.-C_qq)/mLq_t);
+	Jacobian(2,1)=(cos(theta+(2.*M_PI/3.))*sin(theta-(2.*M_PI/3.))*(1.-C_dd)/mLd_t)-(cos(theta-(2.*M_PI/3.))*sin(theta+(2.*M_PI/3.))*(1.-C_qq)/mLq_t);
+	Jacobian(2,2)=(cos(theta+(2.*M_PI/3.))*sin(theta+(2.*M_PI/3.))*(1.-C_dd)/mLd_t)-(cos(theta+(2.*M_PI/3.))*sin(theta+(2.*M_PI/3.))*(1.-C_qq)/mLq_t);
+	Jacobian(2,3)=(cos(theta+(2.*M_PI/3.))/mLd_t)*(V_a*cos(theta)+V_b*cos(theta-(2.*M_PI/3.))+V_c*cos(theta+(2.*M_PI/3.)))*(1.-C_dd)-(sin(theta+(2.*M_PI/3.))/mLd_t)*(Eq-Vq)+(sin(theta+(2.*M_PI/3.))/mLq_t)*(V_a*sin(theta)+V_b*sin(theta-(2.*M_PI/3.))+V_c*sin(theta+(2.*M_PI/3.)))*(1.-C_qq)+(cos(theta+(2.*M_PI/3.))/mLq_t)*(Ed-Vd);
+	Jacobian(3,0)=C_wbq*Vd*cos(theta)*(1.-C_qq)-0.5*C_wbq*cos(theta)*(C_qq*Vd_old+C_0qq*Ed_old)-C_wbd*Vq*sin(theta)*(C_dd-1.)-0.5*C_wbd*sin(theta)*(C_d*(Ef+Ef_old)+C_0dd*Eq_old+C_dd*Vq_old);
+	Jacobian(3,1)=C_wbq*Vd*cos(theta-(2.*M_PI/3.))*(1.-C_qq)-0.5*C_wbq*cos(theta-(2.*M_PI/3.))*(C_qq*Vd_old+C_0qq*Ed_old)-C_wbd*Vq*sin(theta-(2.*M_PI/3.))*(C_dd-1.)-0.5*C_wbd*sin(theta-(2.*M_PI/3.))*(C_d*(Ef+Ef_old)+C_0dd*Eq_old+C_dd*Vq_old);
+	Jacobian(3,2)=C_wbq*Vd*cos(theta+(2.*M_PI/3.))*(1.-C_qq)-0.5*C_wbq*cos(theta+(2.*M_PI/3.))*(C_qq*Vd_old+C_0qq*Ed_old)-C_wbd*Vq*sin(theta+(2.*M_PI/3.))*(C_dd-1.)-0.5*C_wbd*sin(theta+(2.*M_PI/3.))*(C_d*(Ef+Ef_old)+C_0dd*Eq_old+C_dd*Vq_old);
+	Jacobian(3,3)=C_wbq*Vd*(V_a*sin(theta)+V_b*sin(theta-(2.*M_PI/3.))+V_c*sin(theta+(2.*M_PI/3.)))*(1.-C_qq)-0.5*C_wbq*(V_a*sin(theta)+V_b*sin(theta-(2.*M_PI/3.))+V_c*sin(theta+(2.*M_PI/3.)))*(C_qq*Vd_old+C_0qq*Ed_old)+C_wbd*Vq*(V_a*cos(theta)+V_b*cos(theta-(2.*M_PI/3.))+V_c*cos(theta+(2.*M_PI/3.)))*(C_dd-1.)+0.5*C_wbd*(V_a*cos(theta)+V_b*cos(theta-(2.*M_PI/3.))+V_c*cos(theta+(2.*M_PI/3.)))*(C_d*(Ef+Ef_old)+C_0dd*Eq_old+C_dd*Vq_old)-1.;
 }
 
-void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::updateStates()
+void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::updateCurrentStates()
 {
-	E_d		= C_qq*(V_d+V_d_old)+C_0qq*E_d_old;
-	E_q		= C_dd*(V_q+V_q_old)+C_d*(E_f+E_f_old)+C_0dd*E_q_old;
-	omega	= C_h*(P_mech-(V_d*V_d/X_Q)+(V_d*E_d/X_Q)-(V_q*E_q/X_d)+(V_q*V_q/X_D))+C_h*(P_mech_old-(V_d_old*V_d_old/X_Q)+(V_d_old*E_d_old/X_Q)-(V_q_old*E_q_old/X_D)+(V_q_old*V_q_old/X_D))+omega_old;
+	Ed		= C_qq*(Vd+Vd_old)+C_0qq*Ed_old;
+	Eq		= C_dd*(Vq+Vq_old)+C_d*(Ef+Ef_old)+C_0dd*Eq_old;
+	omega	= C_h*(P_mech-(Vd*Vd/mLq_t)+(Vd*Ed/mLq_t)-(Vq*Eq/mLd_t)+(Vq*Vq/mLd_t))+C_h*(P_mech_old-(Vd_old*Vd_old/mLq_t)+(Vd_old*Ed_old/mLq_t)-(Vq_old*Eq_old/mLd_t)+(Vq_old*Vq_old/mLd_t))+omega_old;
+}
+
+void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::updateOldStates()
+{
+	Ed_old = Ed;
+	Eq_old = Eq;
+	omega_old = omega;
+	theta_old = theta;
+	Vd_old = Vd;
+	Vq_old = Vq;
+}
+
+void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::updateImplicitStates(const Matrix& leftVector)
+{
+	theta = Math::realFromVectorElement(leftVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::Single));
 }

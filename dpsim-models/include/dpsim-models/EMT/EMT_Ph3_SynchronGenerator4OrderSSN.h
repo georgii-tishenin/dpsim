@@ -16,7 +16,8 @@ namespace EMT{
 namespace Ph3{
 class SynchronGenerator4OrderSSN:  
     public Base::ReducedOrderSynchronGenerator<Real>,
-    public MNANonlinearVariableCompInterface {
+    public MNANonlinearVariableCompInterface,
+    public SharedFactory<SynchronGenerator4OrderSSN> {
 
 public:
 	/// Defines UID, name, component parameters and logging level
@@ -36,7 +37,9 @@ public:
     virtual void mnaCompApplyRightSideVectorStamp(Matrix& rightVector) override;
     virtual void mnaCompInitialize(Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) override;
     void updateJacobian();
-    void updateStates();
+    void updateCurrentStates();
+    void updateOldStates();
+    void updateImplicitStates(const Matrix& leftVector);
     virtual void iterationUpdate(const Matrix& leftVector) override;
 
 protected:
@@ -58,16 +61,23 @@ protected:
     double omega;
     double omega_old;
 
+    //helpers
+    double Vd = 0;
+    double Vq = 0;
+    double Vd_old = 0;
+    double Vq_old = 0;
+
 private:
     //constants
-    const double C_d = (mTimeStep*X_D)/(2.*T_d0*X_D+mTimeStep*X_d);
-    const double C_dd = (mTimeStep*(X_d-X_D))/(2.*T_d0*X_D+mTimeStep*X_d);
-    const double C_0dd = (2.*T_d0*X_D-mTimeStep*X_d)/(2.*T_d0*X_D+mTimeStep*X_d);
-    const double C_qq = (mTimeStep*(X_q-X_Q))/(2.*T_q0*X_Q+mTimeStep*X_q);
-    const double C_0qq = (2.*T_q0*X_Q-mTimeStep*X_q)/(2.*T_q0*X_Q+mTimeStep*X_q);
-    const double C_wbq = (mTimeStep*mTimeStep*omega_base)/(4.*H*X_Q);
-    const double C_wbd = (mTimeStep*mTimeStep*omega_base)/(4.*H*X_D);
-    const double C_wb = (mTimeStep*mTimeStep*omega_base)/(8.*H);
+    const double C_d = (mTimeStep*mLd_t)/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
+    const double C_dd = (mTimeStep*(mLd-mLd_t))/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
+    const double C_0dd = (2.*mTd0_t*mLd_t-mTimeStep*mLd)/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
+    const double C_qq = (mTimeStep*(mLq-mLq_t))/(2.*mTq0_t*mLq_t+mTimeStep*mLq);
+    const double C_0qq = (2.*mTq0_t*mLq_t-mTimeStep*mLq)/(2.*mTq0_t*mLq_t+mTimeStep*mLq);
+    const double C_wbq = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLq_t);
+    const double C_wbd = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLd_t);
+    const double C_wb = (mTimeStep*mTimeStep*mBase_OmElec)/(8.*mH);
+    const double C_h = (mTimeStep)/(4.*mH);
 }
 }
 }
