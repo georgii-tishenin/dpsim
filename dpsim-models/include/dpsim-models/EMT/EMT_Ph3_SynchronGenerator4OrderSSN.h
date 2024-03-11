@@ -27,8 +27,8 @@ public:
 		: SynchronGenerator4OrderSSN(name, name, logLevel) { }
 
     virtual void calculateNonlinearFunctionResult() override;
-    virtual void mnaCompApplySystemMatrixStamp(Matrix& systemMatrix) override;
-    virtual void mnaCompPostStep(Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) override;
+    virtual void mnaCompApplySystemMatrixStamp(SparseMatrixRow& systemMatrix) override;
+    virtual void mnaCompPostStep(const Matrix &leftVector) override;
     virtual void mnaCompUpdateVoltage(const Matrix& leftVector) override;
     virtual void mnaCompUpdateCurrent(const Matrix& leftVector) override;
     virtual void mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes, Attribute<Matrix>::Ptr &leftVector) override;
@@ -78,7 +78,7 @@ private:
     const double C_wbd = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLd_t);
     const double C_wb = (mTimeStep*mTimeStep*mBase_OmElec)/(8.*mH);
     const double C_h = (mTimeStep)/(4.*mH);
-}
+};
 }
 }
 }

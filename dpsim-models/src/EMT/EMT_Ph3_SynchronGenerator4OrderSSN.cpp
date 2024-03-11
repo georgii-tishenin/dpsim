@@ -144,7 +144,7 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompAddPostStepDependencies(A
 	modifiedAttributes.push_back(mIntfCurrent);
 }
 
-void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompPostStep(Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) {
+void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompPostStep(const Matrix &leftVector) {
     updateOldStates();
 	mnaCompUpdateVoltage(**leftVector);
 	mnaCompUpdateCurrent(**leftVector);
