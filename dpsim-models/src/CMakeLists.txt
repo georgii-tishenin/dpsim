@@ -94,6 +94,7 @@ list(APPEND MODELS_SOURCES
 	EMT/EMT_Ph3_SynchronGenerator6bOrderVBR.cpp
 	EMT/EMT_Ph3_SynchronGeneratorDQ.cpp
 	EMT/EMT_Ph3_SynchronGenerator4OrderPCM.cpp
+	EMT/EMT_Ph3_SynchronGenerator4OrderSSN.cpp
 	EMT/EMT_Ph3_SynchronGeneratorDQTrapez.cpp
 	# EMT/EMT_Ph3_SynchronGeneratorDQSmpl.cpp
 	# EMT/EMT_Ph3_SynchronGeneratorDQSmplCompSource.cpp

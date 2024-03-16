@@ -1,7 +1,7 @@
-#include "EMT_Ph3_SynchronGenerator4OrderSSN.h"
+#include <dpsim-models/EMT/EMT_Ph3_SynchronGenerator4OrderSSN.h>
 
 CPS::EMT::Ph3::SynchronGenerator4OrderSSN::SynchronGenerator4OrderSSN(String uid, String name, Logger::Level logLevel)
-    	: MNASimPowerComp<Real>(uid, name, false, false, logLevel)
+    	:Base::ReducedOrderSynchronGenerator<Real>(uid, name, logLevel)
 {
     mPhaseType = PhaseType::ABC;
     setTerminalNumber(2);
@@ -10,11 +10,44 @@ CPS::EMT::Ph3::SynchronGenerator4OrderSSN::SynchronGenerator4OrderSSN(String uid
     **mIntfVoltage = Matrix::Zero(3,1);
 }
 
+CPS::EMT::Ph3::SynchronGenerator4OrderSSN::SynchronGenerator4OrderSSN(String name, Logger::Level logLevel)
+	:SynchronGenerator4OrderSSN(name, name, logLevel)
+{
+}
+
+CPS::EMT::Ph3::SynchronGenerator4OrderSSN::specificInitialization()
+{
+	(**mIntfCurrent)(0,0) = mInitCurrent.real;
+	(**mIntfCurrent)(0,1) = (mInitCurrent * SHIFT_TO_PHASE_B).real;
+	(**mIntfCurrent)(0,2) = (mInitCurrent * SHIFT_TO_PHASE_C).real;
+
+	(**mIntfVoltage)(0,0) = mInitVoltage.real;
+	(**mIntfVoltage)(0,1) = (mInitVoltage * SHIFT_TO_PHASE_B).real;
+	(**mIntfVoltage)(0,2) = (mInitVoltage * SHIFT_TO_PHASE_C).real;
+
+	P_mech = mInitMechPower;
+
+	Vd = (**mIntfVoltage)(0,0)*cos(theta)+(**mIntfVoltage)(1,0)*cos(theta-(2.*M_PI/3.))+(**mIntfVoltage)(2,0)*cos(theta+(2.*M_PI/3.));
+    Vq = -((**mIntfVoltage)(0,0)*sin(theta)+(**mIntfVoltage)(1,0)*sin(theta-(2.*M_PI/3.))+(**mIntfVoltage)(2,0)*sin(theta+(2.*M_PI/3.)));
+
+	updateCurrentStates();
+
+	double C_d = (mTimeStep*mLd_t)/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
+    double C_dd = (mTimeStep*(mLd-mLd_t))/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
+    double C_0dd = (2.*mTd0_t*mLd_t-mTimeStep*mLd)/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
+    double C_qq = (mTimeStep*(mLq-mLq_t))/(2.*mTq0_t*mLq_t+mTimeStep*mLq);
+    double C_0qq = (2.*mTq0_t*mLq_t-mTimeStep*mLq)/(2.*mTq0_t*mLq_t+mTimeStep*mLq);
+    double C_wbq = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLq_t);
+    double C_wbd = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLd_t);
+    double C_wb = (mTimeStep*mTimeStep*mBase_OmElec)/(8.*mH);
+    double C_h = (mTimeStep)/(4.*mH);
+}
+
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::calculateNonlinearFunctionResult()
 {
-    **intfCurrent(0,0) = ((Eq-Vq)/mLd)*cos(theta) - ((Vd-Ed)/mLq)*sin(theta);
-    **intfCurrent(1,0) = ((Eq-Vq)/mLd)*cos(theta - (2*M_PI/3)) - ((Vd-Ed)/mLq)*sin(theta - (2*M_PI/3));
-    **intfCurrent(2,0) = ((Eq-Vq)/mLd)*cos(theta + (2*M_PI/3)) - ((Vd-Ed)/mLq)*sin(theta + (2*M_PI/3));
+    (**mIntfCurrent)(0,0) = ((Eq-Vq)/mLd)*cos(theta) - ((Vd-Ed)/mLq)*sin(theta);
+    (**mIntfCurrent)(1,0) = ((Eq-Vq)/mLd)*cos(theta - (2*M_PI/3)) - ((Vd-Ed)/mLq)*sin(theta - (2*M_PI/3));
+    (**mIntfCurrent)(2,0) = ((Eq-Vq)/mLd)*cos(theta + (2*M_PI/3)) - ((Vd-Ed)/mLq)*sin(theta + (2*M_PI/3));
 
 	double f_theta = C_wb*P_mech - C_wb*((Vd*Vd)/mLq_t)
 			+C_wb*((Vd)/mLq_t)*(C_qq*Vd+C_qq*Vd_old+C_0qq*Ed_old)
@@ -23,19 +56,19 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::calculateNonlinearFunctionResult
 			-theta;
 
     if (terminalNotGrounded(0)) {
-		Math::setVectorElement(mNonlinearFunctionStamp, matrixNodeIndex(0, 0), -(**intfCurrent)(0,0));
-		Math::setVectorElement(mNonlinearFunctionStamp, matrixNodeIndex(0, 1), -(**intfCurrent)(1,0));
-		Math::setVectorElement(mNonlinearFunctionStamp, matrixNodeIndex(0, 2), -(**intfCurrent)(2,0));
+		Math::setVectorElement(**mNonlinearFunctionStamp, matrixNodeIndex(0, 0), -(**mIntfCurrent)(0,0));
+		Math::setVectorElement(**mNonlinearFunctionStamp, matrixNodeIndex(0, 1), -(**mIntfCurrent)(1,0));
+		Math::setVectorElement(**mNonlinearFunctionStamp, matrixNodeIndex(0, 2), -(**mIntfCurrent)(2,0));
 	}
 	if (terminalNotGrounded(1)) {
-		Math::setVectorElement(mNonlinearFunctionStamp, matrixNodeIndex(1, 0), (**intfCurrent)(0,0));
-		Math::setVectorElement(mNonlinearFunctionStamp, matrixNodeIndex(1, 1), (**intfCurrent)(1,0));
-		Math::setVectorElement(mNonlinearFunctionStamp, matrixNodeIndex(1, 2), (**intfCurrent)(2,0));
+		Math::setVectorElement(**mNonlinearFunctionStamp, matrixNodeIndex(1, 0), (**mIntfCurrent)(0,0));
+		Math::setVectorElement(**mNonlinearFunctionStamp, matrixNodeIndex(1, 1), (**mIntfCurrent)(1,0));
+		Math::setVectorElement(**mNonlinearFunctionStamp, matrixNodeIndex(1, 2), (**mIntfCurrent)(2,0));
 	}
-	Math::setVectorElement(mNonlinearFunctionStamp, mVirtualNodes[0]->matrixNodeIndex(PhaseType::Single), f_theta);
+	Math::setVectorElement(**mNonlinearFunctionStamp, mVirtualNodes[0]->matrixNodeIndex(PhaseType::Single), f_theta);
 }
 
-void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompApplySystemMatrixStamp(Matrix& systemMatrix) {
+void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompApplySystemMatrixStamp(SparseMatrixRow& systemMatrix) {
 	if (terminalNotGrounded(0)) {
 		// set upper left block, 3x3 entries
 		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 0), Jacobian(0, 0));
@@ -146,8 +179,8 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompAddPostStepDependencies(A
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompPostStep(const Matrix &leftVector) {
     updateOldStates();
-	mnaCompUpdateVoltage(**leftVector);
-	mnaCompUpdateCurrent(**leftVector);
+	mnaCompUpdateVoltage(leftVector);
+	mnaCompUpdateCurrent(leftVector);
 }
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompUpdateVoltage(const Matrix& leftVector) {
@@ -162,8 +195,8 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompUpdateVoltage(const Matri
         (**mIntfVoltage)(1,0) = (**mIntfVoltage)(1,0) - Math::realFromVectorElement(leftVector, matrixNodeIndex(0,1));
         (**mIntfVoltage)(2,0) = (**mIntfVoltage)(2,0) - Math::realFromVectorElement(leftVector, matrixNodeIndex(0,2));
 
-    Vd = mIntfVoltage(0,0)*cos(theta)+mIntfVoltage(1,0)*cos(theta-(2.*M_PI/3.))+mIntfVoltage(2,0)*cos(theta+(2.*M_PI/3.));
-    Vq = -(mIntfVoltage(0,0)*sin(theta)+mIntfVoltage(1,0)*sin(theta-(2.*M_PI/3.))+mIntfVoltage(2,0)*sin(theta+(2.*M_PI/3.)));
+    Vd = (**mIntfVoltage)(0,0)*cos(theta)+(**mIntfVoltage)(1,0)*cos(theta-(2.*M_PI/3.))+(**mIntfVoltage)(2,0)*cos(theta+(2.*M_PI/3.));
+    Vq = -((**mIntfVoltage)(0,0)*sin(theta)+(**mIntfVoltage)(1,0)*sin(theta-(2.*M_PI/3.))+(**mIntfVoltage)(2,0)*sin(theta+(2.*M_PI/3.)));
 }
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompUpdateCurrent(const Matrix& leftVector) {
@@ -182,9 +215,9 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::iterationUpdate(const Matrix& le
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::updateJacobian()
 {
-	double V_a = intfVoltage(0,0);
-	double V_b = intfVoltage(1,0);
-	double V_c = intfVoltage(2,0);
+	double V_a = (**mIntfVoltage)(0,0);
+	double V_b = (**mIntfVoltage)(1,0);
+	double V_c = (**mIntfVoltage)(2,0);
 
 	Jacobian(0,0)=(cos(theta)*sin(theta)*(1.-C_dd)/mLd_t)-(cos(theta)*sin(theta)*(1.-C_qq)/mLq_t);
 	Jacobian(0,1)=(cos(theta)*sin(theta-(2.*M_PI/3.))*(1.-C_dd)/mLd_t)-(cos(theta-(2.*M_PI/3.))*sin(theta)*(1.-C_qq)/mLq_t);

@@ -83,6 +83,7 @@ set(CIRCUIT_SOURCES
 	Circuits/EMT_SMIB_ReducedOrderSG_LoadStep.cpp
 	Circuits/EMT_SMIB_ReducedOrderSGIterative_LoadStep.cpp
 	Circuits/DP_SMIB_ReducedOrderSGIterative_LoadStep.cpp
+	Circuits/EMT_SMIB_4OrderSG_SSN_LoadStep.cpp
 
 	#3Bus System
 	Circuits/SP_SynGenTrStab_3Bus_SteadyState.cpp

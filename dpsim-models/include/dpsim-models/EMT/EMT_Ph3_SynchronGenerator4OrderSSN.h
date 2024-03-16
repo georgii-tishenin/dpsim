@@ -20,11 +20,12 @@ class SynchronGenerator4OrderSSN:
     public SharedFactory<SynchronGenerator4OrderSSN> {
 
 public:
-	/// Defines UID, name, component parameters and logging level
+
 	SynchronGenerator4OrderSSN(String uid, String name, Logger::Level logLevel = Logger::Level::off);
-	/// Defines name, component parameters and logging level
-	SynchronGenerator4OrderSSN(String name, Logger::Level logLevel = Logger::Level::off)
-		: SynchronGenerator4OrderSSN(name, name, logLevel) { }
+
+	SynchronGenerator4OrderSSN(String name, Logger::Level logLevel = Logger::Level::off);
+
+    virtual ~SynchronGenerator4OrderSSN() {};
 
     virtual void calculateNonlinearFunctionResult() override;
     virtual void mnaCompApplySystemMatrixStamp(SparseMatrixRow& systemMatrix) override;
@@ -41,6 +42,14 @@ public:
     void updateOldStates();
     void updateImplicitStates(const Matrix& leftVector);
     virtual void iterationUpdate(const Matrix& leftVector) override;
+
+    virtual void initializeResistanceMatrix() override {};
+
+    virtual void specificInitialization() override;
+
+    virtual void stepInPerUnit() override {};
+
+    virtual bool hasParameterChanged() override {return true;};
 
 protected:
     Matrix Jacobian = Matrix::Zero(4,4);
@@ -69,15 +78,15 @@ protected:
 
 private:
     //constants
-    const double C_d = (mTimeStep*mLd_t)/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
-    const double C_dd = (mTimeStep*(mLd-mLd_t))/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
-    const double C_0dd = (2.*mTd0_t*mLd_t-mTimeStep*mLd)/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
-    const double C_qq = (mTimeStep*(mLq-mLq_t))/(2.*mTq0_t*mLq_t+mTimeStep*mLq);
-    const double C_0qq = (2.*mTq0_t*mLq_t-mTimeStep*mLq)/(2.*mTq0_t*mLq_t+mTimeStep*mLq);
-    const double C_wbq = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLq_t);
-    const double C_wbd = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLd_t);
-    const double C_wb = (mTimeStep*mTimeStep*mBase_OmElec)/(8.*mH);
-    const double C_h = (mTimeStep)/(4.*mH);
+    double C_d;
+    double C_dd;
+    double C_0dd;
+    double C_qq;
+    double C_0qq;
+    double C_wbq;
+    double C_wbd;
+    double C_wb;
+    double C_h;
 };
 }
 }
