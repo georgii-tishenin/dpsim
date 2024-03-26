@@ -44,52 +44,52 @@ public:
   /// Sets model specific parameters
   void setParameters(Real resistance, Real inductance);
   /// Return new instance with the same parameters
-  SimPowerComp<Complex>::Ptr clone(String name);
+  SimPowerComp<Complex>::Ptr clone(String name) final;
   /// Initializes state variables considering the number of frequencies
-  void initialize(Matrix frequencies);
+  void initialize(Matrix frequencies) final;
   /// Initializes states from power flow data
-  void initializeFromNodesAndTerminals(Real frequency) override;
+  void initializeFromNodesAndTerminals(Real frequency) final;
   /// Initializes auxiliar variables
   void initVars(Real timeStep);
 
   // #### MNA section ####
   /// Initializes MNA specific variables
   void mnaCompInitialize(Real omega, Real timeStep,
-                         Attribute<Matrix>::Ptr leftVector) override;
-  void mnaCompInitializeHarm(
-      Real omega, Real timeStep,
-      std::vector<Attribute<Matrix>::Ptr> leftVectors) override;
+                         Attribute<Matrix>::Ptr leftVector) final;
+  void
+  mnaCompInitializeHarm(Real omega, Real timeStep,
+                        std::vector<Attribute<Matrix>::Ptr> leftVectors) final;
   /// Stamps system matrix
-  void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
+  void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) final;
   void mnaCompApplySystemMatrixStampHarm(SparseMatrixRow &systemMatrix,
-                                         Int freqIdx) override;
+                                         Int freqIdx) final;
   /// Stamps right side (source) vector
-  void mnaCompApplyRightSideVectorStamp(Matrix &rightVector) override;
-  void mnaCompApplyRightSideVectorStampHarm(Matrix &rightVector) override;
+  void mnaCompApplyRightSideVectorStamp(Matrix &rightVector) final;
+  void mnaCompApplyRightSideVectorStampHarm(Matrix &rightVector) final;
   /// Update interface voltage from MNA system results
-  void mnaCompUpdateVoltage(const Matrix &leftVector) override;
+  void mnaCompUpdateVoltage(const Matrix &leftVector) final;
   void mnaCompUpdateVoltageHarm(const Matrix &leftVector, Int freqIdx);
   void mnaCompApplyRightSideVectorStampHarm(Matrix &sourceVector,
-                                            Int freqIdx) override;
+                                            Int freqIdx) final;
   /// Update interface current from MNA system results
-  void mnaCompUpdateCurrent(const Matrix &leftVector) override;
+  void mnaCompUpdateCurrent(const Matrix &leftVector) final;
   void mnaCompUpdateCurrentHarm();
   /// Add MNA pre step dependencies
-  void mnaCompPreStep(Real time, Int timeStepCount) override;
+  void mnaCompPreStep(Real time, Int timeStepCount) final;
   /// Add MNA post step dependencies
   void mnaCompPostStep(Real time, Int timeStepCount,
-                       Attribute<Matrix>::Ptr &leftVector) override;
+                       Attribute<Matrix>::Ptr &leftVector) final;
   /// Add MNA pre step dependencies
-  void mnaCompAddPreStepDependencies(
-      AttributeBase::List &prevStepDependencies,
-      AttributeBase::List &attributeDependencies,
-      AttributeBase::List &modifiedAttributes) override;
+  void
+  mnaCompAddPreStepDependencies(AttributeBase::List &prevStepDependencies,
+                                AttributeBase::List &attributeDependencies,
+                                AttributeBase::List &modifiedAttributes) final;
   /// Add MNA post step dependencies
   void
   mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
                                  AttributeBase::List &attributeDependencies,
                                  AttributeBase::List &modifiedAttributes,
-                                 Attribute<Matrix>::Ptr &leftVector) override;
+                                 Attribute<Matrix>::Ptr &leftVector) final;
 
   class MnaPreStepHarm : public CPS::Task {
   public:

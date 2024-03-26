@@ -49,7 +49,7 @@ public:
   /// Initializes component from power flow data
   void initializeFromNodesAndTerminals(Real frequency) override;
   /// Initializes state variables considering the number of frequencies
-  void initialize(Matrix frequencies);
+  void initialize(Matrix frequencies) override;
   ///
   void initVars(Real timeStep);
 

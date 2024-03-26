@@ -30,37 +30,38 @@ public:
   Resistor(String name, Logger::Level logLevel = Logger::Level::off)
       : Resistor(name, name, logLevel) {}
 
-  SimPowerComp<Complex>::Ptr clone(String name);
+  SimPowerComp<Complex>::Ptr clone(String name) final;
 
   // #### General ####
   /// Initializes component from power flow data
-  void initializeFromNodesAndTerminals(Real frequency);
+  void initializeFromNodesAndTerminals(Real frequency) final;
 
   // #### MNA section ####
   void mnaCompInitialize(Real omega, Real timeStep,
-                         Attribute<Matrix>::Ptr leftVector);
-  void mnaCompInitializeHarm(Real omega, Real timeStep,
-                             std::vector<Attribute<Matrix>::Ptr> leftVector);
+                         Attribute<Matrix>::Ptr leftVector) final;
+  void
+  mnaCompInitializeHarm(Real omega, Real timeStep,
+                        std::vector<Attribute<Matrix>::Ptr> leftVector) final;
   /// Stamps system matrix
-  void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix);
+  void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) final;
   /// Stamps system matrix considering the frequency index
   void mnaCompApplySystemMatrixStampHarm(SparseMatrixRow &systemMatrix,
-                                         Int freqIdx);
+                                         Int freqIdx) final;
   /// Update interface voltage from MNA system result
-  void mnaCompUpdateVoltage(const Matrix &leftVector);
+  void mnaCompUpdateVoltage(const Matrix &leftVector) final;
   void mnaCompUpdateVoltageHarm(const Matrix &leftVector, Int freqIdx);
   /// Update interface current from MNA system result
-  void mnaCompUpdateCurrent(const Matrix &leftVector);
+  void mnaCompUpdateCurrent(const Matrix &leftVector) final;
   void mnaCompUpdateCurrentHarm();
   /// MNA pre and post step operations
   void mnaCompPostStep(Real time, Int timeStepCount,
-                       Attribute<Matrix>::Ptr &leftVector);
+                       Attribute<Matrix>::Ptr &leftVector) final;
   /// add MNA pre and post step dependencies
   void
   mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
                                  AttributeBase::List &attributeDependencies,
                                  AttributeBase::List &modifiedAttributes,
-                                 Attribute<Matrix>::Ptr &leftVector);
+                                 Attribute<Matrix>::Ptr &leftVector) final;
 
   class MnaPostStepHarm : public Task {
   public:
@@ -81,14 +82,14 @@ public:
   };
 
   // #### MNA Tear Section ####
-  void mnaTearApplyMatrixStamp(SparseMatrixRow &tearMatrix) override;
+  void mnaTearApplyMatrixStamp(SparseMatrixRow &tearMatrix) final;
 
   // #### DAE Section ####
   ///Residual Function for DAE Solver
   void daeResidual(double ttime, const double state[], const double dstate_dt[],
-                   double resid[], std::vector<int> &off);
+                   double resid[], std::vector<int> &off) final;
   ///Voltage Getter
-  Complex daeInitialize();
+  Complex daeInitialize() final;
 };
 } // namespace Ph1
 } // namespace DP

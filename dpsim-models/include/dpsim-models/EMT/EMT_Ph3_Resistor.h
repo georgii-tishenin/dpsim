@@ -29,9 +29,9 @@ public:
 
   // #### General ####
   ///
-  SimPowerComp<Real>::Ptr clone(String name);
+  SimPowerComp<Real>::Ptr clone(String name) override;
   /// Initializes component from power flow data
-  void initializeFromNodesAndTerminals(Real frequency);
+  void initializeFromNodesAndTerminals(Real frequency) override;
   /// enable DP to EMT bach transformation
   void enableBackShift();
 

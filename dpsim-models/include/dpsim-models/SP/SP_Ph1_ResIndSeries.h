@@ -34,36 +34,36 @@ public:
   ResIndSeries(String name, Logger::Level logLevel = Logger::Level::off)
       : ResIndSeries(name, name, logLevel) {}
 
-  SimPowerComp<Complex>::Ptr clone(String name);
+  SimPowerComp<Complex>::Ptr clone(String name) final;
 
   // #### General ####
   /// Sets model specific parameters
   void setParameters(Real resistance, Real inductance);
   /// Initializes component from power flow data
-  void initializeFromNodesAndTerminals(Real frequency) override;
+  void initializeFromNodesAndTerminals(Real frequency) final;
 
   // #### MNA section ####
   /// Initializes MNA specific variables
   void mnaCompInitialize(Real omega, Real timeStep,
-                         Attribute<Matrix>::Ptr leftVector) override;
+                         Attribute<Matrix>::Ptr leftVector) final;
   /// Stamps system matrix
-  void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
+  void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) final;
   /// Update interface voltage from MNA system result
-  void mnaCompUpdateVoltage(const Matrix &leftVector) override;
+  void mnaCompUpdateVoltage(const Matrix &leftVector) final;
   /// Update interface current from MNA system result
-  void mnaCompUpdateCurrent(const Matrix &leftVector) override;
+  void mnaCompUpdateCurrent(const Matrix &leftVector) final;
   /// MNA pre and post step operations
   void mnaCompPostStep(Real time, Int timeStepCount,
-                       Attribute<Matrix>::Ptr &leftVector) override;
+                       Attribute<Matrix>::Ptr &leftVector) final;
   /// add MNA pre and post step dependencies
   void
   mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
                                  AttributeBase::List &attributeDependencies,
                                  AttributeBase::List &modifiedAttributes,
-                                 Attribute<Matrix>::Ptr &leftVector) override;
+                                 Attribute<Matrix>::Ptr &leftVector) final;
 
   // #### MNA Tear Section ####
-  void mnaTearApplyMatrixStamp(SparseMatrixRow &tearMatrix) override;
+  void mnaTearApplyMatrixStamp(SparseMatrixRow &tearMatrix) final;
 };
 } // namespace Ph1
 } // namespace SP

@@ -38,7 +38,7 @@ public:
   ResIndSeries(String name, Logger::Level logLevel = Logger::Level::off)
       : ResIndSeries(name, name, logLevel) {}
   ///
-  SimPowerComp<Real>::Ptr clone(String name);
+  SimPowerComp<Real>::Ptr clone(String name) final;
 
   // #### General ####
   /// Sets model specific parameters
@@ -47,30 +47,30 @@ public:
   /// Initializes auxiliar variables
   void initVars(Real timeStep);
   /// Initializes component from power flow data
-  void initializeFromNodesAndTerminals(Real frequency) override;
+  void initializeFromNodesAndTerminals(Real frequency) final;
 
   // #### MNA section ####
   /// Initializes internal variables of the component
   void mnaCompInitialize(Real omega, Real timeStep,
-                         Attribute<Matrix>::Ptr leftSideVector) override;
+                         Attribute<Matrix>::Ptr leftSideVector) final;
   /// Stamps system matrix
-  void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
+  void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) final;
   /// Stamps right side (source) vector
-  void mnaCompApplyRightSideVectorStamp(Matrix &rightVector) override;
+  void mnaCompApplyRightSideVectorStamp(Matrix &rightVector) final;
   /// Update interface voltage from MNA system result
-  void mnaCompUpdateVoltage(const Matrix &leftVector) override;
+  void mnaCompUpdateVoltage(const Matrix &leftVector) final;
   /// Update interface current from MNA system result
-  void mnaCompUpdateCurrent(const Matrix &leftVector) override;
+  void mnaCompUpdateCurrent(const Matrix &leftVector) final;
   /// MNA pre step operations
-  void mnaCompPreStep(Real time, Int timeStepCount) override;
+  void mnaCompPreStep(Real time, Int timeStepCount) final;
   /// MNA pre and post step operations
   void mnaCompPostStep(Real time, Int timeStepCount,
-                       Attribute<Matrix>::Ptr &leftVector) override;
+                       Attribute<Matrix>::Ptr &leftVector) final;
   /// Add MNA pre step dependencies
-  void mnaCompAddPreStepDependencies(
-      AttributeBase::List &prevStepDependencies,
-      AttributeBase::List &attributeDependencies,
-      AttributeBase::List &modifiedAttributes) override;
+  void
+  mnaCompAddPreStepDependencies(AttributeBase::List &prevStepDependencies,
+                                AttributeBase::List &attributeDependencies,
+                                AttributeBase::List &modifiedAttributes) final;
   /// add MNA pre and post step dependencies
   void
   mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
