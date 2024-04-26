@@ -15,15 +15,15 @@ CPS::EMT::Ph3::SynchronGenerator4OrderSSN::SynchronGenerator4OrderSSN(String nam
 {
 }
 
-CPS::EMT::Ph3::SynchronGenerator4OrderSSN::specificInitialization()
+void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::specificInitialization()
 {
-	(**mIntfCurrent)(0,0) = mInitCurrent.real;
-	(**mIntfCurrent)(0,1) = (mInitCurrent * SHIFT_TO_PHASE_B).real;
-	(**mIntfCurrent)(0,2) = (mInitCurrent * SHIFT_TO_PHASE_C).real;
+	(**mIntfCurrent)(0,0) = mInitCurrent.real();
+	(**mIntfCurrent)(1,0) = (mInitCurrent * SHIFT_TO_PHASE_B).real();
+	(**mIntfCurrent)(2,0) = (mInitCurrent * SHIFT_TO_PHASE_C).real();
 
-	(**mIntfVoltage)(0,0) = mInitVoltage.real;
-	(**mIntfVoltage)(0,1) = (mInitVoltage * SHIFT_TO_PHASE_B).real;
-	(**mIntfVoltage)(0,2) = (mInitVoltage * SHIFT_TO_PHASE_C).real;
+	(**mIntfVoltage)(0,0) = mInitVoltage.real();
+	(**mIntfVoltage)(1,0) = (mInitVoltage * SHIFT_TO_PHASE_B).real();
+	(**mIntfVoltage)(2,0) = (mInitVoltage * SHIFT_TO_PHASE_C).real();
 
 	P_mech = mInitMechPower;
 
@@ -32,15 +32,17 @@ CPS::EMT::Ph3::SynchronGenerator4OrderSSN::specificInitialization()
 
 	updateCurrentStates();
 
-	double C_d = (mTimeStep*mLd_t)/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
-    double C_dd = (mTimeStep*(mLd-mLd_t))/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
-    double C_0dd = (2.*mTd0_t*mLd_t-mTimeStep*mLd)/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
-    double C_qq = (mTimeStep*(mLq-mLq_t))/(2.*mTq0_t*mLq_t+mTimeStep*mLq);
-    double C_0qq = (2.*mTq0_t*mLq_t-mTimeStep*mLq)/(2.*mTq0_t*mLq_t+mTimeStep*mLq);
-    double C_wbq = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLq_t);
-    double C_wbd = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLd_t);
-    double C_wb = (mTimeStep*mTimeStep*mBase_OmElec)/(8.*mH);
-    double C_h = (mTimeStep)/(4.*mH);
+	C_d = (mTimeStep*mLd_t)/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
+    C_dd = (mTimeStep*(mLd-mLd_t))/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
+    C_0dd = (2.*mTd0_t*mLd_t-mTimeStep*mLd)/(2.*mTd0_t*mLd_t+mTimeStep*mLd);
+    C_qq = (mTimeStep*(mLq-mLq_t))/(2.*mTq0_t*mLq_t+mTimeStep*mLq);
+    C_0qq = (2.*mTq0_t*mLq_t-mTimeStep*mLq)/(2.*mTq0_t*mLq_t+mTimeStep*mLq);
+    C_wbq = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLq_t);
+    C_wbd = (mTimeStep*mTimeStep*mBase_OmElec)/(4.*mH*mLd_t);
+    C_wb = (mTimeStep*mTimeStep*mBase_OmElec)/(8.*mH);
+    C_h = (mTimeStep)/(4.*mH);
+
+	updateJacobian();
 }
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::calculateNonlinearFunctionResult()
@@ -70,6 +72,7 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::calculateNonlinearFunctionResult
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompApplySystemMatrixStamp(SparseMatrixRow& systemMatrix) {
 	if (terminalNotGrounded(0)) {
+		std::cout << Jacobian << std::endl << std::endl;
 		// set upper left block, 3x3 entries
 		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 0), Jacobian(0, 0));
 		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 1), Jacobian(0, 1));
@@ -134,13 +137,16 @@ void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompApplySystemMatrixStamp(Sp
 		Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::Single), matrixNodeIndex(1, 2) ,Jacobian(3, 2));
 
 		Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::Single), mVirtualNodes[0]->matrixNodeIndex(PhaseType::Single), Jacobian(3, 3));
-
-		//Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), 1.);
-		//Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), 1.);
+		//Only need one equation; Set B- and C- phase equation variables equal to a constant, e.g. 1.
+		Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), 1.);
+		Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), 1.);
 }
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompInitialize(Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
-		updateMatrixNodeIndices();
+		this->updateMatrixNodeIndices();
+		mTimeStep = timeStep;
+		**mNonlinearFunctionStamp = Matrix::Zero(leftVector->get().rows(), 1);
+		specificInitialization();
 }
 
 void CPS::EMT::Ph3::SynchronGenerator4OrderSSN::mnaCompApplyRightSideVectorStamp(Matrix& rightVector) {
