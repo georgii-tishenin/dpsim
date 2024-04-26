@@ -54,7 +54,8 @@ namespace DPsim{
         String name, 
         CPS::Domain domain = CPS::Domain::EMT, 
         CPS::Logger::Level logLevel = CPS::Logger::Level::info):
-            MnaSolverDirect<VarType>(name, domain, logLevel) { }
+            MnaSolverDirect<VarType>(name, domain, logLevel)
+			{ MnaSolverDirect<VarType>::mImplementationInUse = DirectLinearSolverImpl::KLU;}
 
 	    virtual ~IterativeMnaSolverDirect() = default;
 
@@ -69,7 +70,7 @@ namespace DPsim{
 		// If mRightSideVector deviates less than Epsilon per element from the result of the system defining node equations, mesh equations
 		// and auxhiliary equations (calculationError), the solution is good enough 
 		bool isConverged = true;
-		Real Epsilon = 0.00001;
+		Real Epsilon = 0.0001;
 		Matrix calculationError;
 		Real calculationErrorElement;
 
@@ -80,7 +81,19 @@ namespace DPsim{
 
         CPS::MNANonlinearVariableCompInterface::NonlinearList mMNANonlinearVariableComponents;
 
+		using MnaSolverDirect<VarType>::mVariableSystemMatrix;
+		using MnaSolverDirect<VarType>::mBaseSystemMatrix;
+		using MnaSolverDirect<VarType>::mMNAIntfSwitches;
+		using MnaSolverDirect<VarType>::mDirectLinearSolverVariableSystemMatrix;
+		using MnaSolverDirect<VarType>::mRecomputationTimes;
+		using MnaSolverDirect<VarType>::mNumRecomputations;
+		using MnaSolverDirect<VarType>::mMNAIntfVariableComps;
+		using MnaSolverDirect<VarType>::mRightSideVector;
+
+		using MnaSolver<VarType>::mNumMatrixNodeIndices;
+
 	    void solveWithSystemMatrixRecomputation(Real time, Int timeStepCount) override;
+		virtual void recomputeSystemMatrix(Real time) override;
         std::shared_ptr<CPS::Task> createSolveTaskRecomp() override;
     };
 }

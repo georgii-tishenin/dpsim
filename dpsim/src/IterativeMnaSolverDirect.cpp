@@ -20,6 +20,29 @@ std::shared_ptr<CPS::Task> IterativeMnaSolverDirect<VarType>::createSolveTaskRec
 }
 
 template <typename VarType>
+void IterativeMnaSolverDirect<VarType>::recomputeSystemMatrix(Real time)
+{
+	  // Start from base matrix
+  mVariableSystemMatrix = mBaseSystemMatrix;
+
+  // Now stamp switches into matrix
+  for (auto sw : mMNAIntfSwitches)
+    sw->mnaApplySystemMatrixStamp(mVariableSystemMatrix);
+
+  // Now stamp variable elements into matrix
+  for (auto comp : mMNAIntfVariableComps)
+    comp->mnaApplySystemMatrixStamp(mVariableSystemMatrix);
+
+  auto start = std::chrono::steady_clock::now();
+  mDirectLinearSolverVariableSystemMatrix->factorize(mVariableSystemMatrix);
+  auto end = std::chrono::steady_clock::now();
+  std::chrono::duration<Real> diff = end - start;
+  mRecomputationTimes.push_back(diff.count());
+
+  ++mNumRecomputations;
+}
+
+template <typename VarType>
 void IterativeMnaSolverDirect<VarType>::solveWithSystemMatrixRecomputation(Real time, Int timeStepCount)
 {
 		// Reset source vector
@@ -36,7 +59,7 @@ void IterativeMnaSolverDirect<VarType>::solveWithSystemMatrixRecomputation(Real 
 		// Get switch and variable comp status and update system matrix and lu factorization accordingly
 		if (this->hasVariableComponentChanged())
 		{
-			MnaSolverDirect<VarType>::recomputeSystemMatrix(time);
+			this->recomputeSystemMatrix(time);
 		}
 
 		// 	Calculate new delta solution vector: systemMatrix*leftStep = mRightSideVector-mNonlinearSSNfunctionResult
@@ -50,15 +73,15 @@ void IterativeMnaSolverDirect<VarType>::solveWithSystemMatrixRecomputation(Real 
 		// 	Subtracting the past function value leaves: systemMatrix*leftStep = mRightSideVector-(mBaseSystemMatrix*(**mLeftSideVector)+ mNonlinearSSNfunctionResult)
         // (mBaseSystemMatrix*(**mLeftSideVector)+ mNonlinearSSNfunctionResult) = f(x1), that is the old mRightSideVector of the previous step
 		//	mRightSideVector is stamped by mna-prestep tasks and only updated each step, not iteration.
-
+		std::cout << mVariableSystemMatrix << std::endl << std::endl;
+		std::cout << **(this->mLeftSideVector) << std::endl << std::endl;
 		//mDirectLinearSolvers.solve takes a Matrix reference, thus we need a temporary variable as an argument
 		Matrix temp = (this->mRightSideVector)-((this->mBaseSystemMatrix)*(**(this->mLeftSideVector)) + mNonlinearFunctionResult);
-		mLeftStep = MnaSolverDirect<VarType>::mDirectLinearSolverVariableSystemMatrix->solve(temp); 
+		mLeftStep = mDirectLinearSolverVariableSystemMatrix->solve(temp); 
 
 		//	x2 = x1 + (x2-x1)
 		**(this->mLeftSideVector) += mLeftStep;
 
-		//	*Update all CURRENT dq-voltages
 		// 	*Update all CURRENT nonexplicit states that have a defining equation in the system matrix since they could not be expressed as a function of system inputs due to nonlinearity
 		//	*Update all CURRENT states
 		//	*Update system Jacobian with new system solution (including new nonexplicit states)
@@ -100,6 +123,7 @@ void IterativeMnaSolverDirect<VarType>::solveWithSystemMatrixRecomputation(Real 
 		iterations++;
 	} 	while (!isConverged && iterations < 100);
 	//if(iterations > 1) std::cout << iterations << std::endl;
+	//std::cout << mVariableSystemMatrix << std::endl;
 	/// TODO: split into separate task? (dependent on x, updating all v attributes)
 	for (UInt nodeIdx = 0; nodeIdx < this->mNumNetNodes; ++nodeIdx)
 			this->mNodes[nodeIdx]->mnaUpdateVoltage(**(this->mLeftSideVector));
