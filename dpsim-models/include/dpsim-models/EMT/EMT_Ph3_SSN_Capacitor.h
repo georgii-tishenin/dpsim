@@ -28,16 +28,10 @@ namespace CPS {
 			/// over this if focussing on SSN model implementation is not the circuit's goal since
 			/// this model increases the system matrix dimensions by 1x1 (added virtual node, 
 			/// real voltage source MNA scheme).			
-			    class Capacitor :
+			    class Capacitor final:
 				    public MNASimPowerComp<Real>,
 					public Base::Ph3::Capacitor,
-				    public SharedFactory<Capacitor> {
-			    protected:
-					Matrix Dufour_B_k_hat = Matrix::Zero(3, 3);
-					Matrix Dufour_W_k_n = Matrix::Zero(3, 3);
-                    //rightsideVector history term
-                    Matrix mHistoricVoltage = Matrix::Zero(3, 1);
-					
+				    public SharedFactory<Capacitor> {					
 		        public:
 				    /// Defines UID, name and logging level
 				    Capacitor(String uid, String name, Logger::Level logLevel = Logger::Level::off);
@@ -71,10 +65,11 @@ namespace CPS {
 				    /// Add MNA post step dependencies
 				    void mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes, Attribute<Matrix>::Ptr &leftVector) override;
 
-					bool isLinear() const
-					{
-						return true;
-					}
+				private:
+					Matrix mDufourBKHat = Matrix::Zero(3, 3);
+					Matrix mDufourWKN = Matrix::Zero(3, 3);
+                    //rightsideVector history term
+                    Matrix mHistoricVoltage = Matrix::Zero(3, 1);
 			    };
             }
 		}

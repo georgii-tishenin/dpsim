@@ -35,17 +35,6 @@ namespace SSN {
         public Base::Ph1::Capacitor,
         public Base::Ph1::Resistor
 		{
-	protected:
-        Matrix State = Matrix::Zero(2, 1);
-        Matrix yHistory =  Matrix::Zero(1, 1);
-
-		Matrix Dufour_u_n_t = Matrix::Zero(1, 1);
-
-        Matrix Dufour_A_k_hat = Matrix::Zero(2, 2);
-		Matrix Dufour_B_k_hat = Matrix::Zero(2, 1);
-        Matrix Dufour_B_k_n_hat = Matrix::Zero(2, 1);
-		Matrix Dufour_W_k_n = Matrix::Zero(1, 1);
-        Matrix Dufour_C_k_n = Matrix(1, 2);
 	public:
 		/// Defines UID, name, component parameters and logging level
 		Full_Serial_RLC(String uid, String name, Logger::Level logLevel = Logger::Level::off);
@@ -79,12 +68,20 @@ namespace SSN {
 		void mnaCompAddPreStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes) override;
 		/// Add MNA post step dependencies
 		void mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes, Attribute<Matrix>::Ptr &leftVector) override;		
+		
+	private:
+		Matrix mState = Matrix::Zero(2, 1);
+        Matrix mYHistory =  Matrix::Zero(1, 1);
+
+		Matrix mDufourUNT = Matrix::Zero(1, 1);
+
+        Matrix mDufourAKHat = Matrix::Zero(2, 2);
+		Matrix mDufourBKHat = Matrix::Zero(2, 1);
+        Matrix mDufourBKNHat = Matrix::Zero(2, 1);
+		Matrix mDufourWKN = Matrix::Zero(1, 1);
+        Matrix mDufourCKN = Matrix(1, 2);
 
 		void ssnUpdateState();
-		bool isLinear() const
-		{
-			return true;
-		}		
 	};
 }
 }

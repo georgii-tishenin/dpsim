@@ -28,24 +28,13 @@ namespace CPS{
 				/// across the whole circuit. States and past inputs are updated after each
 				/// time step and are used to calculate the current (input) voltage, 
 				/// represented as MNA node voltages.
-                class Full_Serial_RLC:
+                class Full_Serial_RLC final:
 				    public MNASimPowerComp<Real>,
 				    public SharedFactory<Full_Serial_RLC>,
 					public Base::Ph3::Resistor,
 					public Base::Ph3::Inductor,
 					public Base::Ph3::Capacitor
                     {
-                protected:
-                    Matrix State = Matrix::Zero(6, 1);
-                    Matrix yHistory =  Matrix::Zero(3, 1);
-
-					Matrix Dufour_u_n_t = Matrix::Zero(3, 1);
-
-                    Matrix Dufour_A_k_hat = Matrix::Zero(6, 6);
-					Matrix Dufour_B_k_hat = Matrix::Zero(6, 3);
-                    Matrix Dufour_B_k_n_hat = Matrix::Zero(6, 3);
-					Matrix Dufour_W_k_n = Matrix::Zero(3, 3);
-                    Matrix Dufour_C_k_n = Matrix(3, 6);
 				public:
                     /// Defines UID, name, component parameters and logging level
 				    Full_Serial_RLC(String uid, String name, Logger::Level logLevel = Logger::Level::off);
@@ -80,12 +69,19 @@ namespace CPS{
 				    /// Add MNA post step dependencies
 				    void mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes, Attribute<Matrix>::Ptr &leftVector) override;
 
-					void ssnUpdateState();
+				private:
+					Matrix mState = Matrix::Zero(6, 1);
+                    Matrix mYHistory =  Matrix::Zero(3, 1);
 
-					bool isLinear() const
-					{
-						return true;
-					}
+					Matrix mDufourUNT = Matrix::Zero(3, 1);
+
+                    Matrix mDufourAKHat = Matrix::Zero(6, 6);
+					Matrix mDufourBKHat = Matrix::Zero(6, 3);
+                    Matrix mDufourBKNHat = Matrix::Zero(6, 3);
+					Matrix mDufourWKN = Matrix::Zero(3, 3);
+                    Matrix mDufourCKN = Matrix(3, 6);
+
+					void ssnUpdateState();
                 };    
             }
         }

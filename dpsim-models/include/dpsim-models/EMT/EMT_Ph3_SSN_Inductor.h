@@ -27,17 +27,11 @@ namespace CPS{
 			/// state update timings differ. This component is meant to show a V-type SSN model
 			/// implementation based on a simple example element. The RC model should be used
 			/// over this otherwise.
-				class Inductor:
+				class Inductor final:
 				    public MNASimPowerComp<Real>,                    
 					public Base::Ph3::Inductor,
 				    public SharedFactory<Inductor>
                     {
-                protected:
-                    //rightsideVector history term
-                    Matrix historicCurrent =  Matrix::Zero(3, 1);
-                    //dependency on latest Voltage, represented by Conductance in system matrix
-					Matrix Dufour_B_k_hat = Matrix::Zero(3, 3);
-					Matrix Dufour_W_k_n = Matrix::Zero(3, 3);
                 public:
                     /// Defines UID, name, component parameters and logging level
 				    Inductor(String uid, String name, Logger::Level logLevel = Logger::Level::off);
@@ -71,10 +65,12 @@ namespace CPS{
 				    /// Add MNA post step dependencies
 				    void mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes, Attribute<Matrix>::Ptr &leftVector) override;
 
-					bool isLinear() const
-					{
-						return true;
-					}
+				private:
+					//rightsideVector history term
+                   	Matrix mHistoricCurrent =  Matrix::Zero(3, 1);
+                    //dependency on latest Voltage, represented by Conductance in system matrix
+					Matrix mDufourBKHat = Matrix::Zero(3, 3);
+					Matrix mDufourWKN = Matrix::Zero(3, 3);
                 };    
             }
         }

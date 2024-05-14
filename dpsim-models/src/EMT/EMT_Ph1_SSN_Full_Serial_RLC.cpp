@@ -51,20 +51,20 @@ void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
 
 	updateMatrixNodeIndices();
 
-	State = Matrix::Zero(2, 1);
-    yHistory =  Matrix::Zero(1, 1);
+	mState = Matrix::Zero(2, 1);
+    mYHistory =  Matrix::Zero(1, 1);
 
-    Dufour_A_k_hat = Matrix::Zero(2, 2);
-	Dufour_B_k_hat = Matrix::Zero(2, 1);
-    Dufour_B_k_n_hat = Matrix::Zero(2, 1);
-	Dufour_W_k_n = Matrix::Zero(1, 1);
-    Dufour_C_k_n = Matrix(1, 2);
+    mDufourAKHat = Matrix::Zero(2, 2);
+	mDufourBKHat = Matrix::Zero(2, 1);
+    mDufourBKNHat = Matrix::Zero(2, 1);
+	mDufourWKN = Matrix::Zero(1, 1);
+    mDufourCKN = Matrix(1, 2);
 
-    Dufour_A_k_hat(0, 0) = 1.-  ((  2.*(timeStep*timeStep))/(4.* (**mInductance)* (**mCapacitance) +
+    mDufourAKHat(0, 0) = 1.-  ((  2.*(timeStep*timeStep))/(4.* (**mInductance)* (**mCapacitance) +
                                     2. * timeStep * (**mCapacitance) * (**mResistance) +
                                     timeStep*timeStep)
                                 );
-    Dufour_A_k_hat(0, 1) = (timeStep/(2. * (**mCapacitance))) * (1. +     ((4. * (**mInductance) * (**mCapacitance) - 
+    mDufourAKHat(0, 1) = (timeStep/(2. * (**mCapacitance))) * (1. +     ((4. * (**mInductance) * (**mCapacitance) - 
                                     2. * timeStep * (**mResistance) * (**mCapacitance) -
                                     (timeStep*timeStep))/
                                     (
@@ -72,12 +72,12 @@ void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
                                     2. * timeStep * (**mResistance) * (**mCapacitance) +
                                     (timeStep*timeStep))
                                     ));
-    Dufour_A_k_hat(1, 0) = -1. *((4. * (**mCapacitance) * timeStep)/(
+    mDufourAKHat(1, 0) = -1. *((4. * (**mCapacitance) * timeStep)/(
                                 4. * (**mInductance) * (**mCapacitance) +
                                 2. * timeStep* (**mCapacitance)* (**mResistance) +
                                 (timeStep*timeStep)
                                 ));
-    Dufour_A_k_hat(1, 1) =    (4. * (**mInductance) * (**mCapacitance) - 
+    mDufourAKHat(1, 1) =    (4. * (**mInductance) * (**mCapacitance) - 
                                 2. * timeStep * (**mResistance) * (**mCapacitance) -                                 
                                 (timeStep*timeStep))/                                                                                                       
                                 (
@@ -86,21 +86,21 @@ void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
                                 (timeStep*timeStep)
                                 );
 
-    Dufour_B_k_hat(0, 0) =  (timeStep*timeStep)/   
+    mDufourBKHat(0, 0) =  (timeStep*timeStep)/   
                             (4. * (**mInductance) * (**mCapacitance) +
                             2. * timeStep * (**mCapacitance) * (**mResistance) +
                             (timeStep * timeStep));
 
-    Dufour_B_k_hat(1, 0) =  (timeStep * 2. * (**mCapacitance))/   
+    mDufourBKHat(1, 0) =  (timeStep * 2. * (**mCapacitance))/   
                             (4. * (**mInductance) * (**mCapacitance) +
                             2. * timeStep * (**mCapacitance) * (**mResistance) +
                             (timeStep * timeStep));
 
-    Dufour_B_k_n_hat = Dufour_B_k_hat;
+    mDufourBKNHat = mDufourBKHat;
 
-    Dufour_C_k_n(0, 1) = 1.;
+    mDufourCKN(0, 1) = 1.;
 
-    Dufour_W_k_n = Dufour_C_k_n * Dufour_B_k_n_hat;
+    mDufourWKN = mDufourCKN * mDufourBKNHat;
 
 	///FIXME:	mIntfCurrent is state 2 and is potentially directly initialized by other initialization methodes (e.g. FromNodesAndTerminals).
 	///			State 1, which is Voltage over the capacitor, is not directly initialized and has to be calculated from the states. This is why
@@ -108,9 +108,9 @@ void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
 	///			in this case, so calculation of state 1 would always assume zero as the past value of state 1 and also takes mIntfCurrent
 	///			for the calculation ->State 1 is ahead of state 2 by one step, but also always (wrongly?) assumes past state 1 to be zero.
 	///			How to handle properly?
-	State(1, 0) = (**mIntfCurrent)(0, 0);
+	mState(1, 0) = (**mIntfCurrent)(0, 0);
 	ssnUpdateState();
-	State(1, 0) = (**mIntfCurrent)(0, 0);
+	mState(1, 0) = (**mIntfCurrent)(0, 0);
 
 	**mRightVector = Matrix::Zero(leftVector->get().rows(), 1);
 
@@ -126,27 +126,27 @@ void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
 
 void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompApplySystemMatrixStamp(SparseMatrixRow& systemMatrix) {
 	if (terminalNotGrounded(0))
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0), matrixNodeIndex(0), Dufour_W_k_n(0,0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0), matrixNodeIndex(0), mDufourWKN(0,0));
 	if (terminalNotGrounded(1))
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1), matrixNodeIndex(1), Dufour_W_k_n(0,0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1), matrixNodeIndex(1), mDufourWKN(0,0));
 	if (terminalNotGrounded(0) && terminalNotGrounded(1)) {
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0), matrixNodeIndex(1), -Dufour_W_k_n(0,0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1), matrixNodeIndex(0), -Dufour_W_k_n(0,0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0), matrixNodeIndex(1), -mDufourWKN(0,0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1), matrixNodeIndex(0), -mDufourWKN(0,0));
 	}
 }
 
 void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompApplyRightSideVectorStamp(Matrix& rightVector) {
 	// Update internal state
-	yHistory = Dufour_C_k_n * (Dufour_A_k_hat * State +  Dufour_B_k_hat * **mIntfVoltage);
+	mYHistory = mDufourCKN * (mDufourAKHat * mState +  mDufourBKHat * **mIntfVoltage);
 
 	if (terminalNotGrounded(0))
-		Math::setVectorElement(rightVector, matrixNodeIndex(0), yHistory(0,0));
+		Math::setVectorElement(rightVector, matrixNodeIndex(0), mYHistory(0,0));
 	if (terminalNotGrounded(1))
-		Math::setVectorElement(rightVector, matrixNodeIndex(1), -yHistory(0,0));
+		Math::setVectorElement(rightVector, matrixNodeIndex(1), -mYHistory(0,0));
 
 	SPDLOG_LOGGER_DEBUG(mSLog,
 		"\nHistory current term (mnaCompApplyRightSideVectorStamp): {:s}",
-		Logger::matrixToString(yHistory));
+		Logger::matrixToString(mYHistory));
 	mSLog->flush();
 }
 
@@ -175,7 +175,7 @@ void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompPostStep(Real time, Int timeStepCoun
 
 void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompUpdateVoltage(const Matrix& leftVector) {
 	// v1 - v0
-	Dufour_u_n_t = **mIntfVoltage;
+	mDufourUNT = **mIntfVoltage;
 	(**mIntfVoltage)(0,0) = 0.;
 	if (terminalNotGrounded(1))
 		(**mIntfVoltage)(0,0) = Math::realFromVectorElement(leftVector, matrixNodeIndex(1));
@@ -190,7 +190,7 @@ void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompUpdateVoltage(const Matrix& leftVect
 
 void EMT::Ph1::SSN::Full_Serial_RLC::mnaCompUpdateCurrent(const Matrix& leftVector) {
 
-    **mIntfCurrent = yHistory + Dufour_W_k_n * **mIntfVoltage;
+    **mIntfCurrent = mYHistory + mDufourWKN * **mIntfVoltage;
 
 		SPDLOG_LOGGER_DEBUG(mSLog,
 		"\nUpdate Current: {:s}",
@@ -209,5 +209,5 @@ void EMT::Ph1::SSN::Full_Serial_RLC::setParameters(Real resistance, Real inducta
 
 void EMT::Ph1::SSN::Full_Serial_RLC::ssnUpdateState()
 {
-	State = Dufour_A_k_hat * State + Dufour_B_k_hat * Dufour_u_n_t + Dufour_B_k_n_hat * **mIntfVoltage;
+	mState = mDufourAKHat * mState + mDufourBKHat * mDufourUNT + mDufourBKNHat * **mIntfVoltage;
 }

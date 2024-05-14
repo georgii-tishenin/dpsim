@@ -62,9 +62,9 @@ void EMT::Ph3::SSN::Capacitor::initializeFromNodesAndTerminals(Real frequency) {
 void EMT::Ph3::SSN::Capacitor::mnaCompInitialize(Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
 	updateMatrixNodeIndices();
 
-	mHistoricVoltage = Dufour_B_k_hat * **mIntfCurrent  + **mIntfVoltage;
-	Dufour_B_k_hat = timeStep * (2.0 * **mCapacitance).inverse();
-	Dufour_W_k_n = Dufour_B_k_hat;
+	mHistoricVoltage = mDufourBKHat * **mIntfCurrent  + **mIntfVoltage;
+	mDufourBKHat = timeStep * (2.0 * **mCapacitance).inverse();
+	mDufourWKN = mDufourBKHat;
 
 	**mRightVector = Matrix::Zero(leftVector->get().rows(), 1);
 }
@@ -91,22 +91,22 @@ void EMT::Ph3::SSN::Capacitor::mnaCompApplySystemMatrixStamp(SparseMatrixRow& sy
 		Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), matrixNodeIndex(1, 2), 1);
 	}
 	//mesh equations are independent from grounded terminals
-    Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), -Dufour_W_k_n(0, 0));
-	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), -Dufour_W_k_n(0, 1));
-	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), -Dufour_W_k_n(0, 2));
+    Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), -mDufourWKN(0, 0));
+	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), -mDufourWKN(0, 1));
+	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), -mDufourWKN(0, 2));
 
-	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), -Dufour_W_k_n(1, 0));
-	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), -Dufour_W_k_n(1, 1));
-	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), -Dufour_W_k_n(1, 2));
+	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), -mDufourWKN(1, 0));
+	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), -mDufourWKN(1, 1));
+	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), -mDufourWKN(1, 2));
 
-	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), -Dufour_W_k_n(2, 0));
-	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), -Dufour_W_k_n(2, 1));
-	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), -Dufour_W_k_n(2, 2));
+	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), -mDufourWKN(2, 0));
+	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), -mDufourWKN(2, 1));
+	Math::addToMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), -mDufourWKN(2, 2));
 }
 
 
 void EMT::Ph3::SSN::Capacitor::mnaCompApplyRightSideVectorStamp(Matrix& rightVector) {
-	mHistoricVoltage = Dufour_B_k_hat * **mIntfCurrent  + **mIntfVoltage;
+	mHistoricVoltage = mDufourBKHat * **mIntfCurrent  + **mIntfVoltage;
 	Math::setVectorElement(rightVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::A), mHistoricVoltage(0, 0));
 	Math::setVectorElement(rightVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B), mHistoricVoltage(1, 0));
 	Math::setVectorElement(rightVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C), mHistoricVoltage(2, 0));

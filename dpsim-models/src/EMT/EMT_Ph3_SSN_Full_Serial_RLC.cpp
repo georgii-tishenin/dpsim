@@ -78,25 +78,25 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
 
 	updateMatrixNodeIndices();
 
-	State = Matrix::Zero(6, 1);
-    yHistory =  Matrix::Zero(3, 1);
+	mState = Matrix::Zero(6, 1);
+    mYHistory =  Matrix::Zero(3, 1);
 
-    //Fill Dufour_A_k_hat
+    //Fill mDufourAKHat
     //State Equation one, phases A,B,C: top left submatrix
-    Dufour_A_k_hat(0, 0) = 1.-   ((2.*(timeStep*timeStep))/(4.* (**mInductance)(0, 0)* (**mCapacitance)(0, 0) +
+    mDufourAKHat(0, 0) = 1.-   ((2.*(timeStep*timeStep))/(4.* (**mInductance)(0, 0)* (**mCapacitance)(0, 0) +
                                                             2. * timeStep * (**mCapacitance)(0, 0) * (**mResistance)(0, 0) +
                                                             timeStep*timeStep)
                                     );
-    Dufour_A_k_hat(1, 1) = 1.-   ((2.*(timeStep*timeStep))/(4.* (**mInductance)(1, 1)* (**mCapacitance)(1, 1) +
+    mDufourAKHat(1, 1) = 1.-   ((2.*(timeStep*timeStep))/(4.* (**mInductance)(1, 1)* (**mCapacitance)(1, 1) +
                                                             2. * timeStep * (**mCapacitance)(1, 1) * (**mResistance)(1, 1) +
                                                             timeStep*timeStep)
                                     );
-    Dufour_A_k_hat(2, 2) = 1.-   ((2.*(timeStep*timeStep))/(4.* (**mInductance)(2, 2)*(**mCapacitance)(2, 2) +
+    mDufourAKHat(2, 2) = 1.-   ((2.*(timeStep*timeStep))/(4.* (**mInductance)(2, 2)*(**mCapacitance)(2, 2) +
                                                             2. * timeStep * (**mCapacitance)(2, 2) * (**mResistance)(2, 2) +
                                                             timeStep*timeStep)
                                     );
     //State Equation one, phases A,B,C: top right submatrix
-    Dufour_A_k_hat(0, 3) = (timeStep/(2. * (**mCapacitance)(0, 0))) * (1. +     ((4. * (**mInductance)(0, 0) * (**mCapacitance)(0, 0) - 
+    mDufourAKHat(0, 3) = (timeStep/(2. * (**mCapacitance)(0, 0))) * (1. +     ((4. * (**mInductance)(0, 0) * (**mCapacitance)(0, 0) - 
                                                                                 2. * timeStep * (**mResistance)(0, 0) * (**mCapacitance)(0, 0) -
                                                                                 (timeStep*timeStep))/
                                                                             (
@@ -105,7 +105,7 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
                                                                                 (timeStep*timeStep))
                                                                                 )
                                                                         );
-    Dufour_A_k_hat(1, 4) = (timeStep/(2. * (**mCapacitance)(1, 1))) * (1. +     ((4. * (**mInductance)(1, 1) * (**mCapacitance)(1, 1) - 
+    mDufourAKHat(1, 4) = (timeStep/(2. * (**mCapacitance)(1, 1))) * (1. +     ((4. * (**mInductance)(1, 1) * (**mCapacitance)(1, 1) - 
                                                                                 2. * timeStep * (**mResistance)(1, 1) * (**mCapacitance)(1, 1) -
                                                                                 (timeStep*timeStep))/
                                                                             (
@@ -114,7 +114,7 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
                                                                                 (timeStep*timeStep))
                                                                                 )
                                                                         );
-    Dufour_A_k_hat(2, 5) = (timeStep/(2. * (**mCapacitance)(2, 2))) * (1. +     ((4. * (**mInductance)(2, 2) * (**mCapacitance)(2, 2) - 
+    mDufourAKHat(2, 5) = (timeStep/(2. * (**mCapacitance)(2, 2))) * (1. +     ((4. * (**mInductance)(2, 2) * (**mCapacitance)(2, 2) - 
                                                                                 2. * timeStep * (**mResistance)(2, 2) * (**mCapacitance)(2, 2) -
                                                                                 (timeStep*timeStep))/
                                                                             (
@@ -124,23 +124,23 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
                                                                                 )
                                                                         );
     //State Equation two, phases A,B,C: bottom left submatrix
-    Dufour_A_k_hat(3, 0) = -  ((4. * (**mCapacitance)(0, 0) * timeStep)/(
+    mDufourAKHat(3, 0) = -  ((4. * (**mCapacitance)(0, 0) * timeStep)/(
                                 4. * (**mInductance)(0, 0) * (**mCapacitance)(0, 0) +
                                 2. * timeStep* (**mCapacitance)(0, 0)* (**mResistance)(0, 0) +
                                 (timeStep*timeStep)
                                 ));
-    Dufour_A_k_hat(4, 1) = -  ((4. * (**mCapacitance)(1, 1) * timeStep)/(
+    mDufourAKHat(4, 1) = -  ((4. * (**mCapacitance)(1, 1) * timeStep)/(
                                 4. * (**mInductance)(1, 1) * (**mCapacitance)(1, 1) +
                                 2. * timeStep* (**mCapacitance)(1, 1)* (**mResistance)(1, 1) +
                                 (timeStep*timeStep)
                                 ));
-    Dufour_A_k_hat(5, 2) = -  ((4. * (**mCapacitance)(2, 2) * timeStep)/(
+    mDufourAKHat(5, 2) = -  ((4. * (**mCapacitance)(2, 2) * timeStep)/(
                                 4. * (**mInductance)(2, 2) * (**mCapacitance)(2, 2) +
                                 2. * timeStep* (**mCapacitance)(2, 2)* (**mResistance)(2, 2) +
                                 (timeStep*timeStep)
                                 ));
     //State Equation two, phases A,B,C: bottom right submatrix
-    Dufour_A_k_hat(3, 3) =    (4. * (**mInductance)(0, 0) * (**mCapacitance)(0, 0) - 
+    mDufourAKHat(3, 3) =    (4. * (**mInductance)(0, 0) * (**mCapacitance)(0, 0) - 
                                 2. * timeStep * (**mResistance)(0, 0) * (**mCapacitance)(0, 0) -                                 
                                 (timeStep*timeStep))/                                                                                                       
                                 (
@@ -148,7 +148,7 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
                                 2. * timeStep * (**mResistance)(0, 0) * (**mCapacitance)(0, 0) +
                                 (timeStep*timeStep)
                                 );
-    Dufour_A_k_hat(4, 4) =    (4. * (**mInductance)(1, 1) * (**mCapacitance)(1, 1) - 
+    mDufourAKHat(4, 4) =    (4. * (**mInductance)(1, 1) * (**mCapacitance)(1, 1) - 
                                 2. * timeStep * (**mResistance)(1, 1) * (**mCapacitance)(1, 1) -                                 
                                 (timeStep*timeStep))/                                                                                                       
                                 (
@@ -156,7 +156,7 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
                                 2. * timeStep * (**mResistance)(1, 1) * (**mCapacitance)(1, 1) +
                                 (timeStep*timeStep)
                                 );
-    Dufour_A_k_hat(5, 5) =    (4. * (**mInductance)(2, 2) * (**mCapacitance)(2, 2) - 
+    mDufourAKHat(5, 5) =    (4. * (**mInductance)(2, 2) * (**mCapacitance)(2, 2) - 
                                 2. * timeStep * (**mResistance)(2, 2) * (**mCapacitance)(2, 2) -                                 
                                 (timeStep*timeStep))/                                                                                                       
                                 (
@@ -165,42 +165,42 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
                                 (timeStep*timeStep)
                                 );                    
                                                                                 
-    ///Fill Dufour_B_k_hat
+    ///Fill mDufourBKHat
     //State Equation one, phases A,B,C: top submatrix
-    Dufour_B_k_hat(0, 0) =  (timeStep*timeStep)/   
+    mDufourBKHat(0, 0) =  (timeStep*timeStep)/   
                             (4. * (**mInductance)(0, 0) * (**mCapacitance)(0, 0) +
                             2. * timeStep * (**mCapacitance)(0, 0) * (**mResistance)(0, 0) +
                             (timeStep * timeStep));
-    Dufour_B_k_hat(1, 1) =  (timeStep*timeStep)/   
+    mDufourBKHat(1, 1) =  (timeStep*timeStep)/   
                             (4. * (**mInductance)(1, 1) * (**mCapacitance)(1, 1) +
                             2. * timeStep * (**mCapacitance)(1, 1) * (**mResistance)(1, 1) +
                             (timeStep * timeStep));
-    Dufour_B_k_hat(2, 2) =  (timeStep*timeStep)/   
+    mDufourBKHat(2, 2) =  (timeStep*timeStep)/   
                             (4. * (**mInductance)(2, 2) * (**mCapacitance)(2, 2) +
                             2. * timeStep * (**mCapacitance)(2, 2) * (**mResistance)(2, 2) +
                             (timeStep * timeStep));
 
     //State Equation two, phases A,B,C: bottom submatrix
-    Dufour_B_k_hat(3, 0) =  (timeStep * 2. * (**mCapacitance)(0, 0))/   
+    mDufourBKHat(3, 0) =  (timeStep * 2. * (**mCapacitance)(0, 0))/   
                             (4. * (**mInductance)(0, 0) * (**mCapacitance)(0, 0) +
                             2. * timeStep * (**mCapacitance)(0, 0) * (**mResistance)(0, 0) +
                             (timeStep * timeStep));
-    Dufour_B_k_hat(4, 1) =  (timeStep * 2. * (**mCapacitance)(1, 1))/   
+    mDufourBKHat(4, 1) =  (timeStep * 2. * (**mCapacitance)(1, 1))/   
                             (4. * (**mInductance)(1, 1) * (**mCapacitance)(1, 1) +
                             2. * timeStep * (**mCapacitance)(1, 1) * (**mResistance)(1, 1) +
                             (timeStep * timeStep));
-    Dufour_B_k_hat(5, 2) =  (timeStep * 2. * (**mCapacitance)(2, 2))/   
+    mDufourBKHat(5, 2) =  (timeStep * 2. * (**mCapacitance)(2, 2))/   
                             (4. * (**mInductance)(2, 2) * (**mCapacitance)(2, 2) +
                             2. * timeStep * (**mCapacitance)(2, 2) * (**mResistance)(2, 2) +
                             (timeStep * timeStep));
 
-    Dufour_B_k_n_hat = Dufour_B_k_hat;
+    mDufourBKNHat = mDufourBKHat;
 
-    Dufour_C_k_n(0, 3) = 1.;
-    Dufour_C_k_n(1, 4) = 1.;
-    Dufour_C_k_n(2, 5) = 1.;
+    mDufourCKN(0, 3) = 1.;
+    mDufourCKN(1, 4) = 1.;
+    mDufourCKN(2, 5) = 1.;
 
-	Dufour_W_k_n = Dufour_C_k_n * Dufour_B_k_hat;
+	mDufourWKN = mDufourCKN * mDufourBKHat;
 
 	///FIXME:	mIntfCurrent is state 2 and is potentially directly initialized by other initialization methodes (e.g. FromNodesAndTerminals).
 	///			State 1, which is Voltage over the capacitor, is not directly initialized and has to be calculated from the states. This is why
@@ -208,13 +208,13 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
 	///			in this case, so calculation of state 1 would always assume zero as the past value of state 1 and also takes mIntfCurrent
 	///			for the calculation ->State 1 is ahead of state 2 by one step, but also always (wrongly?) assumes past state 1 to be zero.
 	///			How to handle properly?
-	State(3, 0) = (**mIntfCurrent)(0, 0);
-	State(4, 0) = (**mIntfCurrent)(1, 0);
-	State(5, 0) = (**mIntfCurrent)(2, 0);
+	mState(3, 0) = (**mIntfCurrent)(0, 0);
+	mState(4, 0) = (**mIntfCurrent)(1, 0);
+	mState(5, 0) = (**mIntfCurrent)(2, 0);
 	ssnUpdateState();
-	State(3, 0) = (**mIntfCurrent)(0, 0);
-	State(4, 0) = (**mIntfCurrent)(1, 0);
-	State(5, 0) = (**mIntfCurrent)(2, 0);
+	mState(3, 0) = (**mIntfCurrent)(0, 0);
+	mState(4, 0) = (**mIntfCurrent)(1, 0);
+	mState(5, 0) = (**mIntfCurrent)(2, 0);
 
 	**mRightVector = Matrix::Zero(leftVector->get().rows(), 1);
 
@@ -231,70 +231,70 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompInitialize(Real omega, Real timeStep
 void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompApplySystemMatrixStamp(SparseMatrixRow& systemMatrix) {
 	if (terminalNotGrounded(0)) {
 		// set upper left block, 3x3 entries
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 0), Dufour_W_k_n(0, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 1), Dufour_W_k_n(0, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 2), Dufour_W_k_n(0, 2));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(0, 0), Dufour_W_k_n(1, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(0, 1), Dufour_W_k_n(1, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(0, 2), Dufour_W_k_n(1, 2));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(0, 0), Dufour_W_k_n(2, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(0, 1), Dufour_W_k_n(2, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(0, 2), Dufour_W_k_n(2, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 0), mDufourWKN(0, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 1), mDufourWKN(0, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 2), mDufourWKN(0, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(0, 0), mDufourWKN(1, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(0, 1), mDufourWKN(1, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(0, 2), mDufourWKN(1, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(0, 0), mDufourWKN(2, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(0, 1), mDufourWKN(2, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(0, 2), mDufourWKN(2, 2));
 	}
 	if (terminalNotGrounded(1)) {
 		// set buttom right block, 3x3 entries
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(1, 0), Dufour_W_k_n(0, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(1, 1), Dufour_W_k_n(0, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(1, 2), Dufour_W_k_n(0, 2));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(1, 0), Dufour_W_k_n(1, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(1, 1), Dufour_W_k_n(1, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(1, 2), Dufour_W_k_n(1, 2));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(1, 0), Dufour_W_k_n(2, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(1, 1), Dufour_W_k_n(2, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(1, 2), Dufour_W_k_n(2, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(1, 0), mDufourWKN(0, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(1, 1), mDufourWKN(0, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(1, 2), mDufourWKN(0, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(1, 0), mDufourWKN(1, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(1, 1), mDufourWKN(1, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(1, 2), mDufourWKN(1, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(1, 0), mDufourWKN(2, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(1, 1), mDufourWKN(2, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(1, 2), mDufourWKN(2, 2));
 	}
 	// Set off diagonal blocks, 2x3x3 entries
 	if (terminalNotGrounded(0) && terminalNotGrounded(1)) {
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(1, 0), -Dufour_W_k_n(0, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(1, 1), -Dufour_W_k_n(0, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(1, 2), -Dufour_W_k_n(0, 2));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(1, 0), -Dufour_W_k_n(1, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(1, 1), -Dufour_W_k_n(1, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(1, 2), -Dufour_W_k_n(1, 2));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(1, 0), -Dufour_W_k_n(2, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(1, 1), -Dufour_W_k_n(2, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(1, 2), -Dufour_W_k_n(2, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(1, 0), -mDufourWKN(0, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(1, 1), -mDufourWKN(0, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(1, 2), -mDufourWKN(0, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(1, 0), -mDufourWKN(1, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(1, 1), -mDufourWKN(1, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 1), matrixNodeIndex(1, 2), -mDufourWKN(1, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(1, 0), -mDufourWKN(2, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(1, 1), -mDufourWKN(2, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 2), matrixNodeIndex(1, 2), -mDufourWKN(2, 2));
 
 
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(0, 0), -Dufour_W_k_n(0, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(0, 1), -Dufour_W_k_n(0, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(0, 2), -Dufour_W_k_n(0, 2));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(0, 0), -Dufour_W_k_n(1, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(0, 1), -Dufour_W_k_n(1, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(0, 2), -Dufour_W_k_n(1, 2));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(0, 0), -Dufour_W_k_n(2, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(0, 1), -Dufour_W_k_n(2, 1));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(0, 2), -Dufour_W_k_n(2, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(0, 0), -mDufourWKN(0, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(0, 1), -mDufourWKN(0, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(0, 2), -mDufourWKN(0, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(0, 0), -mDufourWKN(1, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(0, 1), -mDufourWKN(1, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 1), matrixNodeIndex(0, 2), -mDufourWKN(1, 2));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(0, 0), -mDufourWKN(2, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(0, 1), -mDufourWKN(2, 1));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 2), matrixNodeIndex(0, 2), -mDufourWKN(2, 2));
 	}
 }
 
 void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompApplyRightSideVectorStamp(Matrix& rightVector) {
 	// Update history term
-	yHistory = Dufour_C_k_n * (Dufour_A_k_hat * State +  Dufour_B_k_hat * **mIntfVoltage);
+	mYHistory = mDufourCKN * (mDufourAKHat * mState +  mDufourBKHat * **mIntfVoltage);
 	
 	if (terminalNotGrounded(0)) {
-		Math::setVectorElement(rightVector, matrixNodeIndex(0, 0), yHistory(0, 0));
-		Math::setVectorElement(rightVector, matrixNodeIndex(0, 1), yHistory(1, 0));
-		Math::setVectorElement(rightVector, matrixNodeIndex(0, 2), yHistory(2, 0));
+		Math::setVectorElement(rightVector, matrixNodeIndex(0, 0), mYHistory(0, 0));
+		Math::setVectorElement(rightVector, matrixNodeIndex(0, 1), mYHistory(1, 0));
+		Math::setVectorElement(rightVector, matrixNodeIndex(0, 2), mYHistory(2, 0));
 	}
 	if (terminalNotGrounded(1)) {
-		Math::setVectorElement(rightVector, matrixNodeIndex(1, 0), -yHistory(0, 0));
-		Math::setVectorElement(rightVector, matrixNodeIndex(1, 1), -yHistory(1, 0));
-		Math::setVectorElement(rightVector, matrixNodeIndex(1, 2), -yHistory(2, 0));
+		Math::setVectorElement(rightVector, matrixNodeIndex(1, 0), -mYHistory(0, 0));
+		Math::setVectorElement(rightVector, matrixNodeIndex(1, 1), -mYHistory(1, 0));
+		Math::setVectorElement(rightVector, matrixNodeIndex(1, 2), -mYHistory(2, 0));
 	}
 	SPDLOG_LOGGER_DEBUG(mSLog,
 		"\nHistory current term (mnaCompApplyRightSideVectorStamp): {:s}",
-		Logger::matrixToString(yHistory));
+		Logger::matrixToString(mYHistory));
 	mSLog->flush();
 }
 
@@ -323,7 +323,7 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompPostStep(Real time, Int timeStepCoun
 
 void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompUpdateVoltage(const Matrix& leftVector) {
 	// v1 - v0
-	Dufour_u_n_t = **mIntfVoltage;
+	mDufourUNT = **mIntfVoltage;
 	**mIntfVoltage = Matrix::Zero(3, 1);
 	if (terminalNotGrounded(1)) {
 		(**mIntfVoltage)(0, 0) = Math::realFromVectorElement(leftVector, matrixNodeIndex(1, 0));
@@ -342,7 +342,7 @@ void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompUpdateVoltage(const Matrix& leftVect
 }
 
 void EMT::Ph3::SSN::Full_Serial_RLC::mnaCompUpdateCurrent(const Matrix& leftVector) {
-    **mIntfCurrent = yHistory + Dufour_W_k_n * **mIntfVoltage;
+    **mIntfCurrent = mYHistory + mDufourWKN * **mIntfVoltage;
 
 	SPDLOG_LOGGER_DEBUG(mSLog,
 		"\nUpdate Current: {:s}",
@@ -361,5 +361,5 @@ void EMT::Ph3::SSN::Full_Serial_RLC::setParameters(Matrix resistance, Matrix ind
 
 void EMT::Ph3::SSN::Full_Serial_RLC::ssnUpdateState()
 {
-	State = Dufour_A_k_hat * State + Dufour_B_k_hat * Dufour_u_n_t + Dufour_B_k_n_hat * **mIntfVoltage;
+	mState = mDufourAKHat * mState + mDufourBKHat * mDufourUNT + mDufourBKNHat * **mIntfVoltage;
 }
