@@ -164,6 +164,7 @@ template <typename VarType> void Simulation::createMNASolver() {
       solver->doSystemMatrixRecomputation(mSystemMatrixRecomputation);
       solver->setDirectLinearSolverConfiguration(
           mDirectLinearSolverConfiguration);
+      solver->doEigenvalueExtraction(mIsEigenvalueExtractionEnabled);
       solver->initialize();
       solver->setMaxNumberOfIterations(mMaxIterations);
     }
@@ -346,6 +347,9 @@ void Simulation::stop() {
 
   for (auto lg : mLoggers)
     lg->stop();
+
+  for (auto solver : mSolvers)
+    solver->closeEigenvalueLogger();
 
   SPDLOG_LOGGER_INFO(mLog, "Simulation finished.");
   mLog->flush();
