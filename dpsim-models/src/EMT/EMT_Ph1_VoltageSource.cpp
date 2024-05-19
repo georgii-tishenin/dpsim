@@ -72,6 +72,18 @@ void EMT::Ph1::VoltageSource::mnaCompApplySystemMatrixStamp(
   }
 }
 
+void EMT::Ph1::VoltageSource::stampBranchNodeIncidenceMatrix(
+    Matrix &branchNodeIncidenceMatrix) {
+  if (terminalNotGrounded(0)) {
+    branchNodeIncidenceMatrix(mBranchIdx, matrixNodeIndex(0)) = 1.0;
+  }
+  if (terminalNotGrounded(1)) {
+    branchNodeIncidenceMatrix(mBranchIdx, matrixNodeIndex(1)) = -1.0;
+  }
+}
+
+void EMT::Ph1::VoltageSource::setBranchIdx(UInt i) { mBranchIdx = i; }
+
 void EMT::Ph1::VoltageSource::mnaCompApplyRightSideVectorStamp(
     Matrix &rightVector) {
   Math::setVectorElement(rightVector, mVirtualNodes[0]->matrixNodeIndex(),
