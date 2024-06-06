@@ -52,7 +52,9 @@ public:
 			 * std::max(Logger::Level::info, logLevel). But because of excessive
 			 * logging to Level::info that is currently infeasible. */
         mSLog(Logger::get(name, logLevel, Logger::Level::warn)),
-        mLogLevel(logLevel) {}
+        mLogLevel(logLevel) {
+    Logger::setLogLevel(mSLog, logLevel);
+  }
 
   /// Basic constructor that takes name and log level and sets the UID to name as well
   TopologicalPowerComp(String name, Logger::Level logLevel = Logger::Level::off)
