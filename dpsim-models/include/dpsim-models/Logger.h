@@ -8,7 +8,8 @@
 
 #pragma once
 
-#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_INFO
+#undef SPDLOG_ACTIVE_LEVEL
+#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
 
 #if defined(SPDLOG_VER_MAJOR) && SPDLOG_VER_MAJOR >= 1
