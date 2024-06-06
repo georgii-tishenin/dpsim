@@ -23,11 +23,11 @@ int main(int argc, char *argv[]) {
   auto n2 = SimNode::make("n2");
 
   // Components
-  auto vs = VoltageSource::make("vs");
+  auto vs = VoltageSource::make("vs", Logger::Level::debug);
   vs->setParameters(Complex(10, 0));
-  auto r1 = Resistor::make("r_1");
+  auto r1 = Resistor::make("r_1", Logger::Level::debug);
   r1->setParameters(5);
-  auto l1 = Inductor::make("l_1");
+  auto l1 = Inductor::make("l_1", Logger::Level::debug);
   l1->setParameters(0.02);
 
   // Connections
@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
   logger->logAttribute("v2", n2->attribute("v"));
   logger->logAttribute("i12", r1->attribute("i_intf"));
 
-  Simulation sim(simName);
+  Simulation sim(simName, Logger::Level::debug);
   sim.setSystem(sys);
   sim.setTimeStep(timeStep);
   sim.setFinalTime(finalTime);
