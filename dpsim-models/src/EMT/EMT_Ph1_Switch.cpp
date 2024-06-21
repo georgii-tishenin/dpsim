@@ -58,21 +58,21 @@ void EMT::Ph1::Switch::mnaCompInitialize(Real omega, Real timeStep, Attribute<Ma
 Bool EMT::Ph1::Switch::mnaIsClosed() { return **mIsClosed; }
 
 void EMT::Ph1::Switch::mnaCompApplySystemMatrixStamp(SparseMatrixRow& systemMatrix) {
-	MatrixFixedSize<1, 1> conductance;
+	Real conductance;
 
-	conductance(0, 0) = (**mIsClosed) ?
+	conductance = (**mIsClosed) ?
 		1./(**mClosedResistance) : 1./(**mOpenResistance);
 
 	// Set diagonal entries
 	if (terminalNotGrounded(0)) {
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 0), conductance(0, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 0), conductance);
 	}
 	if (terminalNotGrounded(1)) {
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(1, 0), conductance(0, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(1, 0), conductance);
 	}
 	if (terminalNotGrounded(0) && terminalNotGrounded(1)) {
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(1, 0), -conductance(0, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(0, 0), -conductance(0, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(1, 0), -conductance);
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(0, 0), -conductance);
 	}
 	SPDLOG_LOGGER_TRACE(mSLog, 
 		"\nConductance matrix: {:s}",
@@ -80,23 +80,23 @@ void EMT::Ph1::Switch::mnaCompApplySystemMatrixStamp(SparseMatrixRow& systemMatr
 }
 
 void EMT::Ph1::Switch::mnaCompApplySwitchSystemMatrixStamp(Bool closed, SparseMatrixRow& systemMatrix, Int freqIdx) {
-	MatrixFixedSize<1, 1> conductance;
+	Real conductance;
 
-	conductance(0, 0) = (**mIsClosed) ?
+	conductance = (closed) ?
 		1./(**mClosedResistance) : 1./(**mOpenResistance);
 
 	// Set diagonal entries
 	if (terminalNotGrounded(0)) {
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 0), conductance(0, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(0, 0), conductance);
 
 	}
 	if (terminalNotGrounded(1)) {
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(1, 0), conductance(0, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(1, 0), conductance);
 	}
 	// Set off diagonal blocks, 2x3x3 entries
 	if (terminalNotGrounded(0) && terminalNotGrounded(1)) {
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(1, 0), -conductance(0, 0));
-		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(0, 0), -conductance(0, 0));
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(0, 0), matrixNodeIndex(1, 0), -conductance);
+		Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0), matrixNodeIndex(0, 0), -conductance);
 	}
 
 	SPDLOG_LOGGER_TRACE(mSLog, 
