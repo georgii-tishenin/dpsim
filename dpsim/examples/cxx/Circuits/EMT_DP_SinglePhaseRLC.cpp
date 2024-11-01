@@ -7,33 +7,50 @@ void runEMT(Real resistance) {
   Real timeStep = 1e-4;
   Real finalTime = 1e-3;
   String simName =
-      "EMT_SinglePhaseRLC_resistance_" + std::to_string(resistance) + "_Ohm";
+      "EMT_SinglePhaseRLC" + std::to_string(resistance) + "_Ohm";
   Logger::setLogDir("logs/" + simName);
 
   // Nodes
   auto n1 = SimNode<Real>::make("n1");
   auto n2 = SimNode<Real>::make("n2");
   auto n3 = SimNode<Real>::make("n3");
+  auto n4 = SimNode<Real>::make("n4");
+  auto n5 = SimNode<Real>::make("n5");
 
   // Components
   auto vs = EMT::Ph1::VoltageSource::make("vs");
   vs->setParameters(Complex(100, 0));
   auto r = EMT::Ph1::Resistor::make("r", Logger::Level::info);
   r->setParameters(resistance);
+  auto r2 = EMT::Ph1::Resistor::make("r2", Logger::Level::info);
+  r2->setParameters(1e-3);
   auto l = EMT::Ph1::Inductor::make("l", Logger::Level::info);
   l->setParameters(5);
   auto c = EMT::Ph1::Capacitor::make("c", Logger::Level::info);
   c->setParameters(250e-6);
+  auto s = EMT::Ph1::Switch::make("s", Logger::Level::info);
+  s->setParameters(1e8, 1e-4, true);
+  auto s2 = EMT::Ph1::Switch::make("s2", Logger::Level::info);
+  s2->setParameters(1e8, 1e-4, false);
+
+  // Switch events
+  auto sEvent = SwitchEvent::make(5e-4, s, false);
+  auto s2Event = SwitchEvent::make(5e-4, s2, true);
+
 
   // Connections
   vs->connect(SimNode<Real>::List{SimNode<Real>::GND, n3});
   r->connect(SimNode<Real>::List{n3, n1});
+  r2->connect(SimNode<Real>::List{n5, SimNode<Real>::GND});
   l->connect(SimNode<Real>::List{n1, n2});
   c->connect(SimNode<Real>::List{n2, SimNode<Real>::GND});
+  s->connect(SimNode<Real>::List{n3, n4});
+  s2->connect(SimNode<Real>::List{n3, n5});
+
 
   // Define system topology
-  auto sys = SystemTopology(50, SystemNodeList{n1, n2, n3},
-                            SystemComponentList{vs, r, l, c});
+  auto sys = SystemTopology(50, SystemNodeList{n1, n2, n3, n4, n5},
+                            SystemComponentList{vs, r, r2, l, c, s, s2});
 
   // Logger
   auto logger = DataLogger::make(simName);
@@ -43,6 +60,8 @@ void runEMT(Real resistance) {
 
   Simulation sim(simName);
   sim.setSystem(sys);
+  sim.addEvent(sEvent);
+  sim.addEvent(s2Event);
   sim.setTimeStep(timeStep);
   sim.setFinalTime(finalTime);
   sim.setDomain(Domain::EMT);
@@ -69,7 +88,7 @@ void runDP() {
   auto vs = DP::Ph1::VoltageSource::make("vs");
   vs->setParameters(Complex(100, 0));
   auto r = DP::Ph1::Resistor::make("r", Logger::Level::info);
-  r->setParameters(100);
+  r->setParameters(50);
   auto r2 = DP::Ph1::Resistor::make("r2", Logger::Level::info);
   r2->setParameters(1e-3);
   auto l = DP::Ph1::Inductor::make("l", Logger::Level::info);

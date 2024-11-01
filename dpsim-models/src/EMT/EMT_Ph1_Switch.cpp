@@ -114,3 +114,13 @@ void EMT::Ph1::Switch::mnaCompUpdateCurrent(const Matrix &leftVector) {
                                ? (**mIntfVoltage)(0, 0) / (**mClosedResistance)
                                : (**mIntfVoltage)(0, 0) / (**mOpenResistance);
 }
+
+void EMT::Ph1::Switch::stampBranchNodeIncidenceMatrix(
+    UInt branchIdx, Matrix &branchNodeIncidenceMatrix) {
+  if (terminalNotGrounded(0)) {
+    branchNodeIncidenceMatrix(branchIdx, matrixNodeIndex(0)) = 1.0;
+  }
+  if (terminalNotGrounded(1)) {
+    branchNodeIncidenceMatrix(branchIdx, matrixNodeIndex(1)) = -1.0;
+  }
+}

@@ -12,6 +12,7 @@
 #include <dpsim-models/Definitions.h>
 #include <dpsim-models/Logger.h>
 #include <dpsim-models/MNASimPowerComp.h>
+#include <dpsim-models/Solver/EigenvalueCompInterface.h>
 #include <dpsim-models/Solver/MNAInterface.h>
 #include <dpsim-models/Solver/MNASwitchInterface.h>
 
@@ -25,7 +26,8 @@ namespace Ph1 {
 class Switch : public MNASimPowerComp<Real>,
                public Base::Ph1::Switch,
                public SharedFactory<Switch>,
-               public MNASwitchInterface {
+               public MNASwitchInterface, 
+               public EigenvalueCompInterface {
 
 public:
   /// Defines UID, name, component parameters and logging level
@@ -69,6 +71,10 @@ public:
                                  AttributeBase::List &attributeDependencies,
                                  AttributeBase::List &modifiedAttributes,
                                  Attribute<Matrix>::Ptr &leftVector) override;
+
+  // #### Implementation of eigenvalue component interface ####
+  void stampBranchNodeIncidenceMatrix(UInt branchIdx,
+                                      Matrix &branchNodeIncidenceMatrix) final;
 };
 } // namespace Ph1
 } // namespace EMT
