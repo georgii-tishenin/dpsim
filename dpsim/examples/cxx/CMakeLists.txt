@@ -116,6 +116,9 @@ set(INVERTER_SOURCES
 	Components/DP_Inverter_Grid_Parallel_FreqSplit.cpp
 	Components/DP_Inverter_Grid_Sequential_FreqSplit.cpp
 )
+set(HVDC_WISE_SOURCES
+	hvdc_wise/hvdc_wise_study.cpp
+)
 
 # Targets required for tests in the Jupyter Notebooks. This list is only for grouping the (already configured) targets, so every entry
 # also has to appear in another list in this file.
@@ -231,7 +234,7 @@ endif()
 
 add_custom_target(tests)
 
-foreach(SOURCE ${CIRCUIT_SOURCES} ${SYNCGEN_SOURCES} ${VARFREQ_SOURCES} ${RT_SOURCES} ${CIM_SOURCES} ${CIM_SOURCES_POSIX} ${DAE_SOURCES} ${INVERTER_SOURCES})
+foreach(SOURCE ${HVDC_WISE_SOURCES} ${CIRCUIT_SOURCES} ${SYNCGEN_SOURCES} ${VARFREQ_SOURCES} ${RT_SOURCES} ${CIM_SOURCES} ${CIM_SOURCES_POSIX} ${DAE_SOURCES} ${INVERTER_SOURCES})
 	get_filename_component(TARGET ${SOURCE} NAME_WE)
 
 	add_executable(${TARGET} ${SOURCE})
