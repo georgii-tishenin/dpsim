@@ -64,9 +64,9 @@ void simulate_EMT() {
 
   // logging
   auto logger = DataLogger::make(simName);
-  logger->logAttribute("infeedVoltage", node1->attribute("v"));
-  logger->logAttribute("loadVoltage", node5->attribute("v"));
-  logger->logAttribute("loadCurrent", load->attribute("i_intf"));
+  logger->logAttribute("vInfeed", node1->attribute("v"));
+  logger->logAttribute("vLoad", node5->attribute("v"));
+  logger->logAttribute("iLoad", load->attribute("i_intf"));
 
   // simulation
   Simulation sim(simName, Logger::Level::info);
