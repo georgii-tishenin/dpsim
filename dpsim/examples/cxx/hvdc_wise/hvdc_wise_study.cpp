@@ -2,15 +2,12 @@
 using namespace DPsim;
 using namespace CPS;
 
-void simulate_EMT() {
-  String simName = "EMT_simulation";
-  Logger::setLogDir("logs/" + simName);
-
-  // simulation parameters
+struct SimulationParameters {
   double timeStep = 0.0001;
-  double finalTime = 0.1;
+  double finalTime = 1.0;
+};
 
-  // power system parameters
+struct PowerSystemParameters {
   double frequency = 50;
   double voltage = 10e3;
   double infeed_resistance = 1;
@@ -22,6 +19,11 @@ void simulate_EMT() {
   double circuit_breaker_closed_resistance = 1e-4;
   double circuit_breaker_open_resistance = 1e6;
   double load_resistance = 100;
+};
+
+void simulate_EMT(const SimulationParameters &simParams, const PowerSystemParameters &psParams) {
+  String simName = "EMT_simulation";
+  Logger::setLogDir("logs/" + simName);
 
   // nodes
   auto node1 = EMT::SimNode::make("node1", PhaseType::ABC);
@@ -32,22 +34,25 @@ void simulate_EMT() {
 
   // components
   auto infeed_source = EMT::Ph3::VoltageSource::make("infeed_source");
-  infeed_source->setParameters(CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(voltage, 0.0)), frequency);
+  infeed_source->setParameters(CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(psParams.voltage, 0.0)), psParams.frequency);
   auto infeed_impedance = EMT::Ph3::PiLine::make("infeed_impedance");
-  infeed_impedance->setParameters(CPS::Math::singlePhaseParameterToThreePhase(infeed_resistance), CPS::Math::singlePhaseParameterToThreePhase(infeed_inductance),
+  infeed_impedance->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.infeed_resistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.infeed_inductance),
                                   CPS::Math::singlePhaseParameterToThreePhase(0));
   auto converter1 = EMT::Ph3::VoltageSource::make("converter1");
-  converter1->setParameters(CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(voltage, 0.0)), frequency);
+  converter1->setParameters(CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(psParams.voltage, 0.0)), psParams.frequency);
   auto line1 = EMT::Ph3::PiLine::make("line1");
-  line1->setParameters(CPS::Math::singlePhaseParameterToThreePhase(line1_resistance), CPS::Math::singlePhaseParameterToThreePhase(line1_inductance), CPS::Math::singlePhaseParameterToThreePhase(0));
+  line1->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.line1_resistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.line1_inductance),
+                       CPS::Math::singlePhaseParameterToThreePhase(0));
   auto converter2 = EMT::Ph3::VoltageSource::make("converter2");
-  converter2->setParameters(CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(voltage, 0.0)), frequency);
+  converter2->setParameters(CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(psParams.voltage, 0.0)), psParams.frequency);
   auto line2 = EMT::Ph3::PiLine::make("line2");
-  line2->setParameters(CPS::Math::singlePhaseParameterToThreePhase(line2_resistance), CPS::Math::singlePhaseParameterToThreePhase(line2_inductance), CPS::Math::singlePhaseParameterToThreePhase(0));
+  line2->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.line2_resistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.line2_inductance),
+                       CPS::Math::singlePhaseParameterToThreePhase(0));
   auto circuit_breaker = EMT::Ph3::Switch::make("circuit_breaker");
-  circuit_breaker->setParameters(CPS::Math::singlePhaseParameterToThreePhase(circuit_breaker_open_resistance), CPS::Math::singlePhaseParameterToThreePhase(circuit_breaker_closed_resistance), true);
+  circuit_breaker->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.circuit_breaker_open_resistance),
+                                 CPS::Math::singlePhaseParameterToThreePhase(psParams.circuit_breaker_closed_resistance), true);
   auto load = EMT::Ph3::Resistor::make("load");
-  load->setParameters(CPS::Math::singlePhaseParameterToThreePhase(load_resistance));
+  load->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.load_resistance));
 
   // topology
   infeed_source->connect({EMT::SimNode::GND, node1});
@@ -60,7 +65,7 @@ void simulate_EMT() {
   load->connect({node5, EMT::SimNode::GND});
   auto systemNodeList = SystemNodeList{node1, node2, node3, node4, node5};
   auto componentList = SystemComponentList{infeed_source, infeed_impedance, converter1, line1, converter2, line2, circuit_breaker, load};
-  auto systemTopology = SystemTopology(frequency, systemNodeList, componentList);
+  auto systemTopology = SystemTopology(psParams.frequency, systemNodeList, componentList);
 
   // logging
   auto logger = DataLogger::make(simName);
@@ -71,14 +76,17 @@ void simulate_EMT() {
   // simulation
   Simulation sim(simName, Logger::Level::info);
   sim.setSystem(systemTopology);
-  sim.setTimeStep(timeStep);
-  sim.setFinalTime(finalTime);
+  sim.setTimeStep(simParams.timeStep);
+  sim.setFinalTime(simParams.finalTime);
   sim.setDomain(Domain::EMT);
   sim.addLogger(logger);
   sim.run();
 }
 
 int main() {
-  simulate_EMT();
+  SimulationParameters simParams;
+  PowerSystemParameters psParams;
+
+  simulate_EMT(simParams, psParams);
   return 0;
 }
