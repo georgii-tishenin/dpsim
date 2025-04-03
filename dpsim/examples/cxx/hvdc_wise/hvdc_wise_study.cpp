@@ -13,6 +13,11 @@ constexpr const char *vLoad = "vLoad";
 constexpr const char *iLoad = "iLoad";
 } // namespace VariableNames
 
+namespace SwitchConstants {
+constexpr double closedResistance = 1e-4;
+constexpr double openResistance = 1e6;
+} // namespace SwitchConstants
+
 namespace AttributeNames {
 constexpr const char *v = "v";
 constexpr const char *i = "i_intf";
@@ -35,8 +40,6 @@ struct PowerSystemParameters {
   double line2Resistance = 2;
   double line2Inductance = 0.2;
   double line2Capacitance = 2e-6;
-  double switchClosedResistance = 1e-4;
-  double switchOpenResistance = 1e6;
   double loadResistance1 = 100;
   double loadResistance2 = 50;
 };
@@ -83,7 +86,7 @@ void simulateEMT(const SimulationParameters &simParams, const PowerSystemParamet
   line2->connect({node3, node4});
 
   auto circuitBreaker = EMT::Ph3::Switch::make("circuit_breaker");
-  circuitBreaker->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.switchOpenResistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.switchClosedResistance), true);
+  circuitBreaker->setParameters(CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance), CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance), true);
   circuitBreaker->connect({node4, node5});
 
   auto load1 = EMT::Ph3::Resistor::make("load1");
@@ -91,7 +94,7 @@ void simulateEMT(const SimulationParameters &simParams, const PowerSystemParamet
   load1->connect({node6, EMT::SimNode::GND});
 
   auto load1Switch = EMT::Ph3::Switch::make("load1_switch");
-  load1Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.switchOpenResistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.switchClosedResistance), true);
+  load1Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance), CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance), true);
   load1Switch->connect({node5, node6});
 
   auto load2 = EMT::Ph3::Resistor::make("load2");
@@ -99,7 +102,7 @@ void simulateEMT(const SimulationParameters &simParams, const PowerSystemParamet
   load2->connect({node7, EMT::SimNode::GND});
 
   auto load2Switch = EMT::Ph3::Switch::make("load2_switch");
-  load2Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.switchOpenResistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.switchClosedResistance), false);
+  load2Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance), CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance), false);
   load2Switch->connect({node5, node7});
 
   // topology
@@ -173,7 +176,7 @@ void simulateDP(const SimulationParameters &simParams, const PowerSystemParamete
   line2->connect({node3, node4});
 
   auto circuitBreaker = DP::Ph1::Switch::make("circuit_breaker");
-  circuitBreaker->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, true);
+  circuitBreaker->setParameters(SwitchConstants::openResistance, SwitchConstants::closedResistance, true);
   circuitBreaker->connect({node4, node5});
 
   auto load1 = DP::Ph1::Resistor::make("load");
@@ -181,7 +184,7 @@ void simulateDP(const SimulationParameters &simParams, const PowerSystemParamete
   load1->connect({node6, DP::SimNode::GND});
 
   auto load1Switch = DP::Ph1::Switch::make("load1_switch");
-  load1Switch->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, true);
+  load1Switch->setParameters(SwitchConstants::openResistance, SwitchConstants::closedResistance, true);
   load1Switch->connect({node5, node6});
 
   auto load2 = DP::Ph1::Resistor::make("load2");
@@ -189,7 +192,7 @@ void simulateDP(const SimulationParameters &simParams, const PowerSystemParamete
   load2->connect({node7, DP::SimNode::GND});
 
   auto load2Switch = DP::Ph1::Switch::make("load2_switch");
-  load2Switch->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, false);
+  load2Switch->setParameters(SwitchConstants::openResistance, SwitchConstants::closedResistance, false);
   load2Switch->connect({node5, node7});
 
   // topology
@@ -263,7 +266,7 @@ void simulateSP(const SimulationParameters &simParams, const PowerSystemParamete
   line2->connect({node3, node4});
 
   auto circuitBreaker = SP::Ph1::Switch::make("circuit_breaker");
-  circuitBreaker->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, true);
+  circuitBreaker->setParameters(SwitchConstants::openResistance, SwitchConstants::closedResistance, true);
   circuitBreaker->connect({node4, node5});
 
   auto load1 = SP::Ph1::Resistor::make("load");
@@ -271,7 +274,7 @@ void simulateSP(const SimulationParameters &simParams, const PowerSystemParamete
   load1->connect({node6, SP::SimNode::GND});
 
   auto load1Switch = SP::Ph1::Switch::make("load1_switch");
-  load1Switch->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, true);
+  load1Switch->setParameters(SwitchConstants::openResistance, SwitchConstants::closedResistance, true);
   load1Switch->connect({node5, node6});
 
   auto load2 = SP::Ph1::Resistor::make("load2");
@@ -279,7 +282,7 @@ void simulateSP(const SimulationParameters &simParams, const PowerSystemParamete
   load2->connect({node7, SP::SimNode::GND});
 
   auto load2Switch = SP::Ph1::Switch::make("load2_switch");
-  load2Switch->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, false);
+  load2Switch->setParameters(SwitchConstants::openResistance, SwitchConstants::closedResistance, false);
   load2Switch->connect({node5, node7});
 
   // topology
