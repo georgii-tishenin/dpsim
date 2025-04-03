@@ -134,14 +134,6 @@ void simulateEMT(const SimulationParameters &simParams, const PowerSystemParamet
   sim.run();
 }
 
-std::shared_ptr<DPsim::DataLogger> createLogger(const String &simName, const SystemNodeList &nodeList, const SystemComponentList &componentList) {
-  auto logger = DataLogger::make(simName);
-  logger->logAttribute("vInfeed", nodeList[0]->attribute(AttributeNames::v));
-  logger->logAttribute("vLoad", nodeList[4]->attribute(AttributeNames::v));
-  logger->logAttribute("iLoad", componentList[6]->attribute(AttributeNames::i));
-  return logger;
-}
-
 void simulateDP(const SimulationParameters &simParams, const PowerSystemParameters &psParams) {
   String simName = "DP_simulation";
   Logger::setLogDir("logs/" + simName);
