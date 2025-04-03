@@ -5,7 +5,7 @@ using namespace CPS;
 struct SimulationParameters {
   double timeStep = 1e-5;
   double eventTime = 0.1;
-  double finalTime = 0.2; 
+  double finalTime = 0.2;
 };
 
 struct PowerSystemParameters {
@@ -20,7 +20,7 @@ struct PowerSystemParameters {
   double line2Inductance = 0.2;
   double line2Capacitance = 2e-6;
   double switchClosedResistance = 1e-4;
-  double siwtchOpenResistance = 1e6;
+  double switchOpenResistance = 1e6;
   double loadResistance1 = 100;
   double loadResistance2 = 50;
 };
@@ -41,45 +41,52 @@ void simulateEMT(const SimulationParameters &simParams, const PowerSystemParamet
   // components
   auto infeedSource = EMT::Ph3::VoltageSource::make("infeed_source");
   infeedSource->setParameters(CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(psParams.voltage, 0.0)), psParams.frequency);
+  infeedSource->connect({EMT::SimNode::GND, node1});
+
   auto infeedImpedance = EMT::Ph3::PiLine::make("infeed_impedance");
   infeedImpedance->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.infeedResistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.infeedInductance),
-                                  CPS::Math::singlePhaseParameterToThreePhase(0));
+                                 CPS::Math::singlePhaseParameterToThreePhase(0));
+  infeedImpedance->connect({node1, node4});
+
   auto converter1 = EMT::Ph3::VoltageSource::make("converter1");
   converter1->setParameters(CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(psParams.voltage, 0.0)), psParams.frequency);
+  converter1->connect({EMT::SimNode::GND, node2});
+
   auto line1 = EMT::Ph3::PiLine::make("line1");
   line1->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.line1Resistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.line1Inductance),
                        CPS::Math::singlePhaseParameterToThreePhase(psParams.line1Capacitance));
+  line1->connect({node2, node4});
+
   auto converter2 = EMT::Ph3::VoltageSource::make("converter2");
   converter2->setParameters(CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(psParams.voltage, 0.0)), psParams.frequency);
+  converter2->connect({EMT::SimNode::GND, node3});
+
   auto line2 = EMT::Ph3::PiLine::make("line2");
   line2->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.line2Resistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.line2Inductance),
                        CPS::Math::singlePhaseParameterToThreePhase(psParams.line2Capacitance));
+  line2->connect({node3, node4});
+
   auto circuitBreaker = EMT::Ph3::Switch::make("circuit_breaker");
-  circuitBreaker->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.siwtchOpenResistance),
-                                 CPS::Math::singlePhaseParameterToThreePhase(psParams.switchClosedResistance), true);
+  circuitBreaker->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.switchOpenResistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.switchClosedResistance), true);
+  circuitBreaker->connect({node4, node5});
+
   auto load1 = EMT::Ph3::Resistor::make("load1");
   load1->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.loadResistance1));
+  load1->connect({node6, EMT::SimNode::GND});
+
   auto load1Switch = EMT::Ph3::Switch::make("load1_switch");
-  load1Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.siwtchOpenResistance),
-                                 CPS::Math::singlePhaseParameterToThreePhase(psParams.switchClosedResistance), true);
+  load1Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.switchOpenResistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.switchClosedResistance), true);
+  load1Switch->connect({node5, node6});
+
   auto load2 = EMT::Ph3::Resistor::make("load2");
   load2->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.loadResistance2));
+  load2->connect({node7, EMT::SimNode::GND});
+
   auto load2Switch = EMT::Ph3::Switch::make("load2_switch");
-  load2Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.siwtchOpenResistance),
-                                 CPS::Math::singlePhaseParameterToThreePhase(psParams.switchClosedResistance), false);
+  load2Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(psParams.switchOpenResistance), CPS::Math::singlePhaseParameterToThreePhase(psParams.switchClosedResistance), false);
+  load2Switch->connect({node5, node7});
 
   // topology
-  infeedSource->connect({EMT::SimNode::GND, node1});
-  infeedImpedance->connect({node1, node4});
-  converter1->connect({EMT::SimNode::GND, node2});
-  converter2->connect({EMT::SimNode::GND, node3});
-  line1->connect({node2, node4});
-  line2->connect({node3, node4});
-  circuitBreaker->connect({node4, node5});
-  load1Switch->connect({node5, node6});
-  load1->connect({node6, EMT::SimNode::GND});
-  load2Switch->connect({node5, node7});
-  load2->connect({node7, EMT::SimNode::GND});
   auto systemNodeList = SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{infeedSource, infeedImpedance, converter1, line1, converter2, line2, circuitBreaker, load1, load1Switch, load2, load2Switch};
   auto systemTopology = SystemTopology(psParams.frequency, systemNodeList, componentList);
@@ -122,39 +129,49 @@ void simulateDP(const SimulationParameters &simParams, const PowerSystemParamete
   // components
   auto infeedSource = DP::Ph1::VoltageSource::make("infeed_source");
   infeedSource->setParameters(CPS::Math::polar(psParams.voltage, 0.0));
+  infeedSource->connect({DP::SimNode::GND, node1});
+
   auto infeedImpedance = DP::Ph1::PiLine::make("infeed_impedance");
   infeedImpedance->setParameters(psParams.infeedResistance, psParams.infeedInductance, 0);
+  infeedImpedance->connect({node1, node4});
+
   auto converter1 = DP::Ph1::VoltageSource::make("converter1");
   converter1->setParameters(CPS::Math::polar(psParams.voltage, 0.0));
+  converter1->connect({DP::SimNode::GND, node2});
+
   auto line1 = DP::Ph1::PiLine::make("line1");
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance, psParams.line1Capacitance);
+  line1->connect({node2, node4});
+
   auto converter2 = DP::Ph1::VoltageSource::make("converter2");
   converter2->setParameters(CPS::Math::polar(psParams.voltage, 0.0));
+  converter2->connect({DP::SimNode::GND, node3});
+
   auto line2 = DP::Ph1::PiLine::make("line2");
   line2->setParameters(psParams.line2Resistance, psParams.line2Inductance, psParams.line2Capacitance);
+  line2->connect({node3, node4});
+
   auto circuitBreaker = DP::Ph1::Switch::make("circuit_breaker");
-  circuitBreaker->setParameters(psParams.siwtchOpenResistance, psParams.switchClosedResistance, true);
+  circuitBreaker->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, true);
+  circuitBreaker->connect({node4, node5});
+
   auto load1 = DP::Ph1::Resistor::make("load");
   load1->setParameters(psParams.loadResistance1);
+  load1->connect({node6, DP::SimNode::GND});
+
   auto load1Switch = DP::Ph1::Switch::make("load1_switch");
-  load1Switch->setParameters(psParams.siwtchOpenResistance, psParams.switchClosedResistance, true);
+  load1Switch->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, true);
+  load1Switch->connect({node5, node6});
+
   auto load2 = DP::Ph1::Resistor::make("load2");
   load2->setParameters(psParams.loadResistance2);
+  load2->connect({node7, DP::SimNode::GND});
+
   auto load2Switch = DP::Ph1::Switch::make("load2_switch");
-  load2Switch->setParameters(psParams.siwtchOpenResistance, psParams.switchClosedResistance, false);
+  load2Switch->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, false);
+  load2Switch->connect({node5, node7});
 
   // topology
-  infeedSource->connect({DP::SimNode::GND, node1});
-  infeedImpedance->connect({node1, node4});
-  converter1->connect({DP::SimNode::GND, node2});
-  converter2->connect({DP::SimNode::GND, node3});
-  line1->connect({node2, node4});
-  line2->connect({node3, node4});
-  circuitBreaker->connect({node4, node5});
-  load1Switch->connect({node5, node6});
-  load1->connect({node6, DP::SimNode::GND});
-  load2Switch->connect({node5, node7});
-  load2->connect({node7, DP::SimNode::GND});
   auto systemNodeList = SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{infeedSource, infeedImpedance, converter1, line1, converter2, line2, circuitBreaker, load1, load1Switch, load2, load2Switch};
   auto systemTopology = SystemTopology(psParams.frequency, systemNodeList, componentList);
@@ -197,39 +214,49 @@ void simulateSP(const SimulationParameters &simParams, const PowerSystemParamete
   // components
   auto infeedSource = SP::Ph1::VoltageSource::make("infeed_source");
   infeedSource->setParameters(CPS::Math::polar(psParams.voltage, 0.0));
+  infeedSource->connect({SP::SimNode::GND, node1});
+
   auto infeedImpedance = SP::Ph1::PiLine::make("infeed_impedance");
   infeedImpedance->setParameters(psParams.infeedResistance, psParams.infeedInductance, 0);
+  infeedImpedance->connect({node1, node4});
+
   auto converter1 = SP::Ph1::VoltageSource::make("converter1");
   converter1->setParameters(CPS::Math::polar(psParams.voltage, 0.0));
+  converter1->connect({SP::SimNode::GND, node2});
+
   auto line1 = SP::Ph1::PiLine::make("line1");
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance, psParams.line1Capacitance);
+  line1->connect({node2, node4});
+
   auto converter2 = SP::Ph1::VoltageSource::make("converter2");
   converter2->setParameters(CPS::Math::polar(psParams.voltage, 0.0));
+  converter2->connect({SP::SimNode::GND, node3});
+
   auto line2 = SP::Ph1::PiLine::make("line2");
   line2->setParameters(psParams.line2Resistance, psParams.line2Inductance, psParams.line2Capacitance);
+  line2->connect({node3, node4});
+
   auto circuitBreaker = SP::Ph1::Switch::make("circuit_breaker");
-  circuitBreaker->setParameters(psParams.siwtchOpenResistance, psParams.switchClosedResistance, true);
+  circuitBreaker->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, true);
+  circuitBreaker->connect({node4, node5});
+
   auto load1 = SP::Ph1::Resistor::make("load");
   load1->setParameters(psParams.loadResistance1);
+  load1->connect({node6, SP::SimNode::GND});
+
   auto load1Switch = SP::Ph1::Switch::make("load1_switch");
-  load1Switch->setParameters(psParams.siwtchOpenResistance, psParams.switchClosedResistance, true);
+  load1Switch->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, true);
+  load1Switch->connect({node5, node6});
+
   auto load2 = SP::Ph1::Resistor::make("load2");
   load2->setParameters(psParams.loadResistance2);
+  load2->connect({node7, SP::SimNode::GND});
+
   auto load2Switch = SP::Ph1::Switch::make("load2_switch");
-  load2Switch->setParameters(psParams.siwtchOpenResistance, psParams.switchClosedResistance, false);
+  load2Switch->setParameters(psParams.switchOpenResistance, psParams.switchClosedResistance, false);
+  load2Switch->connect({node5, node7});
 
   // topology
-  infeedSource->connect({SP::SimNode::GND, node1});
-  infeedImpedance->connect({node1, node4});
-  converter1->connect({SP::SimNode::GND, node2});
-  converter2->connect({SP::SimNode::GND, node3});
-  line1->connect({node2, node4});
-  line2->connect({node3, node4});
-  circuitBreaker->connect({node4, node5});
-  load1Switch->connect({node5, node6});
-  load1->connect({node6, SP::SimNode::GND});
-  load2Switch->connect({node5, node7});
-  load2->connect({node7, SP::SimNode::GND});
   auto systemNodeList = SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{infeedSource, infeedImpedance, converter1, line1, converter2, line2, circuitBreaker, load1, load1Switch, load2, load2Switch};
   auto systemTopology = SystemTopology(psParams.frequency, systemNodeList, componentList);
