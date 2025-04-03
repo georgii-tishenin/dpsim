@@ -2,6 +2,22 @@
 using namespace DPsim;
 using namespace CPS;
 
+namespace VariableNames {
+constexpr const char *vInfeed = "vInfeed";
+constexpr const char *iInfeed = "iInfeed";
+constexpr const char *vConverter1 = "vConverter1";
+constexpr const char *iConverter1 = "iConverter1";
+constexpr const char *vConverter2 = "vConverter2";
+constexpr const char *iConverter2 = "iConverter2";
+constexpr const char *vLoad = "vLoad";
+constexpr const char *iLoad = "iLoad";
+} // namespace VariableNames
+
+namespace AttributeNames {
+constexpr const char *v = "v";
+constexpr const char *i = "i_intf";
+} // namespace AttributeNames
+
 struct SimulationParameters {
   double timeStep = 1e-5;
   double eventTime = 0.1;
@@ -97,9 +113,14 @@ void simulateEMT(const SimulationParameters &simParams, const PowerSystemParamet
 
   // logging
   auto logger = DataLogger::make(simName);
-  logger->logAttribute("vInfeed", node1->attribute("v"));
-  logger->logAttribute("vLoad", node5->attribute("v"));
-  logger->logAttribute("iLoad", circuitBreaker->attribute("i_intf"));
+  logger->logAttribute(VariableNames::vInfeed, node4->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iInfeed, infeedImpedance->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::vConverter1, node2->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter1, converter1->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::vConverter2, node3->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter2, converter2->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::vLoad, node5->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iLoad, circuitBreaker->attribute(AttributeNames::i));
 
   // simulation
   Simulation sim(simName, Logger::Level::info);
@@ -111,6 +132,14 @@ void simulateEMT(const SimulationParameters &simParams, const PowerSystemParamet
   sim.addEvent(disconnectLoad1);
   sim.addEvent(connectLoad2);
   sim.run();
+}
+
+std::shared_ptr<DPsim::DataLogger> createLogger(const String &simName, const SystemNodeList &nodeList, const SystemComponentList &componentList) {
+  auto logger = DataLogger::make(simName);
+  logger->logAttribute("vInfeed", nodeList[0]->attribute(AttributeNames::v));
+  logger->logAttribute("vLoad", nodeList[4]->attribute(AttributeNames::v));
+  logger->logAttribute("iLoad", componentList[6]->attribute(AttributeNames::i));
+  return logger;
 }
 
 void simulateDP(const SimulationParameters &simParams, const PowerSystemParameters &psParams) {
@@ -182,9 +211,14 @@ void simulateDP(const SimulationParameters &simParams, const PowerSystemParamete
 
   // logging
   auto logger = DataLogger::make(simName);
-  logger->logAttribute("vInfeed", node1->attribute("v"));
-  logger->logAttribute("vLoad", node5->attribute("v"));
-  logger->logAttribute("iLoad", circuitBreaker->attribute("i_intf"));
+  logger->logAttribute(VariableNames::vInfeed, node4->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iInfeed, infeedImpedance->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::vConverter1, node2->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter1, converter1->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::vConverter2, node3->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter2, converter2->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::vLoad, node5->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iLoad, circuitBreaker->attribute(AttributeNames::i));
 
   // simulation
   Simulation sim(simName, Logger::Level::info);
@@ -267,9 +301,14 @@ void simulateSP(const SimulationParameters &simParams, const PowerSystemParamete
 
   // logging
   auto logger = DataLogger::make(simName);
-  logger->logAttribute("vInfeed", node1->attribute("v"));
-  logger->logAttribute("vLoad", node5->attribute("v"));
-  logger->logAttribute("iLoad", circuitBreaker->attribute("i_intf"));
+  logger->logAttribute(VariableNames::vInfeed, node4->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iInfeed, infeedImpedance->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::vConverter1, node2->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter1, converter1->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::vConverter2, node3->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter2, converter2->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::vLoad, node5->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iLoad, circuitBreaker->attribute(AttributeNames::i));
 
   // simulation
   Simulation sim(simName, Logger::Level::info);
