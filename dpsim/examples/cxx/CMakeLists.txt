@@ -34,6 +34,9 @@ set(CIRCUIT_SOURCES
 	Circuits/EMT_VSI.cpp
 	Circuits/EMT_PiLine.cpp
 	Circuits/EMT_DP_SinglePhaseRLC.cpp
+	Circuits/EMT_SinglePhase_VS_IdealTrafo_R.cpp
+	Circuits/EMT_SinglePhase_ClarkeTrafo.cpp
+	Circuits/EMT_SinglePhase_ParkTrafo.cpp
 
 	# EMT examples with PF initialization
 	Circuits/EMT_Slack_PiLine_PQLoad_with_PF_Init.cpp

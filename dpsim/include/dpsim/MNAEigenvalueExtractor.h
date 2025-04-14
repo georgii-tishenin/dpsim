@@ -22,6 +22,7 @@ private:
       mEigenvalueComponentToBranchIdx;
   typename CPS::EigenvalueDynamicCompInterface<VarType>::List
       mEigenvalueDynamicComponents;
+  Real mNumBranches;
   Real mTimeStep;
   Real mSystemOmega;
   Complex mCoeffDP;

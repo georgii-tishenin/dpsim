@@ -81,6 +81,32 @@ void addEMTPh1Components(py::module_ mEMTPh1) {
       .def("connect", &CPS::EMT::Ph1::Resistor::connect)
       .def_property("R", createAttributeGetter<CPS::Real>("R"),
                     createAttributeSetter<CPS::Real>("R"));
+  
+
+
+py::class_<CPS::EMT::Ph1::IdealTransformer, 
+           std::shared_ptr<CPS::EMT::Ph1::IdealTransformer>, 
+           CPS::SimPowerComp<CPS::Real>>(
+        mEMTPh1, "IdealTransformer", py::multiple_inheritance())
+    .def(py::init<std::string>(), "name"_a)
+     .def("set_parameters", 
+             &CPS::EMT::Ph1::IdealTransformer::setParameters,
+             "N"_a)
+     .def("connect", &CPS::EMT::Ph1::IdealTransformer::connect)
+     .def_property("N", 
+                  createAttributeGetter<CPS::Real>("N"),
+                  createAttributeSetter<CPS::Real>("N"));
+
+
+
+py::class_<CPS::EMT::Ph1::ClarkeTransformer,
+           std::shared_ptr<CPS::EMT::Ph1::ClarkeTransformer>,   
+           CPS::SimPowerComp<CPS::Real>>(
+            mEMTPh1, "ClarkeTransformer", py::multiple_inheritance()) 
+            .def(py::init<std::string>(), "name"_a)
+            .def("connect", &CPS::EMT::Ph1::ClarkeTransformer::connect);
+
+
 
   py::class_<CPS::EMT::Ph1::Capacitor,
              std::shared_ptr<CPS::EMT::Ph1::Capacitor>,

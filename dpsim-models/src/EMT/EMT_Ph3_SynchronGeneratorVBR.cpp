@@ -254,7 +254,7 @@ void EMT::Ph3::SynchronGeneratorVBR::mnaCompPreStep(Real time,
   stepInPerUnit();
   mnaCompApplyRightSideVectorStamp(**mRightVector);
 }
-
+//The time is used in the mna CompPreStep function, it comes directly from the solver
 void EMT::Ph3::SynchronGeneratorVBR::mnaCompApplySystemMatrixStamp(
     SparseMatrixRow &systemMatrix) {
   if (terminalNotGrounded(0)) {

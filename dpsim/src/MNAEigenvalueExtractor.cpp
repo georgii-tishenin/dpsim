@@ -41,18 +41,32 @@ template <typename VarType>
 void MNAEigenvalueExtractor<VarType>::identifyEigenvalueComponents(
     const CPS::IdentifiedObject::List &components) {
   // TODO: throw exception if topology contains components that do not implement EigenvalueCompInterface
+  mNumBranches = 0;
   UInt branchIdx = 0;
   for (auto component : components) {
     auto eigenvalueComponent =
         std::dynamic_pointer_cast<CPS::EigenvalueCompInterface>(component);
     if (eigenvalueComponent) {
-      mEigenvalueComponentToBranchIdx[eigenvalueComponent] = branchIdx;
-      auto eigenvalueDynamicComponent = std::dynamic_pointer_cast<
-          CPS::EigenvalueDynamicCompInterface<VarType>>(component);
-      if (eigenvalueDynamicComponent) {
-        mEigenvalueDynamicComponents.push_back(eigenvalueDynamicComponent);
+
+      UInt nComponentBranches = eigenvalueComponent->getNumberOfBranches();
+      mNumBranches += nComponentBranches;
+      for (UInt i = 0; i < nComponentBranches; i++) {
+        mEigenvalueComponentToBranchIdx[eigenvalueComponent] = branchIdx;
+        auto eigenvalueDynamicComponent = std::dynamic_pointer_cast<
+            CPS::EigenvalueDynamicCompInterface<VarType>>(component);
+        if (eigenvalueDynamicComponent) {
+          mEigenvalueDynamicComponents.push_back(eigenvalueDynamicComponent);
+        }
+        branchIdx++;
       }
-      branchIdx++;
+      
+      //mEigenvalueComponentToBranchIdx[eigenvalueComponent] = branchIdx;
+      //auto eigenvalueDynamicComponent = std::dynamic_pointer_cast<
+      //    CPS::EigenvalueDynamicCompInterface<VarType>>(component);
+      //if (eigenvalueDynamicComponent) {
+      //  mEigenvalueDynamicComponents.push_back(eigenvalueDynamicComponent);
+      //}
+      //branchIdx++;
     }
   }
 }
@@ -61,10 +75,11 @@ template <typename VarType>
 void MNAEigenvalueExtractor<VarType>::createEmptyEigenvalueMatrices(
     UInt numMatrixNodeIndices) {
   int nBranches = mEigenvalueComponentToBranchIdx.size();
-  mSignMatrix = MatrixVar<VarType>::Zero(nBranches, nBranches);
-  mDiscretizationMatrix = MatrixVar<VarType>::Zero(nBranches, nBranches);
-  mBranchNodeIncidenceMatrix = Matrix::Zero(nBranches, numMatrixNodeIndices);
+  mSignMatrix = MatrixVar<VarType>::Zero(mNumBranches, mNumBranches);
+  mDiscretizationMatrix = MatrixVar<VarType>::Zero(mNumBranches, mNumBranches);
+  mBranchNodeIncidenceMatrix = Matrix::Zero(mNumBranches, numMatrixNodeIndices);
   **mEigenvalues = MatrixComp::Zero(mEigenvalueDynamicComponents.size(), 1);
+  std::cout << "Number of eigenvalue dynamic components: " << mEigenvalueDynamicComponents.size() << std::endl;
   **mDiscreteEigenvalues =
       MatrixComp::Zero(mEigenvalueDynamicComponents.size(), 1);
 }
