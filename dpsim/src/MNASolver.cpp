@@ -620,6 +620,9 @@ template <typename VarType> Task::List MnaSolver<VarType>::getTasks() {
         l.push_back(task);
     }
     l.push_back(createSolveTaskRecomp());
+    if (mIsEigenvalueExtractionEnabled) {
+      l.push_back(createExtractEigenvaluesTask());
+    }
   } else {
     l.push_back(createSolveTask());
     if (mIsEigenvalueExtractionEnabled) {
