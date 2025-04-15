@@ -116,7 +116,7 @@ void EMT::Ph1::ParkTransformer::mnaCompApplySystemMatrixStamp(
     Math::setMatrixElement(systemMatrix, matrixNodeIndex(4), mVirtualNodes[0]->matrixNodeIndex(), +sqrt(2.0/3.0)*sin(*mTheta)); // node q / virtual node 1
 
 
-    Math::setMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(), matrixNodeIndex(5), -sqrt(1.0/2.0));  // virtual node 1 / node 0    
+    Math::setMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(), matrixNodeIndex(5), -sqrt(1.0/3.0));  // virtual node 1 / node 0    
     Math::setMatrixElement(systemMatrix, matrixNodeIndex(5), mVirtualNodes[0]->matrixNodeIndex(), -sqrt(1.0/3.0));  // node 0 / virtual node 1
   }
 
@@ -131,7 +131,7 @@ void EMT::Ph1::ParkTransformer::mnaCompApplySystemMatrixStamp(
     Math::setMatrixElement(systemMatrix, mVirtualNodes[1]->matrixNodeIndex(), matrixNodeIndex(4), +sqrt(2.0/3.0)*sin(*mTheta - 2*M_PI/3));  // virtual node 2 / node q
     Math::setMatrixElement(systemMatrix, matrixNodeIndex(4), mVirtualNodes[1]->matrixNodeIndex(), +sqrt(2.0/3.0)*sin(*mTheta - 2*M_PI/3));  // node q / virtual node 2
 
-    Math::setMatrixElement(systemMatrix, mVirtualNodes[1]->matrixNodeIndex(), matrixNodeIndex(5), -sqrt(1.0/2.0));  // virtual node 2 / node 0
+    Math::setMatrixElement(systemMatrix, mVirtualNodes[1]->matrixNodeIndex(), matrixNodeIndex(5), -sqrt(1.0/3.0));  // virtual node 2 / node 0
     Math::setMatrixElement(systemMatrix, matrixNodeIndex(5), mVirtualNodes[1]->matrixNodeIndex(), -sqrt(1.0/3.0));  // node 0 / virtual node 2
   }
 
@@ -146,7 +146,7 @@ void EMT::Ph1::ParkTransformer::mnaCompApplySystemMatrixStamp(
     Math::setMatrixElement(systemMatrix, mVirtualNodes[2]->matrixNodeIndex(), matrixNodeIndex(4), +sqrt(2.0/3.0)*sin(*mTheta + 2*M_PI/3));  // virtual node 3 / node q
     Math::setMatrixElement(systemMatrix, matrixNodeIndex(4), mVirtualNodes[2]->matrixNodeIndex(), +sqrt(2.0/3.0)*sin(*mTheta + 2*M_PI/3));  // node q / virtual node 3
 
-    Math::setMatrixElement(systemMatrix, mVirtualNodes[2]->matrixNodeIndex(), matrixNodeIndex(5), -sqrt(1.0/2.0));  // virtual node 3 / node 0
+    Math::setMatrixElement(systemMatrix, mVirtualNodes[2]->matrixNodeIndex(), matrixNodeIndex(5), -sqrt(1.0/3.0));  // virtual node 3 / node 0
     Math::setMatrixElement(systemMatrix, matrixNodeIndex(5), mVirtualNodes[2]->matrixNodeIndex(), -sqrt(1.0/3.0));  // node 0 / virtual node 3
   }
 
