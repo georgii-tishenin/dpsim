@@ -122,10 +122,10 @@ test-jupyter-notebooks:
         cp -r python/src/dpsim build/
         pytest -v --cov=python/src/dpsim --cov-report=xml examples/Notebooks -n auto
 
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v2
+    - name: Upload results to Codecov
+      uses: codecov/codecov-action@v5
       with:
-        files: coverage.xml
+        token: ${{ secrets.CODECOV_TOKEN }}
 
     - name: Archive notebook outputs
       uses: actions/upload-artifact@v4
