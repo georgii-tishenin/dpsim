@@ -125,7 +125,7 @@ test-jupyter-notebooks:
     - name: Upload results to Codecov
       uses: codecov/codecov-action@v5
       with:
-        token: ${{ secrets.d8ab0d6c-5ebe-4eab-902f-039f11aa9923 }}
+        token: ${{ secrets.CODECOV_TOKEN }}
 
     - name: Archive notebook outputs
       uses: actions/upload-artifact@v4
