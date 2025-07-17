@@ -1,5 +1,6 @@
 
 #include <dpsim-models/EMT/EMT_Ph1_ParkTransformer.h>
+#include <dpsim-models/EMT/EMT_Ph1_InertiaMoment.h>
 
 
 using namespace CPS;
@@ -52,6 +53,9 @@ void EMT::Ph1::ParkTransformer::setParameters(Real omega, Real theta_initial) {
       mVirtualNodes[0]->setInitialVoltage(initialSingleVoltage(1));
       mVirtualNodes[1]->setInitialVoltage(initialSingleVoltage(2));
       mVirtualNodes[2]->setInitialVoltage(initialSingleVoltage(3));
+
+
+      *mTheta = *mTheta_init;
     
     
       // Log initialization results
@@ -89,8 +93,20 @@ void EMT::Ph1::ParkTransformer::mnaCompInitialize(Real omega, Real timeStep,
     
 void EMT::Ph1::ParkTransformer::mnaCompPreStep(Real time,
         Int timeStepCount) {
+
+    if (mIsOmegaConstant == false) {
+
+        *mTheta = *mTheta + ( mTimeStep / 2 ) * (*mOmega + mOmega_prev);
+        *mTheta = std::fmod(*mTheta, 2*M_PI);
+        mTheta_atr->set(*mTheta);
+        mOmega_prev = *mOmega;
+
+    } else {
+    
     *mTheta = std::fmod(*mTheta_init + *mOmega * time, 2*M_PI);
     mTheta_atr->set(*mTheta);
+
+  }
     mnaCompApplyRightSideVectorStamp(**mRightVector);
 }
 
@@ -173,41 +189,62 @@ mnaCompUpdateVoltage(**leftVector);
 mnaCompUpdateCurrent(**leftVector);
 //*mTheta = std::fmod(*mTheta_init + *mOmega * time, 2*M_PI);
 //mTheta_atr->set(*mTheta);
+
+if(mIsOmegaConstant == false) {
+  updateOmega();
+}
 }
 
 
-
 void EMT::Ph1::ParkTransformer::mnaCompUpdateVoltage(const Matrix &leftVector) {
-/*
+
+
+  /*
+
     (**mIntfVoltage)(0, 0) = 0;
+  if (terminalNotGrounded(3))
+    (**mIntfVoltage)(0, 0) =
+        Math::realFromVectorElement(leftVector, matrixNodeIndex(3));
+
+
+  (**mIntfVoltage)(1, 0) = 0;
+  if (terminalNotGrounded(4))
+    (**mIntfVoltage)(1, 0) =
+        Math::realFromVectorElement(leftVector, matrixNodeIndex(4));
+
+
+  (**mIntfVoltage)(2, 0) = 0;
+  if (terminalNotGrounded(5))
+    (**mIntfVoltage)(2, 0) =
+        Math::realFromVectorElement(leftVector, matrixNodeIndex(5));
+
+  */
+
+  /*     
   (**mIntfVoltage)(0, 0) =
       Math::realFromVectorElement(leftVector, matrixNodeIndex(3));
-  (**mIntfVoltage)(0, 0) = (**mIntfVoltage)(0, 0) -
-                           Math::realFromVectorElement(
-                               leftVector, mVirtualNodes[0]->matrixNodeIndex());
 
-
-     (**mIntfVoltage)(1, 0) = 0;
   (**mIntfVoltage)(1, 0) =
       Math::realFromVectorElement(leftVector, matrixNodeIndex(4));
-  (**mIntfVoltage)(1, 0) = (**mIntfVoltage)(1, 0) -
-                           Math::realFromVectorElement(
-                               leftVector, mVirtualNodes[1]->matrixNodeIndex());
 
-
-     (**mIntfVoltage)(2, 0) = 0;
   (**mIntfVoltage)(2, 0) =
       Math::realFromVectorElement(leftVector, matrixNodeIndex(5));
-  (**mIntfVoltage)(2, 0) = (**mIntfVoltage)(2, 0) -
-                           Math::realFromVectorElement(
-                               leftVector, mVirtualNodes[2]->matrixNodeIndex());
+  */ 
 
- */
+ 
 }
 
 
 
 void EMT::Ph1::ParkTransformer::mnaCompUpdateCurrent(const Matrix &leftVector) {
+  /*
+  (**mIntfCurrent)(0, 0) = Math::realFromVectorElement(
+      **mRightVector, matrixNodeIndex(3));
+  (**mIntfCurrent)(1, 0) = Math::realFromVectorElement(
+      **mRightVector, matrixNodeIndex(4));
+  (**mIntfCurrent)(2, 0) = Math::realFromVectorElement(
+      **mRightVector, matrixNodeIndex(5));
+  */
 }
 
 
@@ -293,7 +330,7 @@ double EMT::Ph1::ParkTransformer::getNumberOfBranches() {
 
 
 
-  void EMT::Ph1::ParkTransformer::mnaCompAddPreStepDependencies(
+void EMT::Ph1::ParkTransformer::mnaCompAddPreStepDependencies(
     AttributeBase::List &prevStepDependencies,
     AttributeBase::List &attributeDependencies,
     AttributeBase::List &modifiedAttributes) {
@@ -301,4 +338,26 @@ double EMT::Ph1::ParkTransformer::getNumberOfBranches() {
   prevStepDependencies.push_back(mIntfCurrent);
   prevStepDependencies.push_back(mIntfVoltage);
   modifiedAttributes.push_back(mRightVector);
+}
+
+
+
+void EMT::Ph1::ParkTransformer::isOmegaConstant(bool isOmegaConstant) {
+   mIsOmegaConstant = isOmegaConstant;
+}
+
+
+void EMT::Ph1::ParkTransformer::setTimeStep(Real timeStep) {
+  mTimeStep = timeStep;
+}
+
+
+void EMT::Ph1::ParkTransformer::updateOmega() {
+
+  mOmega_prev = *mOmega;
+  // Get the new omega from the inertia moment
+  Real newOmega = (**(mInertiaMoment->mIntfVoltage))(0, 0);
+  *mTheta_init = 0.0;
+  setParameters(newOmega, *mTheta_init);
+
 }

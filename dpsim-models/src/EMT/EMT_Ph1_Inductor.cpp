@@ -53,6 +53,11 @@ void EMT::Ph1::Inductor::mnaCompInitialize(Real omega, Real timeStep,
   mEquivCond = timeStep / (2.0 * **mInductance);
   // Update internal state
   mEquivCurrent = mEquivCond * (**mIntfVoltage)(0, 0) + (**mIntfCurrent)(0, 0);
+
+  //  mEquivCond = timeStep / (**mInductance);
+  //  mEquivCurrent = mEquivCond * (**mIntfCurrent)(0, 0);
+
+
 }
 
 void EMT::Ph1::Inductor::mnaCompApplySystemMatrixStamp(

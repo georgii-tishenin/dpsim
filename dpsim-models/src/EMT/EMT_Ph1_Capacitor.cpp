@@ -7,6 +7,7 @@
  *********************************************************************************/
 
 #include <dpsim-models/EMT/EMT_Ph1_Capacitor.h>
+#include <dpsim-models/EMT/EMT_Ph1_ParkTransformer.h>
 
 using namespace CPS;
 
@@ -82,11 +83,22 @@ void EMT::Ph1::Capacitor::mnaCompAddPreStepDependencies(
   modifiedAttributes.push_back(mRightVector);
   prevStepDependencies.push_back(mIntfCurrent);
   prevStepDependencies.push_back(mIntfVoltage);
+
+
+  
+
 }
 
 void EMT::Ph1::Capacitor::mnaCompPreStep(Real time, Int timeStepCount) {
   mnaCompApplyRightSideVectorStamp(**mRightVector);
+
+    // Update the ParkTransformer omega if the capacitor is acting as inertia moment.
+    if(mActAsInertiaMoment) {
+      updateParkTransformerOmega();
+ }
 }
+
+// Do the omega calculation in the post step
 
 void EMT::Ph1::Capacitor::mnaCompAddPostStepDependencies(
     AttributeBase::List &prevStepDependencies,
@@ -138,5 +150,16 @@ void EMT::Ph1::Capacitor::stampBranchNodeIncidenceMatrix(
   }
   if (terminalNotGrounded(1)) {
     branchNodeIncidenceMatrix(branchIdx, matrixNodeIndex(1)) = -1.0;
+  }
+}
+
+
+
+void EMT::Ph1::Capacitor::updateParkTransformerOmega() {
+  if(mActAsInertiaMoment) {
+      // Here, we assume mIntfVoltage holds the updated voltage value that is used as omega.
+      Real newOmega = (**mIntfVoltage)(0, 0); 
+      Real theta_initial = 0.0; 
+      mParkTransformer->setParameters(newOmega, theta_initial);
   }
 }

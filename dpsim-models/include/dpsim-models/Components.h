@@ -91,7 +91,15 @@
 #include <dpsim-models/EMT/EMT_Ph1_IdealTransformer.h>
 #include <dpsim-models/EMT/EMT_Ph1_ClarkeTransformer.h>
 #include <dpsim-models/EMT/EMT_Ph1_ParkTransformer.h>
+#include <dpsim-models/EMT/EMT_Ph1_InertiaMoment.h>
+#include <dpsim-models/EMT/EMT_Ph1_IdealTransformer_VariableRatio.h>
+#include <dpsim-models/EMT/EMT_Ph1_PieceWiseNonLinearCharacteristic.h>
+#include <dpsim-models/EMT/EMT_Ph1_NonLinearInductor.h>
+#include <dpsim-models/EMT/EMT_Ph1_CrossCoupling.h>
+#include <dpsim-models/EMT/EMT_Ph1_BackEMF.h>
+// add other components
 
+#include <dpsim-models/EMT/EMT_Ph3_NonLinearInductor.h>
 #include <dpsim-models/EMT/EMT_Ph3_AvVoltSourceInverterStateSpace.h>
 #include <dpsim-models/EMT/EMT_Ph3_AvVoltageSourceInverterDQ.h>
 #include <dpsim-models/EMT/EMT_Ph3_Capacitor.h>

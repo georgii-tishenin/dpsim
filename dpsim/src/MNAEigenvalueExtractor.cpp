@@ -74,7 +74,7 @@ void MNAEigenvalueExtractor<VarType>::identifyEigenvalueComponents(
 template <typename VarType>
 void MNAEigenvalueExtractor<VarType>::createEmptyEigenvalueMatrices(
     UInt numMatrixNodeIndices) {
-  int nBranches = mEigenvalueComponentToBranchIdx.size();
+ // int nBranches = mEigenvalueComponentToBranchIdx.size();
   mSignMatrix = MatrixVar<VarType>::Zero(mNumBranches, mNumBranches);
   mDiscretizationMatrix = MatrixVar<VarType>::Zero(mNumBranches, mNumBranches);
   mBranchNodeIncidenceMatrix = Matrix::Zero(mNumBranches, numMatrixNodeIndices);

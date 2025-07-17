@@ -82,7 +82,7 @@ void addEMTPh1Components(py::module_ mEMTPh1) {
       .def_property("R", createAttributeGetter<CPS::Real>("R"),
                     createAttributeSetter<CPS::Real>("R"));
   
-
+// add other components
 
 py::class_<CPS::EMT::Ph1::IdealTransformer, 
            std::shared_ptr<CPS::EMT::Ph1::IdealTransformer>, 

@@ -6,63 +6,68 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  *********************************************************************************/
 
-#include <dpsim-models/EMT/EMT_Ph1_CurrentSource.h>
+#include <dpsim-models/EMT/EMT_Ph1_NonLinearInductor.h>
 
 using namespace CPS;
 
-EMT::Ph1::CurrentSource::CurrentSource(String uid, String name,
+EMT::Ph1::NonLinearInductor::NonLinearInductor(String uid, String name,
                                        Logger::Level logLevel)
     : MNASimPowerComp<Real>(uid, name, true, true, logLevel),
       mCurrentRef(mAttributes->create<Complex>("I_ref")),
-      mSrcFreq(mAttributes->create<Real>("f_src")) {
+      mSrcFreq(mAttributes->create<Real>("f_src")),
+       mFluxLinkage(mAttributes->create<Real>("Flux")),
+       mInductanceValue(mAttributes->create<Real>("Inductance")) {
+
   setTerminalNumber(2);
   **mIntfVoltage = Matrix::Zero(1, 1);
   **mIntfCurrent = Matrix::Zero(1, 1);
 }
 
-SimPowerComp<Real>::Ptr EMT::Ph1::CurrentSource::clone(String name) {
-  auto copy = CurrentSource::make(name, mLogLevel);
+SimPowerComp<Real>::Ptr EMT::Ph1::NonLinearInductor::clone(String name) {
+  auto copy = NonLinearInductor::make(name, mLogLevel);
   copy->setParameters(**mCurrentRef, **mSrcFreq);
   return copy;
 }
 
-void EMT::Ph1::CurrentSource::setParameters(Complex currentRef, Real srcFreq) {
+void EMT::Ph1::NonLinearInductor::setParameters(Complex currentRef, Real srcFreq) {
   **mCurrentRef = currentRef;
   **mSrcFreq = srcFreq;
 
   mParametersSet = true;
 }
 
-void EMT::Ph1::CurrentSource::mnaCompInitialize(
+void EMT::Ph1::NonLinearInductor::mnaCompInitialize(
     Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
   updateMatrixNodeIndices();
   (**mIntfCurrent)(0, 0) =
       Math::abs(**mCurrentRef) * cos(Math::phase(**mCurrentRef));
 }
 
-void EMT::Ph1::CurrentSource::mnaCompApplyRightSideVectorStamp(
+void EMT::Ph1::NonLinearInductor::mnaCompApplyRightSideVectorStamp(
     Matrix &rightVector) {
   if (terminalNotGrounded(0))
     Math::setVectorElement(rightVector, matrixNodeIndex(0),
-                           -(**mIntfCurrent)(0, 0));
+                           +(**mIntfCurrent)(0, 0));   // was minus
 
   if (terminalNotGrounded(1))
     Math::setVectorElement(rightVector, matrixNodeIndex(1),
-                           (**mIntfCurrent)(0, 0));
+                           -(**mIntfCurrent)(0, 0));   // was plus
 }
 
-void EMT::Ph1::CurrentSource::updateState(Real time) {
-  Complex currentRef = mCurrentRef->get();
-  Real srcFreq = mSrcFreq->get();
-  if (srcFreq > 0)
-    (**mIntfCurrent)(0, 0) =
-        Math::abs(currentRef) *
-        cos(time * 2. * PI * srcFreq + Math::phase(currentRef));
-  else
-    (**mIntfCurrent)(0, 0) = currentRef.real();
+void EMT::Ph1::NonLinearInductor::updateState(Real time) {
+
+  mFlux = mFlux + (mTimeStep / 2) * (mOldVoltage + mNewVoltage);
+  (**mIntfCurrent)(0, 0) = mPieceWiseCharacteristic->getCurrent(mFlux);
+
+  mInductance = mPieceWiseCharacteristic->getInductance(mFlux);
+
+  // Update the flux linkage and inductance value attributes
+  mFluxLinkage->set(mFlux);
+  mInductanceValue->set(mInductance);
+
 }
 
-void EMT::Ph1::CurrentSource::mnaCompAddPreStepDependencies(
+void EMT::Ph1::NonLinearInductor::mnaCompAddPreStepDependencies(
     AttributeBase::List &prevStepDependencies,
     AttributeBase::List &attributeDependencies,
     AttributeBase::List &modifiedAttributes) {
@@ -71,12 +76,12 @@ void EMT::Ph1::CurrentSource::mnaCompAddPreStepDependencies(
   modifiedAttributes.push_back(mIntfCurrent);
 }
 
-void EMT::Ph1::CurrentSource::mnaCompPreStep(Real time, Int timeStepCount) {
+void EMT::Ph1::NonLinearInductor::mnaCompPreStep(Real time, Int timeStepCount) {
   updateState(time);
   mnaCompApplyRightSideVectorStamp(**mRightVector);
 }
 
-void EMT::Ph1::CurrentSource::mnaCompAddPostStepDependencies(
+void EMT::Ph1::NonLinearInductor::mnaCompAddPostStepDependencies(
     AttributeBase::List &prevStepDependencies,
     AttributeBase::List &attributeDependencies,
     AttributeBase::List &modifiedAttributes,
@@ -85,14 +90,31 @@ void EMT::Ph1::CurrentSource::mnaCompAddPostStepDependencies(
   modifiedAttributes.push_back(mIntfVoltage);
 }
 
-void EMT::Ph1::CurrentSource::mnaCompPostStep(
+void EMT::Ph1::NonLinearInductor::mnaCompPostStep(
     Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) {
   mnaCompUpdateVoltage(**leftVector);
+
+  mOldVoltage = mNewVoltage;
+  mNewVoltage = (**mIntfVoltage)(0, 0);
 }
 
+void EMT::Ph1::NonLinearInductor::mnaCompUpdateVoltage(const Matrix &leftVector) {
 
-// Look here to get voltage so that you use trapz to integrate
-void EMT::Ph1::CurrentSource::mnaCompUpdateVoltage(const Matrix &leftVector) {
+
+  // v1 - v0
+  (**mIntfVoltage)(0, 0) = 0;
+  if (terminalNotGrounded(1))
+    (**mIntfVoltage)(0, 0) =
+        Math::realFromVectorElement(leftVector, matrixNodeIndex(1));
+  if (terminalNotGrounded(0))
+    (**mIntfVoltage)(0, 0) =
+        (**mIntfVoltage)(0, 0) -
+        Math::realFromVectorElement(leftVector, matrixNodeIndex(0));
+
+
+
+
+  /*
   (**mIntfVoltage)(0, 0) = 0;
   if (terminalNotGrounded(0))
     (**mIntfVoltage)(0, 0) =
@@ -101,4 +123,10 @@ void EMT::Ph1::CurrentSource::mnaCompUpdateVoltage(const Matrix &leftVector) {
     (**mIntfVoltage)(0, 0) =
         (**mIntfVoltage)(0, 0) -
         Math::realFromVectorElement(leftVector, matrixNodeIndex(1));
+  */
+}
+
+
+void EMT::Ph1::NonLinearInductor::setTimeStep(Real timeStep) {
+  mTimeStep = timeStep;
 }

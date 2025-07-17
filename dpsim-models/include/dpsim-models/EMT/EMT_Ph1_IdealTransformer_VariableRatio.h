@@ -3,6 +3,7 @@
 
 #include <iostream>
 
+
 #include <dpsim-models/Attribute.h>
 #include <dpsim-models/AttributeList.h>
 #include <dpsim-models/Definitions.h>
@@ -13,64 +14,69 @@
 
 
 
-
 namespace CPS {
 namespace EMT {
 namespace Ph1 {
 
 
-  class InertiaMoment;  // Forward declaration
+  class Inductor;
 
 
 
-class ParkTransformer : public MNASimPowerComp<Real>,
+
+class IdealTransformerVariableRatio: public MNASimPowerComp<Real>,
                         public MNAVariableCompInterface,
-                        public SharedFactory<ParkTransformer>,
+                        public SharedFactory<IdealTransformerVariableRatio>,
                         public EigenvalueCompInterface {
-
-
 public:
-      
-  // The rotating frame frequency
-  const std::shared_ptr<Real> mOmega;
-  const std::shared_ptr<Real> mTheta_init;
-  const std::shared_ptr<Real> mTheta;
+  /// Turns ratio (v1 = v2 * ratio)
+  const std::shared_ptr<Real> mN;
 
-  const typename Attribute<Real>::Ptr mTheta_atr;
+  const typename Attribute<Real>::Ptr mRatio;
 
-  Real mOmega_prev = 0.0;
+
+
+
+  // In order to get the discrete integration of a voltage (flux) as the turns ratio of the ideal transformer
+
 
   Real mTimeStep = 0.0;
 
-  bool mIsOmegaConstant = false;
+  Real mOldVoltage = 0.0;
+
+  Real mVoltage = 0.0;
+
+  bool mNegativeSpeedTermVoltageFlag = false;
 
 
-  std::shared_ptr<CPS::EMT::Ph1::InertiaMoment> mInertiaMoment;
+  std::shared_ptr<CPS::EMT::Ph1::Inductor> mInductor;
 
-  void setInertiaMoment(const std::shared_ptr<CPS::EMT::Ph1::InertiaMoment>& pt) {
-    mInertiaMoment = pt;
+  void setStatorInductor(const std::shared_ptr<CPS::EMT::Ph1::Inductor>& pt) {
+    mInductor = pt;
 }
 
 
-  void updateOmega();
+  void setVoltageNegative(bool flag) { 
+    mNegativeSpeedTermVoltageFlag = flag; 
+  }
+void setTimeStep(Real timeStep);
+//void updateVoltages(const Matrix &leftVector);
 
 
 
-
-
-/// Defines UID, name and logging level
-ParkTransformer(String uid, String name,
-      Logger::Level logLevel = Logger::Level::off);
+  /// Defines UID, name and logging level
+  IdealTransformerVariableRatio(String uid, String name,
+              Logger::Level logLevel = Logger::Level::off);
 
 /// Defines name and logging level
-ParkTransformer(String name, Logger::Level logLevel = Logger::Level::off)
-      : ParkTransformer(name, name, logLevel) {}
+  IdealTransformerVariableRatio(String name, Logger::Level logLevel = Logger::Level::off)
+      : IdealTransformerVariableRatio(name, name, logLevel) {}
 
 
 
 // #### General ####
   /// Defines component parameters
-  void setParameters(Real omega, Real theta_initial);
+  void setParameters(Real N);
 
   /// Initializes component from power flow data
   void initializeFromNodesAndTerminals(Real frequency) override;
@@ -84,14 +90,17 @@ ParkTransformer(String name, Logger::Level logLevel = Logger::Level::off)
   /// Stamps right side (source) vector
   void mnaCompApplyRightSideVectorStamp(Matrix &rightVector) override {}
   /// Update interface voltage from MNA system result
-  void mnaCompUpdateVoltage(const Matrix &leftVector) override; // Idk if I need this
+  void mnaCompUpdateVoltage(const Matrix &leftVector) override;
   /// Update interface current from MNA system result
-  void mnaCompUpdateCurrent(const Matrix &leftVector) override; // Idk if I need this as well
+  void mnaCompUpdateCurrent(const Matrix &leftVector) override;
   void mnaCompPostStep(Real time, Int timeStepCount,
                        Attribute<Matrix>::Ptr &leftVector) override;
-
-  /// MNA pre step operations
-  void mnaCompPreStep(Real time, Int timeStepCount) override;
+  /// Add MNA post step dependencies
+  void
+  mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
+                                 AttributeBase::List &attributeDependencies,
+                                 AttributeBase::List &modifiedAttributes,
+                                 Attribute<Matrix>::Ptr &leftVector) override;
 
   /// Add MNA pre step dependencies
   void mnaCompAddPreStepDependencies(AttributeBase::List &prevStepDependencies,
@@ -99,13 +108,8 @@ ParkTransformer(String name, Logger::Level logLevel = Logger::Level::off)
                                        AttributeBase::List &modifiedAttributes) override;
 
 
-  /// Add MNA post step dependencies
-  void mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
-                                      AttributeBase::List &attributeDependencies,
-                                      AttributeBase::List &modifiedAttributes,
-                                      Attribute<Matrix>::Ptr &leftVector) override;
-  /// Mark that parameter changes so that system matrix is updated
-  Bool hasParameterChanged() override { return true; }
+  void mnaCompPreStep(Real time, Int timeStepCount) override;
+
 
 
   // #### Implementation of eigenvalue component interface ####
@@ -114,9 +118,9 @@ ParkTransformer(String name, Logger::Level logLevel = Logger::Level::off)
 
   double getNumberOfBranches() final;
 
-  void isOmegaConstant(bool isOmegaConstant); 
 
-  void setTimeStep(Real timeStep);
+  /// Mark that parameter changes so that system matrix is updated
+  Bool hasParameterChanged() override { return true; }
 
 };
 } // namespace Ph1

@@ -8,67 +8,62 @@
 
 #pragma once
 
-#include <dpsim-models/Base/Base_Ph1_Capacitor.h>
 #include <dpsim-models/MNASimPowerComp.h>
-#include <dpsim-models/Solver/EigenvalueDynamicCompInterface.h>
+#include <dpsim-models/Solver/EigenvalueCompInterface.h>
 #include <dpsim-models/Solver/MNAInterface.h>
+
 
 namespace CPS {
 namespace EMT {
 namespace Ph1 {
 
-  class ParkTransformer;  // Forward declaration
+
+  
+    class InertiaMoment;  // Forward declaration so that we can get the angular speed (omega) from the inertia moment
 
 
-/// \brief Capacitor model
+
+/// \brief Back EMF source model
 ///
-/// The capacitor is represented by a DC equivalent circuit which corresponds to one
-/// iteration of the trapezoidal integration method.
-/// The equivalent DC circuit is a resistance in paralel with a current source.
-/// The resistance is constant for a defined time step and system
-///frequency and the current source changes for each iteration.
-class Capacitor : public MNASimPowerComp<Real>,
-                  public Base::Ph1::Capacitor,
-                  public SharedFactory<Capacitor>,
-                  public EigenvalueDynamicCompInterface<Real> {
+/// This model uses modified nodal analysis to represent a back EMF term (psi_F*omega) as an ideal voltage source.
+/// For a voltage source between nodes j and k, a new variable (current across the voltage source)
+/// is added to the left side vector
+/// as unkown and it is taken into account for the equation of node j as positve and for the equation
+/// of node k as negative. Moreover
+/// a new equation ej - ek = V is added to the problem.
+class BackEMF : public MNASimPowerComp<Real>,
+                      public SharedFactory<BackEMF>,
+                      public EigenvalueCompInterface {
+private:
+  Real mTimeStep;
+
 protected:
-  /// DC equivalent current source [A]
-  Real mEquivCurrent;
-  /// Equivalent conductance [S]
-  Real mEquivCond;
+  void updateVoltage(Real time);
 
 public:
+  const Attribute<Real>::Ptr mFieldFluxLinkageRef;
+  //const Attribute<Real>::Ptr mAngularSpeedRef;
   /// Defines UID, name and logging level
-  Capacitor(String uid, String name,
-            Logger::Level logLevel = Logger::Level::off);
-  /// Defines name and logging level
-  Capacitor(String name, Logger::Level logLevel = Logger::Level::off)
-      : Capacitor(name, name, logLevel) {}
+  BackEMF(String uid, String name,
+                Logger::Level logLevel = Logger::Level::off);
+  ///
+  BackEMF(String name, Logger::Level logLevel = Logger::Level::off)
+      : BackEMF(name, name, logLevel) {}
 
-  // A flag that decides whether the capacitor is acting as the moment-of-inertia
-  bool mActAsInertiaMoment = false;
+  /// Pointer to the inertia moment component from which the angular speed is derived
+  std::shared_ptr<CPS::EMT::Ph1::InertiaMoment> mInertiaMoment;
 
-
-  std::shared_ptr<CPS::EMT::Ph1::ParkTransformer> mParkTransformer;
-
-  void setParkTransformer(const std::shared_ptr<CPS::EMT::Ph1::ParkTransformer>& pt) {
-    mParkTransformer = pt;
-    mActAsInertiaMoment = true;
-}
-
-  void updateParkTransformerOmega();
-
-  void actAsInertiaMoment(bool actAsInertiaMoment) {
-    mActAsInertiaMoment = actAsInertiaMoment;
+  void setInertiaMoment(const std::shared_ptr<CPS::EMT::Ph1::InertiaMoment>& pt) {
+    mInertiaMoment = pt;
   }
 
 
+  void setParameters(Real field_flux_linkage);
 
   SimPowerComp<Real>::Ptr clone(String name) override;
-
   // #### General ####
   /// Initializes component from power flow data
-  void initializeFromNodesAndTerminals(Real frequency) override;
+  void initializeFromNodesAndTerminals(Real frequency) override {}
 
   // #### MNA section ####
   /// Initializes internal variables of the component
@@ -78,9 +73,7 @@ public:
   void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
   /// Stamps right side (source) vector
   void mnaCompApplyRightSideVectorStamp(Matrix &rightVector) override;
-  /// Update interface voltage from MNA system result
-  void mnaCompUpdateVoltage(const Matrix &leftVector) override;
-  /// Update interface current from MNA system result
+  /// Returns current through the component
   void mnaCompUpdateCurrent(const Matrix &leftVector) override;
 
   void mnaCompPreStep(Real time, Int timeStepCount) override;
@@ -92,19 +85,14 @@ public:
       AttributeBase::List &prevStepDependencies,
       AttributeBase::List &attributeDependencies,
       AttributeBase::List &modifiedAttributes) override;
+
   /// Add MNA post step dependencies
   void
   mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
                                  AttributeBase::List &attributeDependencies,
                                  AttributeBase::List &modifiedAttributes,
                                  Attribute<Matrix>::Ptr &leftVector) override;
-
-  // #### Implementation of eigenvalue dynamic component interface ####
-  void stampSignMatrix(UInt branchIdx, MatrixVar<Real> &signMatrix,
-                       Complex coeffDP) final;
-  void stampDiscretizationMatrix(UInt branchIdx,
-                                 MatrixVar<Real> &discretizationMatrix,
-                                 Complex coeffDP) final;
+  // #### Implementation of eigenvalue component interface ####
   void stampBranchNodeIncidenceMatrix(UInt branchIdx,
                                       Matrix &branchNodeIncidenceMatrix) final;
 };

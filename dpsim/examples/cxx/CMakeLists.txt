@@ -37,6 +37,11 @@ set(CIRCUIT_SOURCES
 	Circuits/EMT_SinglePhase_VS_IdealTrafo_R.cpp
 	Circuits/EMT_SinglePhase_ClarkeTrafo.cpp
 	Circuits/EMT_SinglePhase_ParkTrafo.cpp
+	Circuits/EMT_SinglePhase_IdealTransformer_VariableRatio.cpp
+	Circuits/EMT_SinglePhase_PieceWiseNonLinearCharacteristic.cpp
+	Circuits/EMT_NonLinearInductorTest.cpp
+	Circuits/EMT_Composite_SynchGen.cpp
+	# add other circuits
 
 	# EMT examples with PF initialization
 	Circuits/EMT_Slack_PiLine_PQLoad_with_PF_Init.cpp
