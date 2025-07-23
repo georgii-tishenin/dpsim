@@ -136,16 +136,8 @@ void EMT::Ph1::IdealTransformerVariableRatio::stampBranchNodeIncidenceMatrix(
 
 void EMT::Ph1::IdealTransformerVariableRatio::mnaCompPreStep(
     Real time, Int timeStepCount) {
-
-  if (mNegativeSpeedTermVoltageFlag == true) {
-    *mN = *mN - (mTimeStep / 2) * (mOldVoltage + mVoltage);
-  } else {
-    // If the voltage is not negative, we can use the voltage as it is
-    *mN = *mN + (mTimeStep / 2) * (mOldVoltage + mVoltage);
-  }
-
+  *mN = *mN + (mTimeStep / 2) * (mOldVoltage + mVoltage);
   mRatio->set(*mN);
-
   mnaCompApplyRightSideVectorStamp(**mRightVector);
 }
 

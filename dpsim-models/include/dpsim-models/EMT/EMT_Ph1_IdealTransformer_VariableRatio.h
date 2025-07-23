@@ -36,15 +36,11 @@ public:
 
   Real mVoltage = 0.0;
 
-  bool mNegativeSpeedTermVoltageFlag = false;
-
   std::shared_ptr<CPS::EMT::Ph1::Inductor> mInductor;
 
   void setStatorInductor(const std::shared_ptr<CPS::EMT::Ph1::Inductor> &pt) {
     mInductor = pt;
   }
-
-  void setVoltageNegative(bool flag) { mNegativeSpeedTermVoltageFlag = flag; }
 
   /// Defines UID, name and logging level
   IdealTransformerVariableRatio(String uid, String name,
