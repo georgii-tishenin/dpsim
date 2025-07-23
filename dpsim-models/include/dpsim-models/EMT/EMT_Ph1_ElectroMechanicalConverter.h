@@ -53,21 +53,13 @@ public:
   /// Sets initial flux
   void setInitialFlux(Real flux);
 
-  /// Initializes component from power flow data
-  void initializeFromNodesAndTerminals(Real frequency) override;
-
   // #### MNA section ####
   /// Initializes internal variables of the component
   void mnaCompInitialize(Real omega, Real timeStep,
                          Attribute<Matrix>::Ptr leftSideVector) override;
   /// Stamps system matrix
   void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
-  /// Stamps right side (source) vector
-  void mnaCompApplyRightSideVectorStamp(Matrix &rightVector) override {}
-  /// Update interface voltage from MNA system result
-  void mnaCompUpdateVoltage(const Matrix &leftVector) override;
-  /// Update interface current from MNA system result
-  void mnaCompUpdateCurrent(const Matrix &leftVector) override;
+
   void mnaCompPostStep(Real time, Int timeStepCount,
                        Attribute<Matrix>::Ptr &leftVector) override;
   /// Add MNA post step dependencies
@@ -76,14 +68,6 @@ public:
                                  AttributeBase::List &attributeDependencies,
                                  AttributeBase::List &modifiedAttributes,
                                  Attribute<Matrix>::Ptr &leftVector) override;
-
-  /// Add MNA pre step dependencies
-  void mnaCompAddPreStepDependencies(
-      AttributeBase::List &prevStepDependencies,
-      AttributeBase::List &attributeDependencies,
-      AttributeBase::List &modifiedAttributes) override;
-
-  void mnaCompPreStep(Real time, Int timeStepCount) override;
 
   // #### Implementation of eigenvalue component interface ####
   void stampBranchNodeIncidenceMatrix(UInt branchIdx,
