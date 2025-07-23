@@ -1,9 +1,9 @@
-#include <dpsim-models/EMT/EMT_Ph1_IdealTransformer_VariableRatio.h>
+#include <dpsim-models/EMT/EMT_Ph1_ElectroMechanicalConverter.h>
 #include <dpsim-models/EMT/EMT_Ph1_Inductor.h>
 
 using namespace CPS;
 
-EMT::Ph1::IdealTransformerVariableRatio::IdealTransformerVariableRatio(
+EMT::Ph1::ElectroMechanicalConverter::ElectroMechanicalConverter(
     String uid, String name, Logger::Level logLevel)
     : MNASimPowerComp<Real>(uid, name, true, true, logLevel),
       mN(std::make_shared<Real>()), mRatio(mAttributes->create<Real>("Ratio")) {
@@ -17,7 +17,7 @@ EMT::Ph1::IdealTransformerVariableRatio::IdealTransformerVariableRatio(
   **mIntfCurrent = Matrix::Zero(1, 1);
 }
 
-void EMT::Ph1::IdealTransformerVariableRatio::setParameters(Real N) {
+void EMT::Ph1::ElectroMechanicalConverter::setParameters(Real N) {
 
   *mN = N;
 
@@ -26,17 +26,17 @@ void EMT::Ph1::IdealTransformerVariableRatio::setParameters(Real N) {
   mParametersSet = true;
 }
 
-void EMT::Ph1::IdealTransformerVariableRatio::initializeFromNodesAndTerminals(
+void EMT::Ph1::ElectroMechanicalConverter::initializeFromNodesAndTerminals(
     Real frequency) {
 }
 
-void EMT::Ph1::IdealTransformerVariableRatio::mnaCompInitialize(
+void EMT::Ph1::ElectroMechanicalConverter::mnaCompInitialize(
     Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
   updateMatrixNodeIndices();
   mTimeStep = timeStep;
 }
 
-void EMT::Ph1::IdealTransformerVariableRatio::mnaCompApplySystemMatrixStamp(
+void EMT::Ph1::ElectroMechanicalConverter::mnaCompApplySystemMatrixStamp(
     SparseMatrixRow &systemMatrix) {
 
   // Ideal transformer equations
@@ -99,7 +99,7 @@ void EMT::Ph1::IdealTransformerVariableRatio::mnaCompApplySystemMatrixStamp(
   }
 }
 
-void EMT::Ph1::IdealTransformerVariableRatio::mnaCompAddPostStepDependencies(
+void EMT::Ph1::ElectroMechanicalConverter::mnaCompAddPostStepDependencies(
     AttributeBase::List &prevStepDependencies,
     AttributeBase::List &attributeDependencies,
     AttributeBase::List &modifiedAttributes,
@@ -109,7 +109,7 @@ void EMT::Ph1::IdealTransformerVariableRatio::mnaCompAddPostStepDependencies(
   modifiedAttributes.push_back(mIntfCurrent);
 }
 
-void EMT::Ph1::IdealTransformerVariableRatio::mnaCompPostStep(
+void EMT::Ph1::ElectroMechanicalConverter::mnaCompPostStep(
     Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) {
   mnaCompUpdateVoltage(**leftVector);
   mnaCompUpdateCurrent(**leftVector);
@@ -123,25 +123,25 @@ void EMT::Ph1::IdealTransformerVariableRatio::mnaCompPostStep(
   }
 }
 
-void EMT::Ph1::IdealTransformerVariableRatio::mnaCompUpdateVoltage(
+void EMT::Ph1::ElectroMechanicalConverter::mnaCompUpdateVoltage(
     const Matrix &leftVector) {
 }
 
-void EMT::Ph1::IdealTransformerVariableRatio::mnaCompUpdateCurrent(
+void EMT::Ph1::ElectroMechanicalConverter::mnaCompUpdateCurrent(
     const Matrix &leftVector) {}
 
-void EMT::Ph1::IdealTransformerVariableRatio::stampBranchNodeIncidenceMatrix(
+void EMT::Ph1::ElectroMechanicalConverter::stampBranchNodeIncidenceMatrix(
     UInt branchIdx, Matrix &branchNodeIncidenceMatrix) {
 }
 
-void EMT::Ph1::IdealTransformerVariableRatio::mnaCompPreStep(
+void EMT::Ph1::ElectroMechanicalConverter::mnaCompPreStep(
     Real time, Int timeStepCount) {
   *mN = *mN + (mTimeStep / 2) * (mOldVoltage + mVoltage);
   mRatio->set(*mN);
   mnaCompApplyRightSideVectorStamp(**mRightVector);
 }
 
-void EMT::Ph1::IdealTransformerVariableRatio::mnaCompAddPreStepDependencies(
+void EMT::Ph1::ElectroMechanicalConverter::mnaCompAddPreStepDependencies(
     AttributeBase::List &prevStepDependencies,
     AttributeBase::List &attributeDependencies,
     AttributeBase::List &modifiedAttributes) {

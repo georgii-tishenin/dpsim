@@ -17,10 +17,10 @@ namespace Ph1 {
 
 class Inductor;
 
-class IdealTransformerVariableRatio
+class ElectroMechanicalConverter
     : public MNASimPowerComp<Real>,
       public MNAVariableCompInterface,
-      public SharedFactory<IdealTransformerVariableRatio>,
+      public SharedFactory<ElectroMechanicalConverter>,
       public EigenvalueCompInterface {
 public:
   /// Turns ratio (v1 = v2 * ratio)
@@ -43,13 +43,13 @@ public:
   }
 
   /// Defines UID, name and logging level
-  IdealTransformerVariableRatio(String uid, String name,
+  ElectroMechanicalConverter(String uid, String name,
                                 Logger::Level logLevel = Logger::Level::off);
 
   /// Defines name and logging level
-  IdealTransformerVariableRatio(String name,
+  ElectroMechanicalConverter(String name,
                                 Logger::Level logLevel = Logger::Level::off)
-      : IdealTransformerVariableRatio(name, name, logLevel) {}
+      : ElectroMechanicalConverter(name, name, logLevel) {}
 
   // #### General ####
   /// Defines component parameters
