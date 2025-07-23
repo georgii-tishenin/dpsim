@@ -6,7 +6,7 @@ using namespace CPS;
 EMT::Ph1::ElectroMechanicalConverter::ElectroMechanicalConverter(
     String uid, String name, Logger::Level logLevel)
     : MNASimPowerComp<Real>(uid, name, true, true, logLevel),
-      mN(std::make_shared<Real>()), mRatio(mAttributes->create<Real>("Ratio")) {
+    mFlux(mAttributes->create<Real>("flux")) {
 
   setVirtualNodeNumber(1);
 
@@ -17,13 +17,8 @@ EMT::Ph1::ElectroMechanicalConverter::ElectroMechanicalConverter(
   **mIntfCurrent = Matrix::Zero(1, 1);
 }
 
-void EMT::Ph1::ElectroMechanicalConverter::setParameters(Real N) {
-
-  *mN = N;
-
-  SPDLOG_LOGGER_INFO(mSLog, "Turns Ratio={} [ ] ", std::abs(N));
-
-  mParametersSet = true;
+void EMT::Ph1::ElectroMechanicalConverter::setInitialFlux(Real flux) {
+  **mFlux = flux;
 }
 
 void EMT::Ph1::ElectroMechanicalConverter::initializeFromNodesAndTerminals(
@@ -42,15 +37,15 @@ void EMT::Ph1::ElectroMechanicalConverter::mnaCompApplySystemMatrixStamp(
   // Ideal transformer equations
   if (terminalNotGrounded(0)) {
     Math::setMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(),
-                           matrixNodeIndex(0), 1 / (*mN));
+                           matrixNodeIndex(0), 1 / (**mFlux));
     Math::setMatrixElement(systemMatrix, matrixNodeIndex(0),
-                           mVirtualNodes[0]->matrixNodeIndex(), 1 / (*mN));
+                           mVirtualNodes[0]->matrixNodeIndex(), 1 / (**mFlux));
   }
   if (terminalNotGrounded(1)) {
     Math::setMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(),
-                           matrixNodeIndex(1), -1 / (*mN));
+                           matrixNodeIndex(1), -1 / (**mFlux));
     Math::setMatrixElement(systemMatrix, matrixNodeIndex(1),
-                           mVirtualNodes[0]->matrixNodeIndex(), -1 / (*mN));
+                           mVirtualNodes[0]->matrixNodeIndex(), -1 / (**mFlux));
   }
   if (terminalNotGrounded(2)) {
     Math::setMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(),
@@ -67,18 +62,18 @@ void EMT::Ph1::ElectroMechanicalConverter::mnaCompApplySystemMatrixStamp(
 
   if (terminalNotGrounded(0)) {
     SPDLOG_LOGGER_INFO(mSLog, "Add {:s} to system at ({:d},{:d})",
-                       Logger::complexToString(Complex(1.0 / (*mN), 0)),
+                       Logger::complexToString(Complex(1.0 / (**mFlux), 0)),
                        mVirtualNodes[0]->matrixNodeIndex(), matrixNodeIndex(0));
     SPDLOG_LOGGER_INFO(mSLog, "Add {:s} to system at ({:d},{:d})",
-                       Logger::complexToString(Complex(1.0 / (*mN), 0)),
+                       Logger::complexToString(Complex(1.0 / (**mFlux), 0)),
                        matrixNodeIndex(0), mVirtualNodes[0]->matrixNodeIndex());
   }
   if (terminalNotGrounded(1)) {
     SPDLOG_LOGGER_INFO(mSLog, "Add {:s} to system at ({:d},{:d})",
-                       Logger::complexToString(Complex(-1.0 / (*mN), 0)),
+                       Logger::complexToString(Complex(-1.0 / (**mFlux), 0)),
                        mVirtualNodes[0]->matrixNodeIndex(), matrixNodeIndex(1));
     SPDLOG_LOGGER_INFO(mSLog, "Add {:s} to system at ({:d},{:d})",
-                       Logger::complexToString(Complex(-1.0 / (*mN), 0)),
+                       Logger::complexToString(Complex(-1.0 / (**mFlux), 0)),
                        matrixNodeIndex(1), mVirtualNodes[0]->matrixNodeIndex());
   }
   if (terminalNotGrounded(2)) {
@@ -136,8 +131,7 @@ void EMT::Ph1::ElectroMechanicalConverter::stampBranchNodeIncidenceMatrix(
 
 void EMT::Ph1::ElectroMechanicalConverter::mnaCompPreStep(
     Real time, Int timeStepCount) {
-  *mN = *mN + (mTimeStep / 2) * (mOldVoltage + mVoltage);
-  mRatio->set(*mN);
+  **mFlux = **mFlux + (mTimeStep / 2) * (mOldVoltage + mVoltage);
   mnaCompApplyRightSideVectorStamp(**mRightVector);
 }
 
