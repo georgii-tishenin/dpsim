@@ -33,6 +33,7 @@ void EMT::Ph1::IdealTransformerVariableRatio::initializeFromNodesAndTerminals(
 void EMT::Ph1::IdealTransformerVariableRatio::mnaCompInitialize(
     Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
   updateMatrixNodeIndices();
+  mTimeStep = timeStep;
 }
 
 void EMT::Ph1::IdealTransformerVariableRatio::mnaCompApplySystemMatrixStamp(
@@ -131,10 +132,6 @@ void EMT::Ph1::IdealTransformerVariableRatio::mnaCompUpdateCurrent(
 
 void EMT::Ph1::IdealTransformerVariableRatio::stampBranchNodeIncidenceMatrix(
     UInt branchIdx, Matrix &branchNodeIncidenceMatrix) {
-}
-
-void EMT::Ph1::IdealTransformerVariableRatio::setTimeStep(Real timeStep) {
-  mTimeStep = timeStep;
 }
 
 void EMT::Ph1::IdealTransformerVariableRatio::mnaCompPreStep(

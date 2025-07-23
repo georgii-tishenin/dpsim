@@ -45,8 +45,6 @@ public:
   }
 
   void setVoltageNegative(bool flag) { mNegativeSpeedTermVoltageFlag = flag; }
-  void setTimeStep(Real timeStep);
-  //void updateVoltages(const Matrix &leftVector);
 
   /// Defines UID, name and logging level
   IdealTransformerVariableRatio(String uid, String name,
