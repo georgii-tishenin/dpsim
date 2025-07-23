@@ -28,6 +28,10 @@ void EMT::Ph1::ElectroMechanicalConverter::mnaCompInitialize(
 
 void EMT::Ph1::ElectroMechanicalConverter::mnaCompApplySystemMatrixStamp(
     SparseMatrixRow &systemMatrix) {
+  if (**mFlux == 0) {
+    **mFlux = 1e-12; // Avoid division by zero
+  }
+
   // Ideal transformer equations
   if (terminalNotGrounded(0)) {
     Math::setMatrixElement(systemMatrix, mVirtualNodes[0]->matrixNodeIndex(),
