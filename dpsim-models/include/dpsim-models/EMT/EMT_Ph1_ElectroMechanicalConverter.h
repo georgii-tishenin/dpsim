@@ -23,10 +23,8 @@ class ElectroMechanicalConverter
       public SharedFactory<ElectroMechanicalConverter>,
       public EigenvalueCompInterface {
 public:
-  /// Turns ratio (v1 = v2 * ratio)
-  const std::shared_ptr<Real> mN;
-
-  const typename Attribute<Real>::Ptr mRatio;
+  /// flux is turns ratio (v = flux * omega, torque = flux * i)
+  const typename Attribute<Real>::Ptr mFlux;
 
   // In order to get the discrete integration of a voltage (flux) as the turns ratio of the ideal transformer
 
@@ -52,8 +50,8 @@ public:
       : ElectroMechanicalConverter(name, name, logLevel) {}
 
   // #### General ####
-  /// Defines component parameters
-  void setParameters(Real N);
+  /// Sets initial flux
+  void setInitialFlux(Real flux);
 
   /// Initializes component from power flow data
   void initializeFromNodesAndTerminals(Real frequency) override;
