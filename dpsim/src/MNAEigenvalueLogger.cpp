@@ -5,7 +5,10 @@ MNAEigenvalueLogger::MNAEigenvalueLogger(String name,
                                          CPS::Logger::Level logLevel)
     : mSLog(CPS::Logger::get(name, logLevel, logLevel)),
       mEigenvaluesLogger("eigenvalues", true, 1),
-      mDiscreteEigenvaluesLogger("discreteEigenvalues", true, 1) {}
+      mDiscreteEigenvaluesLogger("discreteEigenvalues", true, 1) {
+  mEigenvaluesLogger.start();
+  mDiscreteEigenvaluesLogger.start();
+}
 
 void MNAEigenvalueLogger::setLogAttributes(
     CPS::AttributeStatic<MatrixComp>::Ptr eigenvalues,
@@ -60,8 +63,8 @@ template void MNAEigenvalueLogger::logExtraction<Complex>(
     Real time, Int timeStepCount, const MatrixVar<Complex> &stateMatrix);
 
 void MNAEigenvalueLogger::close() {
-  mEigenvaluesLogger.close();
-  mDiscreteEigenvaluesLogger.close();
+  mEigenvaluesLogger.stop();
+  mDiscreteEigenvaluesLogger.stop();
   mSLog->flush();
 }
 } // namespace DPsim
