@@ -36,6 +36,7 @@ set(CIRCUIT_SOURCES
 	Circuits/EMT_Ph3_R3C1L1CS1_RC_vs_SSN.cpp
 	Circuits/EMT_Ph3_RLC1VS1_RC_vs_SSN.cpp
 	Circuits/EMT_DP_SinglePhaseRLC.cpp
+	Circuits/EMT_Composite_SynchGen.cpp
 
 	# EMT examples with PF initialization
 	Circuits/EMT_Slack_PiLine_PQLoad_with_PF_Init.cpp
