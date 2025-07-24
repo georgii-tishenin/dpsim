@@ -71,12 +71,12 @@ void EMT::Ph1::ElectroMechanicalConverter::mnaCompAddPostStepDependencies(
 
 void EMT::Ph1::ElectroMechanicalConverter::mnaCompPostStep(
     Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) {
-  if (mInductor == nullptr) {
-    throw std::runtime_error("mInductor is null in ElectroMechanicalConverter.");
+  if (mVoltageReferenceNode == nullptr) {
+    throw std::runtime_error(
+        "mFluxNode is null in ElectroMechanicalConverter.");
   }
   mOldVoltage = mVoltage;
-  auto idx = mInductor->matrixNodeIndex(0);
-  mVoltage = Math::realFromVectorElement(**leftVector, idx);
+  mVoltage = mVoltageReferenceNode->voltage()(0, 0);
   **mFlux = **mFlux + (mTimeStep / 2) * (mOldVoltage + mVoltage);
 }
 

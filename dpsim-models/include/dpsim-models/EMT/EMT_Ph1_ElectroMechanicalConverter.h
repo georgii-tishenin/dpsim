@@ -12,10 +12,12 @@
 #include <dpsim-models/Solver/MNAVariableCompInterface.h>
 
 namespace CPS {
+template <typename VarType> class SimNode;
+}
+
+namespace CPS {
 namespace EMT {
 namespace Ph1 {
-
-class Inductor;
 
 class ElectroMechanicalConverter
     : public MNASimPowerComp<Real>,
@@ -34,19 +36,19 @@ public:
 
   Real mVoltage = 0.0;
 
-  std::shared_ptr<CPS::EMT::Ph1::Inductor> mInductor;
+  std::shared_ptr<CPS::SimNode<Real>> mVoltageReferenceNode;
 
-  void setStatorInductor(const std::shared_ptr<CPS::EMT::Ph1::Inductor> &pt) {
-    mInductor = pt;
+  void setVoltageReferenceNode(const std::shared_ptr<CPS::SimNode<Real>> &pt) {
+    mVoltageReferenceNode = pt;
   }
 
   /// Defines UID, name and logging level
   ElectroMechanicalConverter(String uid, String name,
-                                Logger::Level logLevel = Logger::Level::off);
+                             Logger::Level logLevel = Logger::Level::off);
 
   /// Defines name and logging level
   ElectroMechanicalConverter(String name,
-                                Logger::Level logLevel = Logger::Level::off)
+                             Logger::Level logLevel = Logger::Level::off)
       : ElectroMechanicalConverter(name, name, logLevel) {}
 
   // #### General ####
