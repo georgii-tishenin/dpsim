@@ -341,9 +341,14 @@ void MnaSolverDirect<VarType>::solveWithHarmonics(Real time, Int timeStepCount,
 template <typename VarType>
 void MnaSolverDirect<VarType>::extractEigenvalues(Real time,
                                                   Int timeStepCount) {
-  MnaSolver<VarType>::mMNAEigenvalueExtractor.extractEigenvalues(
-      ((Matrix)mSwitchedMatrices[mCurrentSwitchStatus][0]), time,
-      timeStepCount);
+  if (mSystemMatrixRecomputation == false) {
+    MnaSolver<VarType>::mMNAEigenvalueExtractor.extractEigenvalues(
+        ((Matrix)mSwitchedMatrices[mCurrentSwitchStatus][0]), time,
+        timeStepCount);
+  } else {
+    MnaSolver<VarType>::mMNAEigenvalueExtractor.extractEigenvalues(
+        mVariableSystemMatrix, time, timeStepCount);
+  }
 }
 
 template <typename VarType>
