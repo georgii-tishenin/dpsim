@@ -7,9 +7,7 @@ using namespace DPsim;
 using namespace CPS::EMT;
 using namespace CPS::EMT::Ph1;
 
-void CompositeSynchGen() {
-
-  Real timeStep = 5e-4;
+void CompositeSynchGen(Real timeStep, Real finalTime, bool doEigenvalueExtraction) {
 
   // Nodes
   auto n1 = SimNode::make("n1");
@@ -30,18 +28,23 @@ void CompositeSynchGen() {
   auto n16 = SimNode::make("n16");
   auto n17 = SimNode::make("n17");
   auto n18 = SimNode::make("n18");
+  auto n19 = SimNode::make("n19");
 
   //Components
-  auto v1 = VoltageSource::make("v1", Logger::Level::debug);
-  v1->setParameters(Complex(10.0, 0.0), 50);
-  auto v2 = VoltageSource::make("v2", Logger::Level::debug);
-  v2->setParameters(Complex(-5.0, -5.0 * sqrt(3.0)), 50);
-  auto v3 = VoltageSource::make("v3", Logger::Level::debug);
-  v3->setParameters(Complex(-5.0, 5.0 * sqrt(3.0)), 50);
+  auto r1 = Resistor::make("r1", Logger::Level::debug);
+  r1->setParameters(100);
+  auto r2 = Resistor::make("r2", Logger::Level::debug);
+  r2->setParameters(100);
+  auto r3 = Resistor::make("r3", Logger::Level::debug);
+  r3->setParameters(100);
 
   auto R0 =
       Resistor::make("R0", Logger::Level::debug); // zero sequence resistor
-  R0->setParameters(1e3);
+  R0->setParameters(0.00311);
+
+  auto L0 =
+      Inductor::make("L0", Logger::Level::debug); // zero sequence inductor
+  L0->setParameters(4.9553e-4);
 
   // d-axis components
   auto Rsd = Resistor::make(
@@ -92,30 +95,25 @@ void CompositeSynchGen() {
       "R2q", Logger::Level::debug); // q-axis 2nd damping winding resistor
   R2q->setParameters(0.02458);
 
-  auto ElectroMechanicalConverter_d = IdealTransformerVariableRatio::make(
+  auto ElectroMechanicalConverter_d = ElectroMechanicalConverter::make(
       "ElectroMechanicalConverter_d", Logger::Level::debug);
-  ElectroMechanicalConverter_d->setStatorInductor(Ls_sigma_q);
-  ElectroMechanicalConverter_d->setTimeStep(timeStep);
+  ElectroMechanicalConverter_d->setVoltageReferenceNode(n13);
 
-  auto ElectroMechanicalConverter_q = IdealTransformerVariableRatio::make(
+  auto ElectroMechanicalConverter_q = ElectroMechanicalConverter::make(
       "ElectroMechanicalConverter_q", Logger::Level::debug);
-  ElectroMechanicalConverter_q->setStatorInductor(Ls_sigma_d);
-  ElectroMechanicalConverter_q->setTimeStep(timeStep);
+  ElectroMechanicalConverter_q->setVoltageReferenceNode(n6);
 
   auto ParkTrafo =
       ParkTransformer::make("ParkTransformer", Logger::Level::debug);
   ParkTrafo->isOmegaConstant(
       true); // Set the Park transformer to use a constant angular frequency
   ParkTrafo->setParameters(2 * M_PI * 50,
-                           0.0); // Set the angular frequency and initial angle
+                           M_PI/2); // Set the angular frequency and initial angle
 
   //Mechanical components
   auto InertiaMoment =
       InertiaMoment::make("InertiaMoment", Logger::Level::debug);
   InertiaMoment->setParameters(0.0325); // Set the inertia moment value
-
-  auto LoadTorque = CurrentSource::make("LoadTorque", Logger::Level::debug);
-  LoadTorque->setParameters(Complex(400, 0.0));
 
   auto ConstantOmegaSource =
       VoltageSource::make("ConstantOmegaSource", Logger::Level::debug);
@@ -124,9 +122,9 @@ void CompositeSynchGen() {
 
   //Topology
   // abc side
-  v1->connect({n1, SimNode::GND});
-  v2->connect({n2, SimNode::GND});
-  v3->connect({n3, SimNode::GND});
+  r1->connect({n1, SimNode::GND});
+  r2->connect({n2, SimNode::GND});
+  r3->connect({n3, SimNode::GND});
   ParkTrafo->connect({n1, n2, n3, n4, n11, n17});
 
   // d-axis circuit
@@ -151,18 +149,17 @@ void CompositeSynchGen() {
   R2q->connect({n16, SimNode::GND});
 
   // 0 axis circuit
-  R0->connect(
-      {n17, SimNode::GND}); // zero sequence resistor connects to node n6
+  R0->connect({n17, n19});
+  L0->connect({n19, SimNode::GND});
 
   //Mechanical side
   InertiaMoment->connect({n18, SimNode::GND});
-  LoadTorque->connect({n18, SimNode::GND});
   ConstantOmegaSource->connect({SimNode::GND, n18});
 
   // Define system topology
   SystemTopology system(50,
                         SystemNodeList{n1, n2, n3, n4, n5, n6, n7, n8, n9, n10,
-                                       n11, n12, n13, n14, n15, n16, n17, n18},
+                                       n11, n12, n13, n14, n15, n16, n17, n18, n19},
                         SystemComponentList{R1d,
                                             Rsd,
                                             Ls_sigma_d,
@@ -181,43 +178,42 @@ void CompositeSynchGen() {
                                             Vf_d,
                                             Rf_d,
                                             InertiaMoment,
-                                            v1,
-                                            v2,
-                                            v3,
+                                            r1,
+                                            r2,
+                                            r3,
                                             R0,
+                                            L0,
                                             Lf_d,
-                                            LoadTorque,
-                                            ConstantOmegaSource});
+                                            ConstantOmegaSource
+                                            });
 
   // Define simulation scenario
-  Real finalTime = 5.0;
   String simName = "EMT_CompositeSynchGen" + std::to_string(timeStep);
 
   // Logger
   auto logger = DataLogger::make(simName);
   logger->logAttribute("omega", n18->attribute("v"));
-  logger->logAttribute("Torque", InertiaMoment->attribute("i_intf"));
+//   logger->logAttribute("Torque", InertiaMoment->attribute("i_intf"));
   logger->logAttribute("Ratio_d",
-                       ElectroMechanicalConverter_d->attribute("Ratio"));
+                       ElectroMechanicalConverter_d->attribute("flux"));
   logger->logAttribute("Ratio_q",
-                       ElectroMechanicalConverter_q->attribute("Ratio"));
-  logger->logAttribute("V_lsd", Ls_sigma_d->attribute("v_intf"));
-  logger->logAttribute("V_lsq", Ls_sigma_q->attribute("v_intf"));
-  logger->logAttribute("V_m_d", Lmd->attribute("v_intf"));
-  logger->logAttribute("V_m_q", Lmq->attribute("v_intf"));
-  logger->logAttribute("V_f_d", Vf_d->attribute("v_intf"));
-  logger->logAttribute("I_f_d", Vf_d->attribute("i_intf"));
-  logger->logAttribute("V_D", n4->attribute("v"));
-  logger->logAttribute("V_Q", n11->attribute("v"));
-  logger->logAttribute("V_R0", R0->attribute("v_intf"));
-  logger->logAttribute("VN7", n7->attribute("v"));
-  logger->logAttribute("VN14", n14->attribute("v"));
-  logger->logAttribute("i_Rfd", Rf_d->attribute("i_intf"));
-  logger->logAttribute("v_Rfd", Rf_d->attribute("v_intf"));
-  logger->logAttribute("v_Lfd", Lf_d->attribute("v_intf"));
-  logger->logAttribute("Load", LoadTorque->attribute("i_intf"));
-  logger->logAttribute("I_sd", Rsd->attribute("i_intf"));
-  logger->logAttribute("I_sq", Rsq->attribute("i_intf"));
+                       ElectroMechanicalConverter_q->attribute("flux"));
+//   logger->logAttribute("V_f_d", n10->attribute("v"));
+//   logger->logAttribute("I_f_d", Vf_d->attribute("i_intf"));
+  logger->logAttribute("V_A", n1->attribute("v"));
+  logger->logAttribute("V_B", n2->attribute("v"));
+  logger->logAttribute("V_C", n3->attribute("v"));
+  logger->logAttribute("I_A", r1->attribute("i_intf"));
+  logger->logAttribute("I_B", r1->attribute("i_intf"));
+  logger->logAttribute("I_C", r1->attribute("i_intf"));
+//   logger->logAttribute("V_Q", n11->attribute("v"));
+//   logger->logAttribute("V_D", n4->attribute("v"));
+//   logger->logAttribute("V_Q", n11->attribute("v"));
+//   logger->logAttribute("V_DS", n6->attribute("v"));
+//   logger->logAttribute("V_QS", n13->attribute("v"));
+//   logger->logAttribute("V_0", n17->attribute("v"));
+//   logger->logAttribute("I_sd", Rsd->attribute("i_intf"));
+//   logger->logAttribute("I_sq", Rsq->attribute("i_intf"));
 
   Simulation sim(simName);
   sim.setSystem(system);
@@ -226,11 +222,70 @@ void CompositeSynchGen() {
   sim.setFinalTime(finalTime);
   sim.setDomain(Domain::EMT);
   sim.addLogger(logger);
+  sim.doEigenvalueExtraction(doEigenvalueExtraction);
+  sim.run();
+}
+
+void EMConverterEigenvaluesTest(Real timeStep, Real finalTime, bool doEigenvalueExtraction) {
+
+  auto n1 = SimNode::make("n1");
+  auto n2 = SimNode::make("n2");
+  auto n3 = SimNode::make("n3");
+  auto n4 = SimNode::make("n4");
+
+  auto v = VoltageSource::make("v", Logger::Level::debug);
+  v->setParameters(Complex(10.0, 0.0), 0);
+  v->connect({SimNode::GND, n1});
+
+  auto l = Inductor::make("l", Logger::Level::debug);
+  l->setParameters(0.1);
+  l->connect({n1, n2});
+
+  auto r = Resistor::make("r", Logger::Level::debug);
+  r->setParameters(1.0);
+  r->connect({n3, SimNode::GND});
+
+  auto converter = ElectroMechanicalConverter::make("converter",
+                                                         Logger::Level::debug);
+  converter->setVoltageReferenceNode(n1);
+  converter->connect({n3, n2, n4, SimNode::GND});
+
+  auto inertiaMoment =
+      InertiaMoment::make("inertiaMoment", Logger::Level::debug);
+      inertiaMoment->setParameters(1e-3);
+    inertiaMoment->connect({n4, SimNode::GND});
+
+  // Define system topology
+    SystemTopology system(50,
+                            SystemNodeList{n1, n2, n3, n4},
+                            SystemComponentList{v, l, r, converter, inertiaMoment});
+
+  // Define simulation scenario
+  String simName = "EMConverterEigenvaluesTest";
+  // Logger
+  auto logger = DataLogger::make(simName);
+  logger->logAttribute("Flux", converter->attribute("flux"));
+  logger->logAttribute("V1", n1->attribute("v"));
+  logger->logAttribute("V2", n2->attribute("v"));
+  logger->logAttribute("V3", n3->attribute("v"));
+  logger->logAttribute("V4", n4->attribute("v"));
+  logger->logAttribute("I12", r->attribute("i_intf"));
+
+  Simulation sim(simName);
+  sim.setSystem(system);
+  sim.setTimeStep(timeStep);
+  sim.doSystemMatrixRecomputation(true);
+  sim.setFinalTime(finalTime);
+  sim.setDomain(Domain::EMT);
+  sim.addLogger(logger);
+  sim.doEigenvalueExtraction(doEigenvalueExtraction);
   sim.run();
 }
 
 int main(int argc, char *argv[]) {
 
-  CompositeSynchGen();
+// CompositeSynchGen(1e-3, 10.0, false);
+EMConverterEigenvaluesTest(1e-4, 1.0, true);
+
   return 0;
 }
