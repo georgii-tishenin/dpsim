@@ -38,16 +38,13 @@ void EMT::Ph1::ParkTransformer::setParameters(Real omega, Real theta_initial) {
   mParametersSet = true;
 }
 
-void EMT::Ph1::ParkTransformer::initializeFromNodesAndTerminals(
-    Real frequency) {}
-
 void EMT::Ph1::ParkTransformer::mnaCompInitialize(
     Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
   updateMatrixNodeIndices();
+  mTimeStep = timeStep;
 }
 
 void EMT::Ph1::ParkTransformer::mnaCompPreStep(Real time, Int timeStepCount) {
-
   if (mIsOmegaConstant == false) {
 
     *mTheta = *mTheta + (mTimeStep / 2) * (*mOmega + mOmega_prev);
@@ -188,93 +185,8 @@ void EMT::Ph1::ParkTransformer::mnaCompPostStep(
   }
 }
 
-void EMT::Ph1::ParkTransformer::mnaCompUpdateVoltage(const Matrix &leftVector) {
-}
-
-void EMT::Ph1::ParkTransformer::mnaCompUpdateCurrent(const Matrix &leftVector) {
-}
-
 void EMT::Ph1::ParkTransformer::stampBranchNodeIncidenceMatrix(
-    UInt branchIdx, Matrix &branchNodeIncidenceMatrix) {
-
-  UInt virtual_node0__branchIdx_1 = branchIdx - 10;
-  UInt virtual_node0__branchIdx_2 = branchIdx - 9;
-  UInt virtual_node0__branchIdx_3 = branchIdx - 8;
-  UInt virtual_node1__branchIdx_1 = branchIdx - 7;
-  UInt virtual_node1__branchIdx_2 = branchIdx - 6;
-  UInt virtual_node1__branchIdx_3 = branchIdx - 5;
-  UInt virtual_node1__branchIdx_4 = branchIdx - 4;
-  UInt virtual_node2__branchIdx_1 = branchIdx - 3;
-  UInt virtual_node2__branchIdx_2 = branchIdx - 2;
-  UInt virtual_node2__branchIdx_3 = branchIdx - 1;
-  UInt virtual_node2__branchIdx_4 = branchIdx;
-
-  UInt nodeIdx_phaseA = matrixNodeIndex(0);
-  UInt nodeIdx_phaseB = matrixNodeIndex(1);
-  UInt nodeIdx_phaseC = matrixNodeIndex(2);
-  UInt nodeIdx_alpha = matrixNodeIndex(3);
-  UInt nodeIdx_beta = matrixNodeIndex(4);
-  UInt nodeIdx_zero = matrixNodeIndex(5);
-
-  UInt virtual_node0_Idx = mVirtualNodes[0]->matrixNodeIndex();
-  UInt virtual_node1_Idx = mVirtualNodes[1]->matrixNodeIndex();
-  UInt virtual_node2_Idx = mVirtualNodes[2]->matrixNodeIndex();
-
-  //// Virtual node 0
-
-  branchNodeIncidenceMatrix(virtual_node0__branchIdx_1, nodeIdx_phaseA) = 1.0;
-  branchNodeIncidenceMatrix(virtual_node0__branchIdx_1, virtual_node0_Idx) =
-      -1.0; ////////////// duhet -
-
-  branchNodeIncidenceMatrix(virtual_node0__branchIdx_2, nodeIdx_alpha) =
-      -1.0; ////////////// duhet -
-  branchNodeIncidenceMatrix(virtual_node0__branchIdx_2, virtual_node0_Idx) =
-      1.0;
-
-  branchNodeIncidenceMatrix(virtual_node0__branchIdx_3, nodeIdx_zero) =
-      -1.0; ////////////// duhet -
-  branchNodeIncidenceMatrix(virtual_node0__branchIdx_3, virtual_node0_Idx) =
-      1.0;
-
-  //// Virtual node 1
-
-  branchNodeIncidenceMatrix(virtual_node1__branchIdx_1, nodeIdx_phaseB) = 1.0;
-  branchNodeIncidenceMatrix(virtual_node1__branchIdx_1, virtual_node1_Idx) =
-      -1.0; ////////////// duhet -
-
-  branchNodeIncidenceMatrix(virtual_node1__branchIdx_2, nodeIdx_alpha) = 1.0;
-  branchNodeIncidenceMatrix(virtual_node1__branchIdx_2, virtual_node1_Idx) =
-      -1.0; ////////////// duhet -
-
-  branchNodeIncidenceMatrix(virtual_node1__branchIdx_3, nodeIdx_beta) =
-      -1.0; ////////////// duhet -
-  branchNodeIncidenceMatrix(virtual_node1__branchIdx_3, virtual_node1_Idx) =
-      1.0;
-
-  branchNodeIncidenceMatrix(virtual_node1__branchIdx_4, nodeIdx_zero) =
-      -1.0; ////////////// duhet -
-  branchNodeIncidenceMatrix(virtual_node1__branchIdx_4, virtual_node1_Idx) =
-      1.0;
-
-  //// Virtual node 2
-
-  branchNodeIncidenceMatrix(virtual_node2__branchIdx_1, nodeIdx_phaseC) = 1.0;
-  branchNodeIncidenceMatrix(virtual_node2__branchIdx_1, virtual_node2_Idx) =
-      -1.0; ////////////// duhet -
-
-  branchNodeIncidenceMatrix(virtual_node2__branchIdx_2, nodeIdx_alpha) = 1.0;
-  branchNodeIncidenceMatrix(virtual_node2__branchIdx_2, virtual_node2_Idx) =
-      -1.0; ////////////// duhet -
-
-  branchNodeIncidenceMatrix(virtual_node2__branchIdx_3, nodeIdx_beta) = 1.0;
-  branchNodeIncidenceMatrix(virtual_node2__branchIdx_3, virtual_node2_Idx) =
-      -1.0; ////////////// duhet -
-
-  branchNodeIncidenceMatrix(virtual_node2__branchIdx_4, nodeIdx_zero) =
-      -1.0; ////////////// duhet -
-  branchNodeIncidenceMatrix(virtual_node2__branchIdx_4, virtual_node2_Idx) =
-      1.0;
-}
+    UInt branchIdx, Matrix &branchNodeIncidenceMatrix) {}
 
 void EMT::Ph1::ParkTransformer::mnaCompAddPreStepDependencies(
     AttributeBase::List &prevStepDependencies,
@@ -290,12 +202,7 @@ void EMT::Ph1::ParkTransformer::isOmegaConstant(bool isOmegaConstant) {
   mIsOmegaConstant = isOmegaConstant;
 }
 
-void EMT::Ph1::ParkTransformer::setTimeStep(Real timeStep) {
-  mTimeStep = timeStep;
-}
-
 void EMT::Ph1::ParkTransformer::updateOmega() {
-
   mOmega_prev = *mOmega;
   // Get the new omega from the inertia moment
   Real newOmega = (**(mInertiaMoment->mIntfVoltage))(0, 0);

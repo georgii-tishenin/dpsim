@@ -57,26 +57,15 @@ public:
   /// Defines component parameters
   void setParameters(Real omega, Real theta_initial);
 
-  /// Initializes component from power flow data
-  void initializeFromNodesAndTerminals(Real frequency) override;
-
   // #### MNA section ####
   /// Initializes internal variables of the component
   void mnaCompInitialize(Real omega, Real timeStep,
                          Attribute<Matrix>::Ptr leftSideVector) override;
   /// Stamps system matrix
   void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
-  /// Stamps right side (source) vector
-  void mnaCompApplyRightSideVectorStamp(Matrix &rightVector) override {}
-  /// Update interface voltage from MNA system result
-  void
-  mnaCompUpdateVoltage(const Matrix &leftVector) override; // Idk if I need this
-  /// Update interface current from MNA system result
-  void mnaCompUpdateCurrent(
-      const Matrix &leftVector) override; // Idk if I need this as well
+  /// MNA post step operations
   void mnaCompPostStep(Real time, Int timeStepCount,
                        Attribute<Matrix>::Ptr &leftVector) override;
-
   /// MNA pre step operations
   void mnaCompPreStep(Real time, Int timeStepCount) override;
 
@@ -100,8 +89,6 @@ public:
                                       Matrix &branchNodeIncidenceMatrix) final;
 
   void isOmegaConstant(bool isOmegaConstant);
-
-  void setTimeStep(Real timeStep);
 };
 } // namespace Ph1
 } // namespace EMT
