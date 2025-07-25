@@ -7,7 +7,7 @@ using namespace DPsim;
 using namespace CPS::EMT;
 using namespace CPS::EMT::Ph1;
 
-void CompositeSynchGen(Real timeStep, Real finalTime, bool doEigenvalueExtraction) {
+void syncronousGeneratorTest(Real timeStep, Real finalTime, bool doEigenvalueExtraction) {
 
   // Nodes
   auto n1 = SimNode::make("n1");
@@ -188,7 +188,7 @@ void CompositeSynchGen(Real timeStep, Real finalTime, bool doEigenvalueExtractio
                                             });
 
   // Define simulation scenario
-  String simName = "EMT_CompositeSynchGen" + std::to_string(timeStep);
+  String simName = "syncrhonousGeneratorTest";
 
   // Logger
   auto logger = DataLogger::make(simName);
@@ -226,7 +226,7 @@ void CompositeSynchGen(Real timeStep, Real finalTime, bool doEigenvalueExtractio
   sim.run();
 }
 
-void EMConverterEigenvaluesTest(Real timeStep, Real finalTime, bool doEigenvalueExtraction) {
+void electromechanicalConverterTest(Real timeStep, Real finalTime, bool doEigenvalueExtraction) {
 
   auto n1 = SimNode::make("n1");
   auto n2 = SimNode::make("n2");
@@ -261,7 +261,7 @@ void EMConverterEigenvaluesTest(Real timeStep, Real finalTime, bool doEigenvalue
                             SystemComponentList{v, l, r, converter, inertiaMoment});
 
   // Define simulation scenario
-  String simName = "EMConverterEigenvaluesTest";
+  String simName = "electromechanicalConverterTest";
   // Logger
   auto logger = DataLogger::make(simName);
   logger->logAttribute("Flux", converter->attribute("flux"));
@@ -284,8 +284,8 @@ void EMConverterEigenvaluesTest(Real timeStep, Real finalTime, bool doEigenvalue
 
 int main(int argc, char *argv[]) {
 
-// CompositeSynchGen(1e-3, 10.0, false);
-EMConverterEigenvaluesTest(1e-4, 1.0, true);
+syncronousGeneratorTest(1e-3, 10.0, false);
+electromechanicalConverterTest(1e-4, 1.0, true);
 
   return 0;
 }
