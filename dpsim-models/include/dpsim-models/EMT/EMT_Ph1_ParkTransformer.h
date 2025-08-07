@@ -12,6 +12,10 @@
 #include <dpsim-models/Solver/MNAVariableCompInterface.h>
 
 namespace CPS {
+template <typename VarType> class SimNode;
+}
+
+namespace CPS {
 namespace EMT {
 namespace Ph1 {
 
@@ -24,26 +28,20 @@ class ParkTransformer : public MNASimPowerComp<Real>,
 
 public:
   // The rotating frame frequency
-  const std::shared_ptr<Real> mOmega;
-  const std::shared_ptr<Real> mTheta_init;
-  const std::shared_ptr<Real> mTheta;
+  const typename Attribute<Real>::Ptr mOmega;
+  const typename Attribute<Real>::Ptr mTheta;
 
-  const typename Attribute<Real>::Ptr mTheta_atr;
-
-  Real mOmega_prev = 0.0;
-
+  Real mInitialTheta = 0.0;
+  Real mOldOmega = 0.0;
   Real mTimeStep = 0.0;
-
   bool mIsOmegaConstant = false;
 
-  std::shared_ptr<CPS::EMT::Ph1::InertiaMoment> mInertiaMoment;
+  std::shared_ptr<CPS::SimNode<Real>> mOmegaReferenceNode;
 
   void
-  setInertiaMoment(const std::shared_ptr<CPS::EMT::Ph1::InertiaMoment> &pt) {
-    mInertiaMoment = pt;
+  setOmegaReferenceNode(const std::shared_ptr<CPS::SimNode<Real>> &pt) {
+    mOmegaReferenceNode = pt;
   }
-
-  void updateOmega();
 
   /// Defines UID, name and logging level
   ParkTransformer(String uid, String name,
@@ -54,8 +52,8 @@ public:
       : ParkTransformer(name, name, logLevel) {}
 
   // #### General ####
-  /// Defines component parameters
-  void setParameters(Real omega, Real theta_initial);
+  /// Set initial values for omega and theta
+  void setInitialValues(Real omega, Real theta);
 
   // #### MNA section ####
   /// Initializes internal variables of the component
@@ -88,7 +86,7 @@ public:
   void stampBranchNodeIncidenceMatrix(UInt branchIdx,
                                       Matrix &branchNodeIncidenceMatrix) final;
 
-  void isOmegaConstant(bool isOmegaConstant);
+  void setIsOmegaConstant(bool isOmegaConstant);
 };
 } // namespace Ph1
 } // namespace EMT
