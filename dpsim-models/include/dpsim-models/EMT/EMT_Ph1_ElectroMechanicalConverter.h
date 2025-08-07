@@ -36,11 +36,15 @@ public:
 
   Real mVoltage = 0.0;
 
+  bool mIsNegative = false;
+
   std::shared_ptr<CPS::SimNode<Real>> mVoltageReferenceNode;
 
   void setVoltageReferenceNode(const std::shared_ptr<CPS::SimNode<Real>> &pt) {
     mVoltageReferenceNode = pt;
   }
+
+  void setIsNegative(bool isNegative) { mIsNegative = isNegative; }
 
   /// Defines UID, name and logging level
   ElectroMechanicalConverter(String uid, String name,
