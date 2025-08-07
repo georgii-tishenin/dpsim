@@ -27,6 +27,8 @@ class ElectroMechanicalConverter
 public:
   /// flux is turns ratio (v = flux * omega, torque = flux * i)
   const typename Attribute<Real>::Ptr mFlux;
+  /// used only for logging of torque
+  const typename Attribute<Real>::Ptr mTorque;
 
   // In order to get the discrete integration of a voltage (flux) as the turns ratio of the ideal transformer
 
@@ -81,6 +83,11 @@ public:
 
   /// Mark that parameter changes so that system matrix is updated
   Bool hasParameterChanged() override { return true; }
+
+private:
+  void setFlux();
+
+  void setTorque(Attribute<Matrix>::Ptr &leftVector);
 };
 } // namespace Ph1
 } // namespace EMT
