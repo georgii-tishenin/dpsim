@@ -77,6 +77,10 @@ void EMT::Ph1::ElectroMechanicalConverter::mnaCompPostStep(
   }
   mOldVoltage = mVoltage;
   mVoltage = mVoltageReferenceNode->voltage()(0, 0);
+  if (mIsNegative) {
+    mVoltage =
+        -mVoltage; // this reveres also sign of flux and therefore the ratio
+  }
   **mFlux = **mFlux + (mTimeStep / 2) * (mOldVoltage + mVoltage);
 }
 
