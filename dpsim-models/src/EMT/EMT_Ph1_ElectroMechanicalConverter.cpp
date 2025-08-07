@@ -6,7 +6,8 @@ using namespace CPS;
 EMT::Ph1::ElectroMechanicalConverter::ElectroMechanicalConverter(
     String uid, String name, Logger::Level logLevel)
     : MNASimPowerComp<Real>(uid, name, true, true, logLevel),
-      mFlux(mAttributes->create<Real>("flux")) {
+      mFlux(mAttributes->create<Real>("flux")),
+      mTorque(mAttributes->create<Real>("torque")) {
 
   setVirtualNodeNumber(1);
   setTerminalNumber(4);
@@ -71,6 +72,11 @@ void EMT::Ph1::ElectroMechanicalConverter::mnaCompAddPostStepDependencies(
 
 void EMT::Ph1::ElectroMechanicalConverter::mnaCompPostStep(
     Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) {
+  setFlux();
+  setTorque(leftVector);
+}
+
+void EMT::Ph1::ElectroMechanicalConverter::setFlux() {
   if (mVoltageReferenceNode == nullptr) {
     throw std::runtime_error(
         "mFluxNode is null in ElectroMechanicalConverter.");
@@ -82,6 +88,12 @@ void EMT::Ph1::ElectroMechanicalConverter::mnaCompPostStep(
         -mVoltage; // this reveres also sign of flux and therefore the ratio
   }
   **mFlux = **mFlux + (mTimeStep / 2) * (mOldVoltage + mVoltage);
+}
+
+void EMT::Ph1::ElectroMechanicalConverter::setTorque(
+    Attribute<Matrix>::Ptr &leftVector) {
+  **mTorque = Math::realFromVectorElement(**leftVector,
+                                          mVirtualNodes[0]->matrixNodeIndex());
 }
 
 void EMT::Ph1::ElectroMechanicalConverter::stampBranchNodeIncidenceMatrix(
