@@ -105,9 +105,9 @@ void syncronousGeneratorTest(Real timeStep, Real finalTime, bool doEigenvalueExt
 
   auto ParkTrafo =
       ParkTransformer::make("ParkTransformer", Logger::Level::debug);
-  ParkTrafo->isOmegaConstant(
+  ParkTrafo->setIsOmegaConstant(
       true); // Set the Park transformer to use a constant angular frequency
-  ParkTrafo->setParameters(2 * M_PI * 50,
+  ParkTrafo->setInitialValues(2 * M_PI * 50,
                            M_PI/2); // Set the angular frequency and initial angle
 
   //Mechanical components
@@ -282,10 +282,220 @@ void electromechanicalConverterTest(Real timeStep, Real finalTime, bool doEigenv
   sim.run();
 }
 
+void motorStartingTest(Real timeStep, Real finalTime, bool doEigenvalueExtraction)
+{
+  Real frequency = 50;
+  Real omega = 2 * M_PI * frequency;
+  Real voltageMagnitudeLL = 10e3;
+  Real infeedResistance = 3.4e-3;
+  Real infeedReactance = 9.4e-3;
+  Real rS = 2.0995;
+  Real xS = 6.9115;
+  Real xM = 233.67;
+  Real rR = 556.9 * 1e-3;
+  Real xR = 6.9115;
+  Real inertia = 10;
+
+  Real voltageMagnitude = voltageMagnitudeLL * sqrt(2.0) / sqrt(3.0);
+  Complex voltageL1 = Complex(voltageMagnitude, 0.0);
+  Complex voltageL2 = Complex(voltageMagnitude * cos(-2*M_PI / 3),
+                              voltageMagnitude * sin(-2*M_PI / 3));
+  Complex voltageL3 = Complex(voltageMagnitude * cos(2 * M_PI / 3),
+                              voltageMagnitude * sin(2 * M_PI / 3));
+  Real infeedInductance = infeedReactance / omega;
+  Real lS = xS / omega;
+  Real lM = xM / omega;
+  Real lR = xR / omega;
+
+  // Nodes
+  auto n1 = SimNode::make("n1");
+  auto n2 = SimNode::make("n2");
+  auto n3 = SimNode::make("n3");
+  auto n4 = SimNode::make("n4");
+  auto n5 = SimNode::make("n5");
+  auto n6 = SimNode::make("n6");
+  auto n7 = SimNode::make("n7");
+  auto n8 = SimNode::make("n8");
+  auto n9 = SimNode::make("n9");
+  auto n10 = SimNode::make("n10");
+  auto n11 = SimNode::make("n11");
+  auto n12 = SimNode::make("n12");
+  auto n13 = SimNode::make("n13");
+  auto n14 = SimNode::make("n14");
+  auto n15 = SimNode::make("n15");
+  auto n16 = SimNode::make("n16");
+  auto n17 = SimNode::make("n17");
+  auto n18 = SimNode::make("n18");
+  auto n19 = SimNode::make("n19");
+  auto n20 = SimNode::make("n20");
+  auto n21 = SimNode::make("n21");
+  auto n22 = SimNode::make("n22");
+
+  // Components
+  // Infeed
+  auto v1 = VoltageSource::make("v1", Logger::Level::debug);
+  v1->setParameters(voltageL1, frequency);
+  v1->connect({SimNode::GND, n1});
+  auto v2 = VoltageSource::make("v2", Logger::Level::debug);
+  v2->setParameters(voltageL2, frequency);
+  v2->connect({SimNode::GND, n2});
+  auto v3 = VoltageSource::make("v3", Logger::Level::debug);
+  v3->setParameters(voltageL3, frequency);
+  v3->connect({SimNode::GND, n3});
+  auto rInfeed1 = Resistor::make("rInfeed", Logger::Level::debug);
+  rInfeed1->setParameters(infeedResistance);
+  rInfeed1->connect({n4, n1});
+  auto rInfeed2 = Resistor::make("rInfeed2", Logger::Level::debug);
+  rInfeed2->setParameters(infeedResistance);
+  rInfeed2->connect({n5, n2});
+  auto rInfeed3 = Resistor::make("rInfeed3", Logger::Level::debug);
+  rInfeed3->setParameters(infeedResistance);
+  rInfeed3->connect({n6, n3});
+  auto lInfeed1 = Inductor::make("lInfeed", Logger::Level::debug);
+  lInfeed1->setParameters(infeedInductance);
+  lInfeed1->connect({n4, n7});
+  auto lInfeed2 = Inductor::make("lInfeed2", Logger::Level::debug);
+  lInfeed2->setParameters(infeedInductance);
+  lInfeed2->connect({n5, n8});
+  auto lInfeed3 = Inductor::make("lInfeed3", Logger::Level::debug);
+  lInfeed3->setParameters(infeedInductance);
+  lInfeed3->connect({n6, n9});
+
+  // Park transformer
+  auto parkTrafo =
+      ParkTransformer::make("ParkTransformer", Logger::Level::debug);
+  parkTrafo->setIsOmegaConstant(false);
+  parkTrafo->setInitialValues(0.0, 0.0);
+//   parkTrafo->setInitialValues(omega, 0.0);
+//   parkTrafo->setIsOmegaConstant(true);
+  parkTrafo->setOmegaReferenceNode(n22);
+  parkTrafo->connect({n7, n8, n9, n10, n11, n12});
+
+  // d-axis components
+    auto rSd = Resistor::make("rSd", Logger::Level::debug);
+    rSd->setParameters(rS);
+    rSd->connect({n10, n13});
+    auto lSd = Inductor::make("lSd", Logger::Level::debug);
+    lSd->setParameters(lS);
+    lSd->connect({n16, n18});
+    auto lMd = Inductor::make("lMd", Logger::Level::debug);
+    lMd->setParameters(lM);
+    lMd->connect({n18, SimNode::GND});
+    auto lRd = Inductor::make("lRd", Logger::Level::debug);
+    lRd->setParameters(lR);
+    lRd->connect({n18, n20});
+    auto rRd = Resistor::make("rRd", Logger::Level::debug);
+    rRd->setParameters(rR);
+    rRd->connect({n20, SimNode::GND});
+    auto electroMechanicalConverter_d = ElectroMechanicalConverter::make(
+        "electroMechanicalConverter_d", Logger::Level::debug);
+    electroMechanicalConverter_d->setVoltageReferenceNode(n17);
+    electroMechanicalConverter_d->setIsNegative(true);
+    electroMechanicalConverter_d->connect({n13, n16, n22, SimNode::GND});
+    
+    // q-axis components
+    auto rSq = Resistor::make("rSq", Logger::Level::debug);
+    rSq->setParameters(rS);
+    rSq->connect({n11, n14});
+    auto lSq = Inductor::make("lSq", Logger::Level::debug);
+    lSq->setParameters(lS);
+    lSq->connect({n17, n19});
+    auto lMq = Inductor::make("lMq", Logger::Level::debug);
+    lMq->setParameters(lM);
+    lMq->connect({n19, SimNode::GND});
+    auto lRq = Inductor::make("lRq", Logger::Level::debug);
+    lRq->setParameters(lR);
+    lRq->connect({n19, n21});
+    auto rRq = Resistor::make("rRq", Logger::Level::debug);
+    rRq->setParameters(rR);
+    rRq->connect({n21, SimNode::GND});
+    auto electroMechanicalConverter_q = ElectroMechanicalConverter::make(
+        "electroMechanicalConverter_q", Logger::Level::debug);
+    electroMechanicalConverter_q->setVoltageReferenceNode(n16);
+    electroMechanicalConverter_q->connect({n14, n17, n22, SimNode::GND});
+
+    // 0-axis components
+    auto r0 = Resistor::make("r0", Logger::Level::debug);
+    r0->setParameters(rS);
+    r0->connect({n12, n15});
+    auto l0 = Inductor::make("l0", Logger::Level::debug);
+    l0->setParameters(lS);
+    l0->connect({n15, SimNode::GND});
+
+    // Mechanical components
+    auto inertiaMoment =
+        InertiaMoment::make("inertiaMoment", Logger::Level::debug);
+    inertiaMoment->setParameters(inertia);
+    inertiaMoment->connect({n22, SimNode::GND});
+    
+    // Define system topology
+    SystemTopology system(50,
+                            SystemNodeList{n1, n2, n3, n4, n5, n6, n7, n8, n9,
+                                           n10, n11, n12, n13, n14, n15, n16,
+                                           n17, n18, n19, n20, n21, n22},
+                            SystemComponentList{v1,
+                                                v2,
+                                                v3,
+                                                rInfeed1,
+                                                rInfeed2,
+                                                rInfeed3,
+                                                lInfeed1,
+                                                lInfeed2,
+                                                lInfeed3,
+                                                parkTrafo,
+                                                rSd,
+                                                lSd,
+                                                lMd,
+                                                lRd,
+                                                rRd,
+                                                electroMechanicalConverter_d,
+                                                rSq,
+                                                lSq,
+                                                lMq,
+                                                lRq,
+                                                rRq,
+                                                electroMechanicalConverter_q,
+                                                r0,
+                                                l0,
+                                                inertiaMoment});
+  // Define simulation scenario
+    String simName = "motorStartingTest";
+    // Logger
+    auto logger = DataLogger::make(simName);
+    logger->logAttribute("omega", n22->attribute("v"));
+    logger->logAttribute("Flux_d",
+                       electroMechanicalConverter_d->attribute("flux"));
+    logger->logAttribute("Flux_q",
+                       electroMechanicalConverter_q->attribute("flux"));
+    logger->logAttribute("omega_Park", parkTrafo->attribute("omega"));                
+    logger->logAttribute("V_A", n1->attribute("v"));
+    logger->logAttribute("V_B", n2->attribute("v"));
+    logger->logAttribute("V_C", n3->attribute("v"));
+    logger->logAttribute("I_A", rInfeed1->attribute("i_intf"));
+    logger->logAttribute("I_B", rInfeed2->attribute("i_intf"));
+    logger->logAttribute("I_C", rInfeed3->attribute("i_intf"));
+    logger->logAttribute("V_D", n10->attribute("v"));
+    logger->logAttribute("V_Q", n11->attribute("v"));
+    logger->logAttribute("V_0", n12->attribute("v"));
+    logger->logAttribute("I_sd", rSd->attribute("i_intf"));
+    logger->logAttribute("I_sq", rSq->attribute("i_intf"));
+
+    Simulation sim(simName);
+    sim.setSystem(system);
+    sim.setTimeStep(timeStep);
+    sim.doSystemMatrixRecomputation(true);
+    sim.setFinalTime(finalTime);
+    sim.setDomain(Domain::EMT);
+    sim.addLogger(logger);
+    sim.doEigenvalueExtraction(doEigenvalueExtraction);
+    sim.run();
+}
+
 int main(int argc, char *argv[]) {
 
-syncronousGeneratorTest(1e-3, 10.0, false);
-electromechanicalConverterTest(1e-4, 1.0, true);
+motorStartingTest(1e-4,3.0,true);
+// syncronousGeneratorTest(1e-3, 70.0, false);
+// electromechanicalConverterTest(1e-4, 1.0, true);
 
   return 0;
 }
