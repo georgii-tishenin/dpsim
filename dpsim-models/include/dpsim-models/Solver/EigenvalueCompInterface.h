@@ -10,5 +10,7 @@ public:
   virtual void
   stampBranchNodeIncidenceMatrix(UInt branchIdx,
                                  Matrix &branchNodeIncidenceMatrix) = 0;
+
+  virtual int getNumberOfBranches() { return 1; }
 };
 } // namespace CPS
