@@ -52,18 +52,19 @@ void MNAEigenvalueExtractor<VarType>::identifyEigenvalueComponents(
       if (eigenvalueDynamicComponent) {
         mEigenvalueDynamicComponents.push_back(eigenvalueDynamicComponent);
       }
-      branchIdx++;
+      UInt nComponentBranches = eigenvalueComponent->getNumberOfBranches();
+      branchIdx += nComponentBranches;
     }
   }
+  mNumBranches = branchIdx;
 }
 
 template <typename VarType>
 void MNAEigenvalueExtractor<VarType>::createEmptyEigenvalueMatrices(
     UInt numMatrixNodeIndices) {
-  int nBranches = mEigenvalueComponentToBranchIdx.size();
-  mSignMatrix = MatrixVar<VarType>::Zero(nBranches, nBranches);
-  mDiscretizationMatrix = MatrixVar<VarType>::Zero(nBranches, nBranches);
-  mBranchNodeIncidenceMatrix = Matrix::Zero(nBranches, numMatrixNodeIndices);
+  mSignMatrix = MatrixVar<VarType>::Zero(mNumBranches, mNumBranches);
+  mDiscretizationMatrix = MatrixVar<VarType>::Zero(mNumBranches, mNumBranches);
+  mBranchNodeIncidenceMatrix = Matrix::Zero(mNumBranches, numMatrixNodeIndices);
   **mEigenvalues = MatrixComp::Zero(mEigenvalueDynamicComponents.size(), 1);
   **mDiscreteEigenvalues =
       MatrixComp::Zero(mEigenvalueDynamicComponents.size(), 1);
