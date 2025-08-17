@@ -5,10 +5,6 @@ using namespace CPS;
 namespace VariableNames {
 constexpr const char *vInfeed = "vInfeed";
 constexpr const char *iInfeed = "iInfeed";
-constexpr const char *vConverter1 = "vConverter1";
-constexpr const char *iConverter1 = "iConverter1";
-constexpr const char *vConverter2 = "vConverter2";
-constexpr const char *iConverter2 = "iConverter2";
 constexpr const char *vLoad = "vLoad";
 constexpr const char *iLoad = "iLoad";
 } // namespace VariableNames
@@ -135,6 +131,47 @@ Simulation setupSimulation(const std::string &simName,
   return sim;
 }
 
+void createEMTConverterAsVoltageSource(
+    const std::shared_ptr<DataLogger> &logger,
+    const PowerSystemParameters &psParams, CPS::SystemTopology &systemTopology,
+    const std::shared_ptr<EMT::SimNode> &node, const std::string &name) {
+  auto converter = EMT::Ph3::VoltageSource::make(name);
+  converter->setParameters(
+      CPS::Math::singlePhaseVariableToThreePhase(
+          CPS::Math::polar(psParams.voltageLineToLine, 0.0)),
+      psParams.frequency);
+  converter->connect({EMT::SimNode::GND, node});
+  systemTopology.addComponent(converter);
+  logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
+  logger->logAttribute("i" + name, converter->attribute(AttributeNames::i));
+}
+
+void createDPConverterAsVoltageSource(const std::shared_ptr<DataLogger> &logger,
+                                      const PowerSystemParameters &psParams,
+                                      CPS::SystemTopology &systemTopology,
+                                      const std::shared_ptr<DP::SimNode> &node,
+                                      const std::string &name) {
+  auto converter = DP::Ph1::VoltageSource::make(name);
+  converter->setParameters(CPS::Math::polar(psParams.voltageLineToGround, 0.0));
+  converter->connect({DP::SimNode::GND, node});
+  systemTopology.addComponent(converter);
+  logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
+  logger->logAttribute("i" + name, converter->attribute(AttributeNames::i));
+}
+
+void createSPConverterAsVoltageSource(const std::shared_ptr<DataLogger> &logger,
+                                      const PowerSystemParameters &psParams,
+                                      CPS::SystemTopology &systemTopology,
+                                      const std::shared_ptr<SP::SimNode> &node,
+                                      const std::string &name) {
+  auto converter = SP::Ph1::VoltageSource::make(name);
+  converter->setParameters(CPS::Math::polar(psParams.voltageLineToGround, 0.0));
+  converter->connect({SP::SimNode::GND, node});
+  systemTopology.addComponent(converter);
+  logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
+  logger->logAttribute("i" + name, converter->attribute(AttributeNames::i));
+}
+
 void simulateEMT(const SimulationParameters &simParams,
                  const PowerSystemParameters &psParams) {
   String simName = "EMT_simulation";
@@ -168,34 +205,12 @@ void simulateEMT(const SimulationParameters &simParams,
   logger->logAttribute(VariableNames::iInfeed,
                        infeedImpedance->attribute(AttributeNames::i));
 
-  auto converter1 = EMT::Ph3::VoltageSource::make("converter1");
-  converter1->setParameters(
-      CPS::Math::singlePhaseVariableToThreePhase(
-          CPS::Math::polar(psParams.voltageLineToLine, 0.0)),
-      psParams.frequency);
-  converter1->connect({EMT::SimNode::GND, node2});
-  logger->logAttribute(VariableNames::vConverter1,
-                       node2->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter1,
-                       converter1->attribute(AttributeNames::i));
-
   auto line1 = EMT::Ph3::PiLine::make("line1");
   line1->setParameters(
       CPS::Math::singlePhaseParameterToThreePhase(psParams.line1Resistance),
       CPS::Math::singlePhaseParameterToThreePhase(psParams.line1Inductance),
       CPS::Math::singlePhaseParameterToThreePhase(psParams.line1Capacitance));
   line1->connect({node2, node4});
-
-  auto converter2 = EMT::Ph3::VoltageSource::make("converter2");
-  converter2->setParameters(
-      CPS::Math::singlePhaseVariableToThreePhase(
-          CPS::Math::polar(psParams.voltageLineToLine, 0.0)),
-      psParams.frequency);
-  converter2->connect({EMT::SimNode::GND, node3});
-  logger->logAttribute(VariableNames::vConverter2,
-                       node3->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter2,
-                       converter2->attribute(AttributeNames::i));
 
   auto line2 = EMT::Ph3::PiLine::make("line2");
   line2->setParameters(
@@ -246,10 +261,15 @@ void simulateEMT(const SimulationParameters &simParams,
   auto systemNodeList =
       SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource,   infeedImpedance, converter1,  line1, converter2, line2,
-      circuitBreaker, load1,           load1Switch, load2, load2Switch};
+      infeedSource, infeedImpedance, line1, line2,      circuitBreaker,
+      load1,        load1Switch,     load2, load2Switch};
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
+
+  createEMTConverterAsVoltageSource(logger, psParams, systemTopology, node2,
+                                    "Converter1");
+  createEMTConverterAsVoltageSource(logger, psParams, systemTopology, node3,
+                                    "Converter2");
 
   // events
   auto disconnectLoad1 =
@@ -294,28 +314,10 @@ void simulateDP(const SimulationParameters &simParams,
   logger->logAttribute(VariableNames::iInfeed,
                        infeedImpedance->attribute(AttributeNames::i));
 
-  auto converter1 = DP::Ph1::VoltageSource::make("converter1");
-  converter1->setParameters(
-      CPS::Math::polar(psParams.voltageLineToGround, 0.0));
-  converter1->connect({DP::SimNode::GND, node2});
-  logger->logAttribute(VariableNames::vConverter1,
-                       node2->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter1,
-                       converter1->attribute(AttributeNames::i));
-
   auto line1 = DP::Ph1::PiLine::make("line1");
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance,
                        psParams.line1Capacitance);
   line1->connect({node2, node4});
-
-  auto converter2 = DP::Ph1::VoltageSource::make("converter2");
-  converter2->setParameters(
-      CPS::Math::polar(psParams.voltageLineToGround, 0.0));
-  converter2->connect({DP::SimNode::GND, node3});
-  logger->logAttribute(VariableNames::vConverter2,
-                       node3->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter2,
-                       converter2->attribute(AttributeNames::i));
 
   auto line2 = DP::Ph1::PiLine::make("line2");
   line2->setParameters(psParams.line2Resistance, psParams.line2Inductance,
@@ -353,10 +355,15 @@ void simulateDP(const SimulationParameters &simParams,
   auto systemNodeList =
       SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource,   infeedImpedance, converter1,  line1, converter2, line2,
-      circuitBreaker, load1,           load1Switch, load2, load2Switch};
+      infeedSource, infeedImpedance, line1, line2,      circuitBreaker,
+      load1,        load1Switch,     load2, load2Switch};
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
+
+  createDPConverterAsVoltageSource(logger, psParams, systemTopology, node2,
+                                   "Converter1");
+  createDPConverterAsVoltageSource(logger, psParams, systemTopology, node3,
+                                   "Converter2");
 
   // events
   auto disconnectLoad1 =
@@ -401,28 +408,10 @@ void simulateSP(const SimulationParameters &simParams,
   logger->logAttribute(VariableNames::iInfeed,
                        infeedImpedance->attribute(AttributeNames::i));
 
-  auto converter1 = SP::Ph1::VoltageSource::make("converter1");
-  converter1->setParameters(
-      CPS::Math::polar(psParams.voltageLineToGround, 0.0));
-  converter1->connect({SP::SimNode::GND, node2});
-  logger->logAttribute(VariableNames::vConverter1,
-                       node2->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter1,
-                       converter1->attribute(AttributeNames::i));
-
   auto line1 = SP::Ph1::PiLine::make("line1");
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance,
                        psParams.line1Capacitance);
   line1->connect({node2, node4});
-
-  auto converter2 = SP::Ph1::VoltageSource::make("converter2");
-  converter2->setParameters(
-      CPS::Math::polar(psParams.voltageLineToGround, 0.0));
-  converter2->connect({SP::SimNode::GND, node3});
-  logger->logAttribute(VariableNames::vConverter2,
-                       node3->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter2,
-                       converter2->attribute(AttributeNames::i));
 
   auto line2 = SP::Ph1::PiLine::make("line2");
   line2->setParameters(psParams.line2Resistance, psParams.line2Inductance,
@@ -460,10 +449,15 @@ void simulateSP(const SimulationParameters &simParams,
   auto systemNodeList =
       SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource,   infeedImpedance, converter1,  line1, converter2, line2,
-      circuitBreaker, load1,           load1Switch, load2, load2Switch};
+      infeedSource, infeedImpedance, line1, line2,      circuitBreaker,
+      load1,        load1Switch,     load2, load2Switch};
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
+
+  createSPConverterAsVoltageSource(logger, psParams, systemTopology, node2,
+                                   "Converter1");
+  createSPConverterAsVoltageSource(logger, psParams, systemTopology, node3,
+                                   "Converter2");
 
   // events
   auto disconnectLoad1 =
