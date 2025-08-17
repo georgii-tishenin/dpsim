@@ -139,6 +139,7 @@ void simulateEMT(const SimulationParameters &simParams,
                  const PowerSystemParameters &psParams) {
   String simName = "EMT_simulation";
   Logger::setLogDir("logs/" + simName);
+  auto logger = DataLogger::make(simName);
 
   // nodes
   auto node1 = EMT::SimNode::make("node1", PhaseType::ABC);
@@ -156,13 +157,16 @@ void simulateEMT(const SimulationParameters &simParams,
           CPS::Math::polar(psParams.voltageLineToLine, 0.0)),
       psParams.frequency);
   infeedSource->connect({EMT::SimNode::GND, node1});
-
   auto infeedImpedance = EMT::Ph3::PiLine::make("infeed_impedance");
   infeedImpedance->setParameters(
       CPS::Math::singlePhaseParameterToThreePhase(psParams.infeedResistance),
       CPS::Math::singlePhaseParameterToThreePhase(psParams.infeedInductance),
       CPS::Math::singlePhaseParameterToThreePhase(0));
   infeedImpedance->connect({node1, node4});
+  logger->logAttribute(VariableNames::vInfeed,
+                       node4->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iInfeed,
+                       infeedImpedance->attribute(AttributeNames::i));
 
   auto converter1 = EMT::Ph3::VoltageSource::make("converter1");
   converter1->setParameters(
@@ -170,6 +174,10 @@ void simulateEMT(const SimulationParameters &simParams,
           CPS::Math::polar(psParams.voltageLineToLine, 0.0)),
       psParams.frequency);
   converter1->connect({EMT::SimNode::GND, node2});
+  logger->logAttribute(VariableNames::vConverter1,
+                       node2->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter1,
+                       converter1->attribute(AttributeNames::i));
 
   auto line1 = EMT::Ph3::PiLine::make("line1");
   line1->setParameters(
@@ -184,6 +192,10 @@ void simulateEMT(const SimulationParameters &simParams,
           CPS::Math::polar(psParams.voltageLineToLine, 0.0)),
       psParams.frequency);
   converter2->connect({EMT::SimNode::GND, node3});
+  logger->logAttribute(VariableNames::vConverter2,
+                       node3->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter2,
+                       converter2->attribute(AttributeNames::i));
 
   auto line2 = EMT::Ph3::PiLine::make("line2");
   line2->setParameters(
@@ -199,6 +211,10 @@ void simulateEMT(const SimulationParameters &simParams,
                                     SwitchConstants::closedResistance),
                                 true);
   circuitBreaker->connect({node4, node5});
+  logger->logAttribute(VariableNames::vLoad,
+                       node5->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iLoad,
+                       circuitBreaker->attribute(AttributeNames::i));
 
   auto load1 = EMT::Ph3::Resistor::make("load1");
   load1->setParameters(
@@ -241,25 +257,6 @@ void simulateEMT(const SimulationParameters &simParams,
   auto connectLoad2 =
       DPsim::SwitchEvent3Ph::make(simParams.eventTime, load2Switch, true);
 
-  // logging
-  auto logger = DataLogger::make(simName);
-  logger->logAttribute(VariableNames::vInfeed,
-                       node4->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iInfeed,
-                       infeedImpedance->attribute(AttributeNames::i));
-  logger->logAttribute(VariableNames::vConverter1,
-                       node2->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter1,
-                       converter1->attribute(AttributeNames::i));
-  logger->logAttribute(VariableNames::vConverter2,
-                       node3->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter2,
-                       converter2->attribute(AttributeNames::i));
-  logger->logAttribute(VariableNames::vLoad,
-                       node5->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iLoad,
-                       circuitBreaker->attribute(AttributeNames::i));
-
   // simulation
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::EMT);
@@ -272,6 +269,7 @@ void simulateDP(const SimulationParameters &simParams,
                 const PowerSystemParameters &psParams) {
   String simName = "DP_simulation";
   Logger::setLogDir("logs/" + simName);
+  auto logger = DataLogger::make(simName);
 
   // nodes
   auto node1 = DP::SimNode::make("node1", PhaseType::Single);
@@ -287,16 +285,23 @@ void simulateDP(const SimulationParameters &simParams,
   infeedSource->setParameters(
       CPS::Math::polar(psParams.voltageLineToGround, 0.0));
   infeedSource->connect({DP::SimNode::GND, node1});
-
   auto infeedImpedance = DP::Ph1::PiLine::make("infeed_impedance");
   infeedImpedance->setParameters(psParams.infeedResistance,
                                  psParams.infeedInductance, 0);
   infeedImpedance->connect({node1, node4});
+  logger->logAttribute(VariableNames::vInfeed,
+                       node4->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iInfeed,
+                       infeedImpedance->attribute(AttributeNames::i));
 
   auto converter1 = DP::Ph1::VoltageSource::make("converter1");
   converter1->setParameters(
       CPS::Math::polar(psParams.voltageLineToGround, 0.0));
   converter1->connect({DP::SimNode::GND, node2});
+  logger->logAttribute(VariableNames::vConverter1,
+                       node2->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter1,
+                       converter1->attribute(AttributeNames::i));
 
   auto line1 = DP::Ph1::PiLine::make("line1");
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance,
@@ -307,6 +312,10 @@ void simulateDP(const SimulationParameters &simParams,
   converter2->setParameters(
       CPS::Math::polar(psParams.voltageLineToGround, 0.0));
   converter2->connect({DP::SimNode::GND, node3});
+  logger->logAttribute(VariableNames::vConverter2,
+                       node3->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter2,
+                       converter2->attribute(AttributeNames::i));
 
   auto line2 = DP::Ph1::PiLine::make("line2");
   line2->setParameters(psParams.line2Resistance, psParams.line2Inductance,
@@ -317,6 +326,10 @@ void simulateDP(const SimulationParameters &simParams,
   circuitBreaker->setParameters(SwitchConstants::openResistance,
                                 SwitchConstants::closedResistance, true);
   circuitBreaker->connect({node4, node5});
+  logger->logAttribute(VariableNames::vLoad,
+                       node5->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iLoad,
+                       circuitBreaker->attribute(AttributeNames::i));
 
   auto load1 = DP::Ph1::Resistor::make("load");
   load1->setParameters(psParams.loadResistance1);
@@ -351,25 +364,6 @@ void simulateDP(const SimulationParameters &simParams,
   auto connectLoad2 =
       DPsim::SwitchEvent::make(simParams.eventTime, load2Switch, true);
 
-  // logging
-  auto logger = DataLogger::make(simName);
-  logger->logAttribute(VariableNames::vInfeed,
-                       node4->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iInfeed,
-                       infeedImpedance->attribute(AttributeNames::i));
-  logger->logAttribute(VariableNames::vConverter1,
-                       node2->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter1,
-                       converter1->attribute(AttributeNames::i));
-  logger->logAttribute(VariableNames::vConverter2,
-                       node3->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter2,
-                       converter2->attribute(AttributeNames::i));
-  logger->logAttribute(VariableNames::vLoad,
-                       node5->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iLoad,
-                       circuitBreaker->attribute(AttributeNames::i));
-
   // simulation
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::DP);
@@ -382,6 +376,7 @@ void simulateSP(const SimulationParameters &simParams,
                 const PowerSystemParameters &psParams) {
   String simName = "SP_simulation";
   Logger::setLogDir("logs/" + simName);
+  auto logger = DataLogger::make(simName);
 
   // nodes
   auto node1 = SP::SimNode::make("node1", PhaseType::Single);
@@ -397,16 +392,23 @@ void simulateSP(const SimulationParameters &simParams,
   infeedSource->setParameters(
       CPS::Math::polar(psParams.voltageLineToGround, 0.0));
   infeedSource->connect({SP::SimNode::GND, node1});
-
   auto infeedImpedance = SP::Ph1::PiLine::make("infeed_impedance");
   infeedImpedance->setParameters(psParams.infeedResistance,
                                  psParams.infeedInductance, 0);
   infeedImpedance->connect({node1, node4});
+  logger->logAttribute(VariableNames::vInfeed,
+                       node4->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iInfeed,
+                       infeedImpedance->attribute(AttributeNames::i));
 
   auto converter1 = SP::Ph1::VoltageSource::make("converter1");
   converter1->setParameters(
       CPS::Math::polar(psParams.voltageLineToGround, 0.0));
   converter1->connect({SP::SimNode::GND, node2});
+  logger->logAttribute(VariableNames::vConverter1,
+                       node2->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter1,
+                       converter1->attribute(AttributeNames::i));
 
   auto line1 = SP::Ph1::PiLine::make("line1");
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance,
@@ -417,6 +419,10 @@ void simulateSP(const SimulationParameters &simParams,
   converter2->setParameters(
       CPS::Math::polar(psParams.voltageLineToGround, 0.0));
   converter2->connect({SP::SimNode::GND, node3});
+  logger->logAttribute(VariableNames::vConverter2,
+                       node3->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iConverter2,
+                       converter2->attribute(AttributeNames::i));
 
   auto line2 = SP::Ph1::PiLine::make("line2");
   line2->setParameters(psParams.line2Resistance, psParams.line2Inductance,
@@ -427,6 +433,10 @@ void simulateSP(const SimulationParameters &simParams,
   circuitBreaker->setParameters(SwitchConstants::openResistance,
                                 SwitchConstants::closedResistance, true);
   circuitBreaker->connect({node4, node5});
+  logger->logAttribute(VariableNames::vLoad,
+                       node5->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iLoad,
+                       circuitBreaker->attribute(AttributeNames::i));
 
   auto load1 = SP::Ph1::Resistor::make("load");
   load1->setParameters(psParams.loadResistance1);
@@ -460,25 +470,6 @@ void simulateSP(const SimulationParameters &simParams,
       DPsim::SwitchEvent::make(simParams.eventTime, load1Switch, false);
   auto connectLoad2 =
       DPsim::SwitchEvent::make(simParams.eventTime, load2Switch, true);
-
-  // logging
-  auto logger = DataLogger::make(simName);
-  logger->logAttribute(VariableNames::vInfeed,
-                       node4->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iInfeed,
-                       infeedImpedance->attribute(AttributeNames::i));
-  logger->logAttribute(VariableNames::vConverter1,
-                       node2->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter1,
-                       converter1->attribute(AttributeNames::i));
-  logger->logAttribute(VariableNames::vConverter2,
-                       node3->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iConverter2,
-                       converter2->attribute(AttributeNames::i));
-  logger->logAttribute(VariableNames::vLoad,
-                       node5->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iLoad,
-                       circuitBreaker->attribute(AttributeNames::i));
 
   // simulation
   auto sim =
