@@ -7,6 +7,8 @@ constexpr const char *vInfeed = "vInfeed";
 constexpr const char *iInfeed = "iInfeed";
 constexpr const char *vLoad = "vLoad";
 constexpr const char *iLoad = "iLoad";
+constexpr const char *iLine1 = "iLine1";
+constexpr const char *iLine2 = "iLine2";
 } // namespace VariableNames
 
 namespace SwitchConstants {
@@ -143,7 +145,6 @@ void createEMTConverterAsVoltageSource(
   converter->connect({EMT::SimNode::GND, node});
   systemTopology.addComponent(converter);
   logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
-  logger->logAttribute("i" + name, converter->attribute(AttributeNames::i));
 }
 
 void createDPConverterAsVoltageSource(const std::shared_ptr<DataLogger> &logger,
@@ -156,7 +157,6 @@ void createDPConverterAsVoltageSource(const std::shared_ptr<DataLogger> &logger,
   converter->connect({DP::SimNode::GND, node});
   systemTopology.addComponent(converter);
   logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
-  logger->logAttribute("i" + name, converter->attribute(AttributeNames::i));
 }
 
 void createSPConverterAsVoltageSource(const std::shared_ptr<DataLogger> &logger,
@@ -169,7 +169,6 @@ void createSPConverterAsVoltageSource(const std::shared_ptr<DataLogger> &logger,
   converter->connect({SP::SimNode::GND, node});
   systemTopology.addComponent(converter);
   logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
-  logger->logAttribute("i" + name, converter->attribute(AttributeNames::i));
 }
 
 void simulateEMT(const SimulationParameters &simParams,
@@ -211,6 +210,8 @@ void simulateEMT(const SimulationParameters &simParams,
       CPS::Math::singlePhaseParameterToThreePhase(psParams.line1Inductance),
       CPS::Math::singlePhaseParameterToThreePhase(psParams.line1Capacitance));
   line1->connect({node2, node4});
+  logger->logAttribute(VariableNames::iLine1,
+                       line1->attribute(AttributeNames::i));
 
   auto line2 = EMT::Ph3::PiLine::make("line2");
   line2->setParameters(
@@ -218,6 +219,8 @@ void simulateEMT(const SimulationParameters &simParams,
       CPS::Math::singlePhaseParameterToThreePhase(psParams.line2Inductance),
       CPS::Math::singlePhaseParameterToThreePhase(psParams.line2Capacitance));
   line2->connect({node3, node4});
+  logger->logAttribute(VariableNames::iLine2,
+                       line2->attribute(AttributeNames::i));
 
   auto circuitBreaker = EMT::Ph3::Switch::make("circuit_breaker");
   circuitBreaker->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
@@ -267,7 +270,7 @@ void simulateEMT(const SimulationParameters &simParams,
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
   createEMTConverterAsVoltageSource(logger, psParams, systemTopology, node2,
-                                    "Converter1");
+                                     "Converter1");
   createEMTConverterAsVoltageSource(logger, psParams, systemTopology, node3,
                                     "Converter2");
 
@@ -318,11 +321,15 @@ void simulateDP(const SimulationParameters &simParams,
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance,
                        psParams.line1Capacitance);
   line1->connect({node2, node4});
+  logger->logAttribute(VariableNames::iLine1,
+                       line1->attribute(AttributeNames::i));
 
   auto line2 = DP::Ph1::PiLine::make("line2");
   line2->setParameters(psParams.line2Resistance, psParams.line2Inductance,
                        psParams.line2Capacitance);
   line2->connect({node3, node4});
+  logger->logAttribute(VariableNames::iLine2,
+                       line2->attribute(AttributeNames::i));
 
   auto circuitBreaker = DP::Ph1::Switch::make("circuit_breaker");
   circuitBreaker->setParameters(SwitchConstants::openResistance,
@@ -412,11 +419,15 @@ void simulateSP(const SimulationParameters &simParams,
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance,
                        psParams.line1Capacitance);
   line1->connect({node2, node4});
+  logger->logAttribute(VariableNames::iLine1,
+                       line1->attribute(AttributeNames::i));
 
   auto line2 = SP::Ph1::PiLine::make("line2");
   line2->setParameters(psParams.line2Resistance, psParams.line2Inductance,
                        psParams.line2Capacitance);
   line2->connect({node3, node4});
+  logger->logAttribute(VariableNames::iLine2,
+                       line2->attribute(AttributeNames::i));
 
   auto circuitBreaker = SP::Ph1::Switch::make("circuit_breaker");
   circuitBreaker->setParameters(SwitchConstants::openResistance,
