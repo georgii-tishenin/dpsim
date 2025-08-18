@@ -1,3 +1,4 @@
+#include "../Examples.h"
 #include <DPsim.h>
 using namespace DPsim;
 using namespace CPS;
@@ -20,6 +21,10 @@ constexpr double openResistance = 1e6;
 namespace AttributeNames {
 constexpr const char *v = "v";
 constexpr const char *i = "i_intf";
+constexpr const char *id = "Irc_d";
+constexpr const char *iq = "Irc_q";
+constexpr const char *vd = "Vc_d";
+constexpr const char *vq = "Vc_q";
 } // namespace AttributeNames
 
 struct SimulationParameters {
@@ -129,9 +134,121 @@ Simulation setupSimulation(const std::string &simName,
   sim.setSystem(systemTopology);
   sim.setTimeStep(simParams.timeStep);
   sim.setFinalTime(simParams.finalTime);
+  sim.doInitFromNodesAndTerminals(true);
   sim.setDomain(domain);
   sim.addLogger(logger);
   return sim;
+}
+
+void createEMTConverter(const std::shared_ptr<DataLogger> &logger,
+                        const PowerSystemParameters &psParams,
+                        CPS::SystemTopology &systemTopology,
+                        const std::shared_ptr<EMT::SimNode> &node,
+                        const std::string &name) {
+  CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
+  auto converter = EMT::Ph3::AvVoltageSourceInverterDQ::make(
+      name, name, Logger::Level::debug, true);
+  converter->setParameters(scenario.systemOmega, scenario.pvNominalVoltage,
+                           scenario.pvNominalActivePower,
+                           scenario.pvNominalReactivePower);
+  converter->setControllerParameters(
+      1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
+      1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
+      1 * scenario.KiCurrCtrl, scenario.OmegaCutoff);
+  converter->setFilterParameters(scenario.Lf, scenario.Cf, scenario.Rf,
+                                 scenario.Rc);
+  converter->setTransformerParameters(
+      psParams.voltageLineToLine, scenario.pvNominalVoltage,
+      scenario.transformerNominalPower,
+      psParams.voltageLineToLine / scenario.pvNominalVoltage, 0, 0,
+      scenario.transformerInductance, scenario.systemOmega);
+  // converter->setInitialStateValues(scenario.pvNominalActivePower,
+  //                                  scenario.pvNominalReactivePower,
+  //                                  scenario.phi_dInit, scenario.phi_qInit,
+  //                                  scenario.gamma_dInit, scenario.gamma_qInit);
+  converter->withControl(true);
+
+  converter->connect({node});
+  systemTopology.addComponent(converter);
+  logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
+  logger->logAttribute("id" + name, converter->attribute(AttributeNames::id));
+  logger->logAttribute("iq" + name, converter->attribute(AttributeNames::iq));
+  logger->logAttribute("vd" + name, converter->attribute(AttributeNames::vd));
+  logger->logAttribute("vq" + name, converter->attribute(AttributeNames::vq));
+}
+
+void createDPConverter(const std::shared_ptr<DataLogger> &logger,
+                        const PowerSystemParameters &psParams,
+                        CPS::SystemTopology &systemTopology,
+                        const std::shared_ptr<DP::SimNode> &node,
+                        const std::string &name) {
+  CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
+  auto converter = DP::Ph1::AvVoltageSourceInverterDQ::make(
+      name, name, Logger::Level::debug, true);
+  converter->setParameters(scenario.systemOmega, scenario.pvNominalVoltage,
+                           scenario.pvNominalActivePower,
+                           scenario.pvNominalReactivePower);
+  converter->setControllerParameters(
+      1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
+      1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
+      1 * scenario.KiCurrCtrl, scenario.OmegaCutoff);
+  converter->setFilterParameters(scenario.Lf, scenario.Cf, scenario.Rf,
+                                 scenario.Rc);
+  converter->setTransformerParameters(
+      psParams.voltageLineToLine, scenario.pvNominalVoltage,
+      scenario.transformerNominalPower,
+      psParams.voltageLineToLine/ scenario.pvNominalVoltage, 0, 0,
+      scenario.transformerInductance);
+  // converter->setInitialStateValues(scenario.pvNominalActivePower,
+  //                                  scenario.pvNominalReactivePower,
+  //                                  scenario.phi_dInit, scenario.phi_qInit,
+  //                                  scenario.gamma_dInit, scenario.gamma_qInit);
+  converter->withControl(true);
+
+  converter->connect({node});
+  systemTopology.addComponent(converter);
+  logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
+  logger->logAttribute("id" + name, converter->attribute(AttributeNames::id));
+  logger->logAttribute("iq" + name, converter->attribute(AttributeNames::iq));
+  logger->logAttribute("vd" + name, converter->attribute(AttributeNames::vd));
+  logger->logAttribute("vq" + name, converter->attribute(AttributeNames::vq));
+}
+
+void createSPConverter(const std::shared_ptr<DataLogger> &logger,
+                        const PowerSystemParameters &psParams,
+                        CPS::SystemTopology &systemTopology,
+                        const std::shared_ptr<SP::SimNode> &node,
+                        const std::string &name) {
+  CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
+  auto converter = SP::Ph1::AvVoltageSourceInverterDQ::make(
+      name, name, Logger::Level::debug, true);
+  converter->setParameters(scenario.systemOmega, scenario.pvNominalVoltage,
+                           scenario.pvNominalActivePower,
+                           scenario.pvNominalReactivePower);
+  converter->setControllerParameters(
+      1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
+      1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
+      1 * scenario.KiCurrCtrl, scenario.OmegaCutoff);
+  converter->setFilterParameters(scenario.Lf, scenario.Cf, scenario.Rf,
+                                 scenario.Rc);
+  converter->setTransformerParameters(
+      psParams.voltageLineToLine, scenario.pvNominalVoltage,
+      scenario.transformerNominalPower,
+      psParams.voltageLineToLine/ scenario.pvNominalVoltage, 0, 0,
+      scenario.transformerInductance);
+  // converter->setInitialStateValues(scenario.pvNominalActivePower,
+  //                                  scenario.pvNominalReactivePower,
+  //                                  scenario.phi_dInit, scenario.phi_qInit,
+  //                                  scenario.gamma_dInit, scenario.gamma_qInit);
+  converter->withControl(true);
+
+  converter->connect({node});
+  systemTopology.addComponent(converter);
+  logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
+  logger->logAttribute("id" + name, converter->attribute(AttributeNames::id));
+  logger->logAttribute("iq" + name, converter->attribute(AttributeNames::iq));
+  logger->logAttribute("vd" + name, converter->attribute(AttributeNames::vd));
+  logger->logAttribute("vq" + name, converter->attribute(AttributeNames::vq));
 }
 
 void createEMTConverterAsVoltageSource(
@@ -181,6 +298,8 @@ void simulateEMT(const SimulationParameters &simParams,
   // nodes
   auto node1 = EMT::SimNode::make("node1", PhaseType::ABC);
   auto node2 = EMT::SimNode::make("node2", PhaseType::ABC);
+  node2->setInitialVoltage(
+      CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(0.0, 0.0)));
   auto node3 = EMT::SimNode::make("node3", PhaseType::ABC);
   auto node4 = EMT::SimNode::make("node4", PhaseType::ABC);
   auto node5 = EMT::SimNode::make("node5", PhaseType::ABC);
@@ -272,8 +391,9 @@ void simulateEMT(const SimulationParameters &simParams,
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
-  createEMTConverterAsVoltageSource(logger, psParams, systemTopology, node2,
-                                     "Converter1");
+  createEMTConverter(logger, psParams, systemTopology, node2, "Converter1");
+//   createEMTConverterAsVoltageSource(logger, psParams, systemTopology, node2,
+//                                     "Converter1");
   createEMTConverterAsVoltageSource(logger, psParams, systemTopology, node3,
                                     "Converter2");
 
@@ -372,8 +492,9 @@ void simulateDP(const SimulationParameters &simParams,
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
-  createDPConverterAsVoltageSource(logger, psParams, systemTopology, node2,
-                                   "Converter1");
+//   createDPConverterAsVoltageSource(logger, psParams, systemTopology, node2,
+//                                    "Converter1");
+  createDPConverter(logger, psParams, systemTopology, node2, "Converter1");
   createDPConverterAsVoltageSource(logger, psParams, systemTopology, node3,
                                    "Converter2");
 
@@ -472,8 +593,9 @@ void simulateSP(const SimulationParameters &simParams,
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
-  createSPConverterAsVoltageSource(logger, psParams, systemTopology, node2,
-                                   "Converter1");
+//   createSPConverterAsVoltageSource(logger, psParams, systemTopology, node2,
+//                                    "Converter1");
+  createSPConverter(logger, psParams, systemTopology, node2, "Converter1");
   createSPConverterAsVoltageSource(logger, psParams, systemTopology, node3,
                                    "Converter2");
 
