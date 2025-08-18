@@ -6,7 +6,8 @@ namespace VariableNames {
 constexpr const char *vInfeed = "vInfeed";
 constexpr const char *iInfeed = "iInfeed";
 constexpr const char *vLoad = "vLoad";
-constexpr const char *iLoad = "iLoad";
+constexpr const char *iLoad1 = "iLoad1";
+constexpr const char *iLoad2 = "iLoad2";
 constexpr const char *iLine1 = "iLine1";
 constexpr const char *iLine2 = "iLine2";
 } // namespace VariableNames
@@ -231,13 +232,13 @@ void simulateEMT(const SimulationParameters &simParams,
   circuitBreaker->connect({node4, node5});
   logger->logAttribute(VariableNames::vLoad,
                        node5->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iLoad,
-                       circuitBreaker->attribute(AttributeNames::i));
 
   auto load1 = EMT::Ph3::Resistor::make("load1");
   load1->setParameters(
       CPS::Math::singlePhaseParameterToThreePhase(psParams.loadResistance1));
   load1->connect({node6, EMT::SimNode::GND});
+  logger->logAttribute(VariableNames::iLoad1,
+                       load1->attribute(AttributeNames::i));
 
   auto load1Switch = EMT::Ph3::Switch::make("load1_switch");
   load1Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
@@ -251,6 +252,8 @@ void simulateEMT(const SimulationParameters &simParams,
   load2->setParameters(
       CPS::Math::singlePhaseParameterToThreePhase(psParams.loadResistance2));
   load2->connect({node7, EMT::SimNode::GND});
+  logger->logAttribute(VariableNames::iLoad2,
+                       load2->attribute(AttributeNames::i));
 
   auto load2Switch = EMT::Ph3::Switch::make("load2_switch");
   load2Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
@@ -337,12 +340,12 @@ void simulateDP(const SimulationParameters &simParams,
   circuitBreaker->connect({node4, node5});
   logger->logAttribute(VariableNames::vLoad,
                        node5->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iLoad,
-                       circuitBreaker->attribute(AttributeNames::i));
 
   auto load1 = DP::Ph1::Resistor::make("load");
   load1->setParameters(psParams.loadResistance1);
   load1->connect({node6, DP::SimNode::GND});
+  logger->logAttribute(VariableNames::iLoad1,
+                       load1->attribute(AttributeNames::i));
 
   auto load1Switch = DP::Ph1::Switch::make("load1_switch");
   load1Switch->setParameters(SwitchConstants::openResistance,
@@ -352,6 +355,8 @@ void simulateDP(const SimulationParameters &simParams,
   auto load2 = DP::Ph1::Resistor::make("load2");
   load2->setParameters(psParams.loadResistance2);
   load2->connect({node7, DP::SimNode::GND});
+  logger->logAttribute(VariableNames::iLoad2,
+                       load2->attribute(AttributeNames::i));
 
   auto load2Switch = DP::Ph1::Switch::make("load2_switch");
   load2Switch->setParameters(SwitchConstants::openResistance,
@@ -435,12 +440,12 @@ void simulateSP(const SimulationParameters &simParams,
   circuitBreaker->connect({node4, node5});
   logger->logAttribute(VariableNames::vLoad,
                        node5->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iLoad,
-                       circuitBreaker->attribute(AttributeNames::i));
 
   auto load1 = SP::Ph1::Resistor::make("load");
   load1->setParameters(psParams.loadResistance1);
   load1->connect({node6, SP::SimNode::GND});
+  logger->logAttribute(VariableNames::iLoad1,
+                       load1->attribute(AttributeNames::i));
 
   auto load1Switch = SP::Ph1::Switch::make("load1_switch");
   load1Switch->setParameters(SwitchConstants::openResistance,
@@ -450,6 +455,8 @@ void simulateSP(const SimulationParameters &simParams,
   auto load2 = SP::Ph1::Resistor::make("load2");
   load2->setParameters(psParams.loadResistance2);
   load2->connect({node7, SP::SimNode::GND});
+  logger->logAttribute(VariableNames::iLoad2,
+                       load2->attribute(AttributeNames::i));
 
   auto load2Switch = SP::Ph1::Switch::make("load2_switch");
   load2Switch->setParameters(SwitchConstants::openResistance,
