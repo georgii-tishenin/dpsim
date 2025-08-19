@@ -613,14 +613,134 @@ void simulateSP(const SimulationParameters &simParams,
   sim.run();
 }
 
+void calculatePF(const SimulationParameters &simParams,
+                const PowerSystemParameters &psParams) {
+  String simName = "PF_calculation";
+  Logger::setLogDir("logs/" + simName);
+  auto logger = DataLogger::make(simName);
+
+  CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
+
+  // nodes
+  auto node1 = SP::SimNode::make("node1", PhaseType::Single);
+  auto node2 = SP::SimNode::make("node2", PhaseType::Single);
+  auto node3 = SP::SimNode::make("node3", PhaseType::Single);
+  auto node4 = SP::SimNode::make("node4", PhaseType::Single);
+  auto node5 = SP::SimNode::make("node5", PhaseType::Single);
+  auto node6 = SP::SimNode::make("node6", PhaseType::Single);
+  auto node7 = SP::SimNode::make("node7", PhaseType::Single);
+
+  // components
+  auto infeedSource = SP::Ph1::NetworkInjection::make("infeed_source", Logger::Level::debug);
+  infeedSource->setParameters(psParams.voltageLineToLine);
+  infeedSource->setBaseVoltage(psParams.voltageLineToLine);
+  infeedSource->modifyPowerFlowBusType(PowerflowBusType::VD);
+  infeedSource->connect({node1});
+  auto infeedImpedance = SP::Ph1::PiLine::make("infeed_impedance", Logger::Level::debug);
+  infeedImpedance->setParameters(psParams.infeedResistance,
+                                 psParams.infeedInductance, 0);
+  infeedImpedance->setBaseVoltage(psParams.voltageLineToLine);                               
+  infeedImpedance->connect({node1, node4});
+
+  auto line1 = SP::Ph1::PiLine::make("line1", Logger::Level::debug);
+  line1->setParameters(psParams.line1Resistance, psParams.line1Inductance,
+                       psParams.line1Capacitance);
+  line1->setBaseVoltage(psParams.voltageLineToLine);                     
+  line1->connect({node2, node4});
+
+  auto line2 = SP::Ph1::PiLine::make("line2", Logger::Level::debug);
+  line2->setParameters(psParams.line2Resistance, psParams.line2Inductance,
+                       psParams.line2Capacitance);
+  line2->setBaseVoltage(psParams.voltageLineToLine);                     
+  line2->connect({node3, node4});
+
+  auto circuitBreaker = SP::Ph1::Resistor::make("circuit_breaker", Logger::Level::debug);
+  circuitBreaker->setParameters(SwitchConstants::closedResistance);
+  circuitBreaker->setBaseVoltage(psParams.voltageLineToLine);
+  circuitBreaker->connect({node4, node5});
+
+  auto load1 = SP::Ph1::Resistor::make("load", Logger::Level::debug);
+  load1->setParameters(psParams.loadResistance1);
+  load1->setBaseVoltage(psParams.voltageLineToLine);
+  load1->connect({node6, SP::SimNode::GND});
+
+  auto load1Switch = SP::Ph1::Resistor::make("load1_switch", Logger::Level::debug);
+  load1Switch->setParameters(SwitchConstants::closedResistance);
+  load1Switch->setBaseVoltage(psParams.voltageLineToLine);
+  load1Switch->connect({node5, node6});
+
+  auto load2 = SP::Ph1::Resistor::make("load2", Logger::Level::debug);
+  load2->setParameters(psParams.loadResistance2);
+  load2->setBaseVoltage(psParams.voltageLineToLine);
+  load2->connect({node7, SP::SimNode::GND});
+
+  auto load2Switch = SP::Ph1::Resistor::make("load2_switch", Logger::Level::debug);
+  load2Switch->setParameters(SwitchConstants::openResistance);
+  load2Switch->setBaseVoltage(psParams.voltageLineToLine);
+  load2Switch->connect({node5, node7});
+
+  auto converter1 = SP::Ph1::Load::make("Converter1", Logger::Level::debug);
+  converter1->setParameters(-scenario.pvNominalActivePower,
+                            -scenario.pvNominalReactivePower,
+                            psParams.voltageLineToLine);
+  converter1->modifyPowerFlowBusType(PowerflowBusType::PQ);
+  converter1->connect({node2});
+
+
+  // topology
+  auto systemNodeList =
+      SystemNodeList{
+        node1, 
+        node2, 
+        // node3, 
+        node4, 
+        // node5, 
+        // node6, 
+        // node7
+        };
+  auto componentList = SystemComponentList{
+      infeedSource,
+      infeedImpedance,
+      converter1,
+      line1,
+    //   line2,
+    //   circuitBreaker,
+    //   load1,
+    //   load1Switch,
+    //   load2,
+    //   load2Switch
+      };
+  auto systemTopology =
+      SystemTopology(psParams.frequency, systemNodeList, componentList);
+
+  // logging
+  logger->logAttribute("vInfeed", node1->attribute(AttributeNames::v));
+  logger->logAttribute("vConverter1", node2->attribute(AttributeNames::v));
+  logger->logAttribute("vLoad", node4->attribute(AttributeNames::v));
+
+  // simulation
+  Simulation sim(simName, Logger::Level::debug);
+  sim.setSystem(systemTopology);
+  sim.setTimeStep(simParams.finalTime);
+  sim.setFinalTime(2 * simParams.finalTime);
+  //   sim.setFinalTime(simParams.finalTime);
+  sim.setDomain(Domain::SP);
+  sim.setSolverType(Solver::Type::NRP);
+  sim.setSolverAndComponentBehaviour(Solver::Behaviour::Initialization);
+  sim.doInitFromNodesAndTerminals(false);
+  sim.addLogger(logger);
+  sim.run();
+}
+
 int main() {
   SimulationParameters simParams;
   PowerSystemInputParameters psInputParams;
   PowerSystemParameters psParams =
       calculatePowerSystemParameters(psInputParams);
 
-  simulateEMT(simParams, psParams);
-  simulateDP(simParams, psParams);
-  simulateSP(simParams, psParams);
+  calculatePF(simParams, psParams);
+//   simulateEMT(simParams, psParams);
+//   simulateDP(simParams, psParams);
+//   simulateSP(simParams, psParams);
   return 0;
 }
