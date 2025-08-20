@@ -846,8 +846,6 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   // logging
   logger->logAttribute(VariableNames::vInfeed,
                        node1->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iInfeed,
-                       infeedImpedance->attribute(AttributeNames::i));
   logger->logAttribute("vConverter1", node2->attribute(AttributeNames::v));
   logger->logAttribute("vLoad", node4->attribute(AttributeNames::v));
 
