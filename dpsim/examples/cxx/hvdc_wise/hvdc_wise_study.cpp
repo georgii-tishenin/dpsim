@@ -299,8 +299,6 @@ void simulateEMT(const SimulationParameters &simParams,
   // nodes
   auto node1 = EMT::SimNode::make("node1", PhaseType::ABC);
   auto node2 = EMT::SimNode::make("node2", PhaseType::ABC);
-  node2->setInitialVoltage(
-      CPS::Math::singlePhaseVariableToThreePhase(CPS::Math::polar(0.0, 0.0)));
   auto node3 = EMT::SimNode::make("node3", PhaseType::ABC);
   auto node4 = EMT::SimNode::make("node4", PhaseType::ABC);
   auto node5 = EMT::SimNode::make("node5", PhaseType::ABC);
@@ -748,7 +746,8 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
   // logging
-  logger->logAttribute("vInfeed", node1->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::vInfeed, node1->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::iInfeed, infeedImpedance->attribute(AttributeNames::i));
   logger->logAttribute("vConverter1", node2->attribute(AttributeNames::v));
   logger->logAttribute("vLoad", node4->attribute(AttributeNames::v));
 
@@ -757,7 +756,6 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   sim.setSystem(systemTopology);
   sim.setTimeStep(simParams.finalTime);
   sim.setFinalTime(2 * simParams.finalTime);
-  //   sim.setFinalTime(simParams.finalTime);
   sim.setDomain(Domain::SP);
   sim.setSolverType(Solver::Type::NRP);
   sim.setSolverAndComponentBehaviour(Solver::Behaviour::Initialization);
