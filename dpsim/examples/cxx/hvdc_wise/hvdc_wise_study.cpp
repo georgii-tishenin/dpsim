@@ -29,8 +29,8 @@ constexpr const char *vq = "Vc_q";
 
 struct SimulationParameters {
   double timeStep = 1e-4;
-  double eventTime = 0.1;
-  double finalTime = 4.2;
+  double eventTime = 3.8;
+  double finalTime = 4.0;
 };
 
 struct PowerSystemInputParameters {
@@ -39,24 +39,24 @@ struct PowerSystemInputParameters {
   double baseThreePhasePower = 100e6;
 
   // infeed parameters
-  double infeedResistanceInPerUnit = 0.01;
-  double infeedReactanceInPerUnit = 0.1;
+  double infeedResistanceInPerUnit = 0.3;
+  double infeedReactanceInPerUnit = 3.0;
 
   // line1 parameters
-  double line1LengthInKm = 10;
+  double line1LengthInKm = 80;
   double line1ResistancePerKm = 0.1;
   double line1ReactancePerKm = 0.4;
-  double line1CapacitancePerKm = 0;
+  double line1CapacitancePerKm = 1e-8;
 
   // line2 parameters
-  double line2LengthInKm = 10;
+  double line2LengthInKm = 20;
   double line2ResistancePerKm = 0.2;
   double line2ReactancePerKm = 0.4;
-  double lin2CapacitancePerKm = 0;
+  double lin2CapacitancePerKm = 1e-8;
 
   // load parameters
-  double load1InPerUnit = 0.1;
-  double load2InPerUnit = 0.2;
+  double load1InPerUnit = 0.5;
+  double load2InPerUnit = 1.0;
 
   // converter1 parameters
   double converter1PinPerUnit = 0.1;
@@ -483,16 +483,11 @@ void simulateEMT(const SimulationParameters &simParams,
   load2Switch->connect({node5, node7});
 
   // topology
-  auto systemNodeList = SystemNodeList{
-      node1, node2, node3, node4, node5, node6,
-      // node7
-  };
+  auto systemNodeList =
+      SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource,   infeedImpedance, line1,       line2,
-      circuitBreaker, load1,           load1Switch,
-      //   load2,
-      //   load2Switch
-  };
+      infeedSource, infeedImpedance, line1, line2,      circuitBreaker,
+      load1,        load1Switch,     load2, load2Switch};
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
@@ -510,8 +505,8 @@ void simulateEMT(const SimulationParameters &simParams,
 
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::EMT);
-  //   sim.addEvent(disconnectLoad1);
-  //   sim.addEvent(connectLoad2);
+    sim.addEvent(disconnectLoad1);
+    sim.addEvent(connectLoad2);
   sim.run();
 }
 
@@ -587,16 +582,11 @@ void simulateDP(const SimulationParameters &simParams,
   load2Switch->connect({node5, node7});
 
   // topology
-  auto systemNodeList = SystemNodeList{
-      node1, node2, node3, node4, node5, node6,
-      // node7
-  };
+  auto systemNodeList =
+      SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource,   infeedImpedance, line1,       line2,
-      circuitBreaker, load1,           load1Switch,
-      //   load2,
-      //   load2Switch
-  };
+      infeedSource, infeedImpedance, line1, line2,      circuitBreaker,
+      load1,        load1Switch,     load2, load2Switch};
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
@@ -613,8 +603,8 @@ void simulateDP(const SimulationParameters &simParams,
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::DP);
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::DP);
-  //   sim.addEvent(disconnectLoad1);
-  //   sim.addEvent(connectLoad2);
+    sim.addEvent(disconnectLoad1);
+    sim.addEvent(connectLoad2);
   sim.run();
 }
 
@@ -690,16 +680,11 @@ void simulateSP(const SimulationParameters &simParams,
   load2Switch->connect({node5, node7});
 
   // topology
-  auto systemNodeList = SystemNodeList{
-      node1, node2, node3, node4, node5, node6,
-      // node7
-  };
+  auto systemNodeList =
+      SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource,   infeedImpedance, line1,       line2,
-      circuitBreaker, load1,           load1Switch,
-      //   load2,
-      //   load2Switch
-  };
+      infeedSource, infeedImpedance, line1, line2,      circuitBreaker,
+      load1,        load1Switch,     load2, load2Switch};
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
@@ -716,8 +701,8 @@ void simulateSP(const SimulationParameters &simParams,
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::SP);
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::SP);
-  //   sim.addEvent(disconnectLoad1);
-  //   sim.addEvent(connectLoad2);
+    sim.addEvent(disconnectLoad1);
+    sim.addEvent(connectLoad2);
   sim.run();
 }
 
@@ -781,14 +766,14 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   load1Switch->setBaseVoltage(psParams.voltageLineToLine);
   load1Switch->connect({node5, node6});
 
-  auto load2 = SP::Ph1::Resistor::make("load2", Logger::Level::debug);
-  load2->setParameters(psParams.loadResistance2);
+  auto load2 = SP::Ph1::PiLine::make("load2", Logger::Level::debug);
+  load2->setParameters(psParams.loadResistance2, 0);
   load2->setBaseVoltage(psParams.voltageLineToLine);
   load2->connect({node7, SP::SimNode::GND});
 
   auto load2Switch =
-      SP::Ph1::Resistor::make("load2_switch", Logger::Level::debug);
-  load2Switch->setParameters(SwitchConstants::openResistance);
+      SP::Ph1::PiLine::make("load2_switch", Logger::Level::debug);
+  load2Switch->setParameters(SwitchConstants::openResistance, 0);
   load2Switch->setBaseVoltage(psParams.voltageLineToLine);
   load2Switch->connect({node5, node7});
 
@@ -805,16 +790,11 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   converter2->connect({node3});
 
   // topology
-  auto systemNodeList = SystemNodeList{
-      node1, node2, node3, node4, node5, node6,
-      // node7
-  };
+  auto systemNodeList =
+      SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, converter1, line1,       converter2,
-      line2,        circuitBreaker,  load1,      load1Switch,
-      //   load2,
-      //   load2Switch
-  };
+      infeedSource,   infeedImpedance, converter1,  line1, converter2, line2,
+      circuitBreaker, load1,           load1Switch, load2, load2Switch};
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
