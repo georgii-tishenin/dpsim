@@ -484,16 +484,12 @@ void simulateEMT(const SimulationParameters &simParams,
 
   // topology
   auto systemNodeList = SystemNodeList{
-      node1, node2, node3, node4,
-      // node5,
-      // node6,
+      node1, node2, node3, node4, node5, node6,
       // node7
   };
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1, line2,
-      //   circuitBreaker,
-      //   load1,
-      //   load1Switch,
+      infeedSource,   infeedImpedance, line1,       line2,
+      circuitBreaker, load1,           load1Switch,
       //   load2,
       //   load2Switch
   };
@@ -592,16 +588,12 @@ void simulateDP(const SimulationParameters &simParams,
 
   // topology
   auto systemNodeList = SystemNodeList{
-      node1, node2, node3, node4,
-      // node5,
-      // node6,
+      node1, node2, node3, node4, node5, node6,
       // node7
   };
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1, line2,
-      //   circuitBreaker,
-      //   load1,
-      //   load1Switch,
+      infeedSource,   infeedImpedance, line1,       line2,
+      circuitBreaker, load1,           load1Switch,
       //   load2,
       //   load2Switch
   };
@@ -699,16 +691,12 @@ void simulateSP(const SimulationParameters &simParams,
 
   // topology
   auto systemNodeList = SystemNodeList{
-      node1, node2, node3, node4,
-      // node5,
-      // node6,
+      node1, node2, node3, node4, node5, node6,
       // node7
   };
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1, line2,
-      //   circuitBreaker,
-      //   load1,
-      //   load1Switch,
+      infeedSource,   infeedImpedance, line1,       line2,
+      circuitBreaker, load1,           load1Switch,
       //   load2,
       //   load2Switch
   };
@@ -777,19 +765,19 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   line2->connect({node3, node4});
 
   auto circuitBreaker =
-      SP::Ph1::Resistor::make("circuit_breaker", Logger::Level::debug);
-  circuitBreaker->setParameters(SwitchConstants::closedResistance);
+      SP::Ph1::PiLine::make("circuit_breaker", Logger::Level::debug);
+  circuitBreaker->setParameters(SwitchConstants::closedResistance, 0);
   circuitBreaker->setBaseVoltage(psParams.voltageLineToLine);
   circuitBreaker->connect({node4, node5});
 
-  auto load1 = SP::Ph1::Resistor::make("load", Logger::Level::debug);
-  load1->setParameters(psParams.loadResistance1);
+  auto load1 = SP::Ph1::PiLine::make("load", Logger::Level::debug);
+  load1->setParameters(psParams.loadResistance1, 0);
   load1->setBaseVoltage(psParams.voltageLineToLine);
   load1->connect({node6, SP::SimNode::GND});
 
   auto load1Switch =
-      SP::Ph1::Resistor::make("load1_switch", Logger::Level::debug);
-  load1Switch->setParameters(SwitchConstants::closedResistance);
+      SP::Ph1::PiLine::make("load1_switch", Logger::Level::debug);
+  load1Switch->setParameters(SwitchConstants::closedResistance, 0);
   load1Switch->setBaseVoltage(psParams.voltageLineToLine);
   load1Switch->connect({node5, node6});
 
@@ -805,8 +793,7 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   load2Switch->connect({node5, node7});
 
   auto converter1 = SP::Ph1::Load::make("Converter1", Logger::Level::debug);
-  converter1->setParameters(-psParams.converter1P,
-                            -psParams.converter1Q,
+  converter1->setParameters(-psParams.converter1P, -psParams.converter1Q,
                             psParams.voltageLineToLine);
   converter1->modifyPowerFlowBusType(PowerflowBusType::PQ);
   converter1->connect({node2});
@@ -819,16 +806,12 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
 
   // topology
   auto systemNodeList = SystemNodeList{
-      node1, node2, node3, node4,
-      // node5,
-      // node6,
+      node1, node2, node3, node4, node5, node6,
       // node7
   };
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, converter1, line1, converter2, line2,
-      //   circuitBreaker,
-      //   load1,
-      //   load1Switch,
+      infeedSource, infeedImpedance, converter1, line1,       converter2,
+      line2,        circuitBreaker,  load1,      load1Switch,
       //   load2,
       //   load2Switch
   };
