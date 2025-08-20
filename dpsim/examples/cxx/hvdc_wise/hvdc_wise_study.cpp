@@ -39,8 +39,8 @@ struct PowerSystemInputParameters {
   double baseThreePhasePower = 100e6;
 
   // infeed parameters
-  double infeedResistanceInPerUnit = 0.3;
-  double infeedReactanceInPerUnit = 3.0;
+  double infeedResistanceInPerUnit = 0.01;
+  double infeedReactanceInPerUnit = 0.1;
 
   // line1 parameters
   double line1LengthInKm = 80;
