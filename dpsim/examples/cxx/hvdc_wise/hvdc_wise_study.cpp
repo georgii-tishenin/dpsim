@@ -484,16 +484,13 @@ void simulateEMT(const SimulationParameters &simParams,
 
   // topology
   auto systemNodeList = SystemNodeList{
-      node1, node2,
-      // node3,
-      node4,
+      node1, node2, node3, node4,
       // node5,
       // node6,
       // node7
   };
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1,
-      //   line2,
+      infeedSource, infeedImpedance, line1, line2,
       //   circuitBreaker,
       //   load1,
       //   load1Switch,
@@ -504,10 +501,7 @@ void simulateEMT(const SimulationParameters &simParams,
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
   createEMTConverter(logger, psParams, systemTopology, node2, 1);
-  //   createEMTConverterAsVoltageSource(logger, psParams, systemTopology, node2,
-  //                                     "Converter1");
-  //   createEMTConverterAsVoltageSource(logger, psParams, systemTopology, node3,
-  //                                     "Converter2");
+  createEMTConverter(logger, psParams, systemTopology, node3, 2);
 
   // events
   auto disconnectLoad1 =
@@ -598,16 +592,13 @@ void simulateDP(const SimulationParameters &simParams,
 
   // topology
   auto systemNodeList = SystemNodeList{
-      node1, node2,
-      // node3,
-      node4,
+      node1, node2, node3, node4,
       // node5,
       // node6,
       // node7
   };
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1,
-      //   line2,
+      infeedSource, infeedImpedance, line1, line2,
       //   circuitBreaker,
       //   load1,
       //   load1Switch,
@@ -618,10 +609,7 @@ void simulateDP(const SimulationParameters &simParams,
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
   createDPConverter(logger, psParams, systemTopology, node2, 1);
-  //   createDPConverterAsVoltageSource(logger, psParams, systemTopology, node2,
-  //                                    "Converter1");
-  //   createDPConverterAsVoltageSource(logger, psParams, systemTopology, node3,
-  //                                    "Converter2");
+  createDPConverter(logger, psParams, systemTopology, node3, 2);
 
   // events
   auto disconnectLoad1 =
@@ -711,16 +699,13 @@ void simulateSP(const SimulationParameters &simParams,
 
   // topology
   auto systemNodeList = SystemNodeList{
-      node1, node2,
-      // node3,
-      node4,
+      node1, node2, node3, node4,
       // node5,
       // node6,
       // node7
   };
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1,
-      //   line2,
+      infeedSource, infeedImpedance, line1, line2,
       //   circuitBreaker,
       //   load1,
       //   load1Switch,
@@ -731,10 +716,7 @@ void simulateSP(const SimulationParameters &simParams,
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
   createSPConverter(logger, psParams, systemTopology, node2, 1);
-  //   createSPConverterAsVoltageSource(logger, psParams, systemTopology, node2,
-  //                                    "Converter1");
-  //   createSPConverterAsVoltageSource(logger, psParams, systemTopology, node3,
-  //                                    "Converter2");
+  createSPConverter(logger, psParams, systemTopology, node3, 2);
 
   // events
   auto disconnectLoad1 =
@@ -829,18 +811,21 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   converter1->modifyPowerFlowBusType(PowerflowBusType::PQ);
   converter1->connect({node2});
 
+  auto converter2 = SP::Ph1::Load::make("Converter2", Logger::Level::debug);
+  converter2->setParameters(-psParams.converter2P, -psParams.converter2Q,
+                            psParams.voltageLineToLine);
+  converter2->modifyPowerFlowBusType(PowerflowBusType::PQ);
+  converter2->connect({node3});
+
   // topology
   auto systemNodeList = SystemNodeList{
-      node1, node2,
-      // node3,
-      node4,
+      node1, node2, node3, node4,
       // node5,
       // node6,
       // node7
   };
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, converter1, line1,
-      //   line2,
+      infeedSource, infeedImpedance, converter1, line1, converter2, line2,
       //   circuitBreaker,
       //   load1,
       //   load1Switch,
