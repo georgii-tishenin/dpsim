@@ -757,8 +757,6 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   Logger::setLogDir("logs/" + simName);
   auto logger = DataLogger::make(simName);
 
-  CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
-
   // nodes
   auto node1 = SP::SimNode::make("node1", PhaseType::Single);
   auto node2 = SP::SimNode::make("node2", PhaseType::Single);
