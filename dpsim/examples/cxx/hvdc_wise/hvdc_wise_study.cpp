@@ -8,6 +8,7 @@ namespace HVDCWise {
 namespace VariableNames {
 constexpr const char *vInfeed = "vInfeed";
 constexpr const char *iInfeed = "iInfeed";
+constexpr const char *fInfeed = "fInfeed";
 constexpr const char *vLoad = "vLoad";
 constexpr const char *iLoad1 = "iLoad1";
 constexpr const char *iLoad2 = "iLoad2";
@@ -27,15 +28,28 @@ constexpr const char *id = "Irc_d";
 constexpr const char *iq = "Irc_q";
 constexpr const char *vd = "Vc_d";
 constexpr const char *vq = "Vc_q";
+constexpr const char *f = "f_src";
 } // namespace AttributeNames
 
 struct SimulationParameters {
   double timeStep = 1e-4;
   double eventTime = 3.8;
   double finalTime = 4.0;
+  
+  // frequency ramp parameters
+  double frequencyRampDuration = 0.1;
+  double rocof = -10; // in Hz/s
+
+  // frequency step parameters
+  double frequencyStepDelta = -1.0; // in Hz
 };
 
-enum class PowerSystemEventType { None, LoadStep, InfeedVoltageAngleRamp };
+enum class PowerSystemEventType {
+  None,
+  LoadStep,
+  InfeedFrequencyRamp,
+  InfeedFrequencyStep
+};
 
 struct PowerSystemInputParameters {
   double frequency = 50;
@@ -428,6 +442,8 @@ void simulateEMT(const SimulationParameters &simParams,
                        node4->attribute(AttributeNames::v));
   logger->logAttribute(VariableNames::iInfeed,
                        infeedImpedance->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::fInfeed,
+                       infeedSource->attribute(AttributeNames::f));
 
   auto line1 = EMT::Ph3::PiLine::make("line1");
   line1->setParameters(
@@ -515,7 +531,18 @@ void simulateEMT(const SimulationParameters &simParams,
     sim.addEvent(connectLoad2);
     break;
   }
-  case PowerSystemEventType::InfeedVoltageAngleRamp: {
+  case PowerSystemEventType::InfeedFrequencyRamp: {
+    infeedSource->setParameters(
+        CPS::Math::singlePhaseVariableToThreePhase(psParams.voltageLineToLine),
+        psParams.frequency, simParams.rocof, simParams.eventTime,
+        simParams.frequencyRampDuration, false);
+    break;
+  }
+  case PowerSystemEventType::InfeedFrequencyStep: {
+    infeedSource->setParameters(
+        CPS::Math::singlePhaseVariableToThreePhase(psParams.voltageLineToLine),
+        psParams.frequency, simParams.frequencyStepDelta / simParams.timeStep,
+        simParams.eventTime, simParams.timeStep, false);
     break;
   }
   case PowerSystemEventType::None:
@@ -555,6 +582,8 @@ void simulateDP(const SimulationParameters &simParams,
                        node4->attribute(AttributeNames::v));
   logger->logAttribute(VariableNames::iInfeed,
                        infeedImpedance->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::fInfeed,
+                       infeedSource->attribute(AttributeNames::f));
 
   auto line1 = DP::Ph1::PiLine::make("line1");
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance,
@@ -627,7 +656,17 @@ void simulateDP(const SimulationParameters &simParams,
     sim.addEvent(connectLoad2);
     break;
   }
-  case PowerSystemEventType::InfeedVoltageAngleRamp: {
+  case PowerSystemEventType::InfeedFrequencyRamp: {
+    infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
+                                simParams.rocof, simParams.eventTime,
+                                simParams.frequencyRampDuration, false);
+    break;
+  }
+  case PowerSystemEventType::InfeedFrequencyStep: {
+    infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
+                                simParams.frequencyStepDelta /
+                                    simParams.timeStep,
+                                simParams.eventTime, simParams.timeStep, false);
     break;
   }
   case PowerSystemEventType::None:
@@ -667,6 +706,8 @@ void simulateSP(const SimulationParameters &simParams,
                        node4->attribute(AttributeNames::v));
   logger->logAttribute(VariableNames::iInfeed,
                        infeedImpedance->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::fInfeed,
+                       infeedSource->attribute(AttributeNames::f));
 
   auto line1 = SP::Ph1::PiLine::make("line1");
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance,
@@ -739,7 +780,17 @@ void simulateSP(const SimulationParameters &simParams,
     sim.addEvent(connectLoad2);
     break;
   }
-  case PowerSystemEventType::InfeedVoltageAngleRamp: {
+  case PowerSystemEventType::InfeedFrequencyRamp: {
+    infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
+                                simParams.rocof, simParams.eventTime,
+                                simParams.frequencyRampDuration, false);
+    break;
+  }
+  case PowerSystemEventType::InfeedFrequencyStep: {
+    infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
+                                simParams.frequencyStepDelta /
+                                    simParams.timeStep,
+                                simParams.eventTime, simParams.timeStep, false);
     break;
   }
   case PowerSystemEventType::None:
