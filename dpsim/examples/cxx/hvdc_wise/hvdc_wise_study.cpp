@@ -3,6 +3,8 @@
 using namespace DPsim;
 using namespace CPS;
 
+namespace HVDCWise {
+
 namespace VariableNames {
 constexpr const char *vInfeed = "vInfeed";
 constexpr const char *iInfeed = "iInfeed";
@@ -505,8 +507,8 @@ void simulateEMT(const SimulationParameters &simParams,
 
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::EMT);
-    sim.addEvent(disconnectLoad1);
-    sim.addEvent(connectLoad2);
+  sim.addEvent(disconnectLoad1);
+  sim.addEvent(connectLoad2);
   sim.run();
 }
 
@@ -603,8 +605,8 @@ void simulateDP(const SimulationParameters &simParams,
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::DP);
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::DP);
-    sim.addEvent(disconnectLoad1);
-    sim.addEvent(connectLoad2);
+  sim.addEvent(disconnectLoad1);
+  sim.addEvent(connectLoad2);
   sim.run();
 }
 
@@ -701,8 +703,8 @@ void simulateSP(const SimulationParameters &simParams,
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::SP);
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::SP);
-    sim.addEvent(disconnectLoad1);
-    sim.addEvent(connectLoad2);
+  sim.addEvent(disconnectLoad1);
+  sim.addEvent(connectLoad2);
   sim.run();
 }
 
@@ -820,16 +822,17 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
 
   return systemTopology;
 }
+} // namespace HVDCWise
 
 int main() {
-  SimulationParameters simParams;
-  PowerSystemInputParameters psInputParams;
-  PowerSystemParameters psParams =
+  HVDCWise::SimulationParameters simParams;
+  HVDCWise::PowerSystemInputParameters psInputParams;
+  HVDCWise::PowerSystemParameters psParams =
       calculatePowerSystemParameters(psInputParams);
 
-  auto systemTopologyPF = calculatePF(simParams, psParams);
-  simulateEMT(simParams, psParams, systemTopologyPF);
-  simulateDP(simParams, psParams, systemTopologyPF);
-  simulateSP(simParams, psParams, systemTopologyPF);
+  auto systemTopologyPF = HVDCWise::calculatePF(simParams, psParams);
+  HVDCWise::simulateEMT(simParams, psParams, systemTopologyPF);
+  HVDCWise::simulateDP(simParams, psParams, systemTopologyPF);
+  HVDCWise::simulateSP(simParams, psParams, systemTopologyPF);
   return 0;
 }
