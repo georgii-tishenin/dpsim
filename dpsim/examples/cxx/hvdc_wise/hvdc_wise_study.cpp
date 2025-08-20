@@ -35,6 +35,8 @@ struct SimulationParameters {
   double finalTime = 4.0;
 };
 
+enum class PowerSystemEventType { None, LoadStep, InfeedVoltageAngleRamp };
+
 struct PowerSystemInputParameters {
   double frequency = 50;
   double baseVoltageLineToLine = 110e3;
@@ -398,7 +400,8 @@ void createSPConverterAsVoltageSource(const std::shared_ptr<DataLogger> &logger,
 
 void simulateEMT(const SimulationParameters &simParams,
                  const PowerSystemParameters &psParams,
-                 const SystemTopology &systemTopologyPF) {
+                 const SystemTopology &systemTopologyPF,
+                 const PowerSystemEventType &psEvent) {
   String simName = "EMT_simulation";
   Logger::setLogDir("logs/" + simName);
   auto logger = DataLogger::make(simName);
@@ -496,25 +499,38 @@ void simulateEMT(const SimulationParameters &simParams,
   createEMTConverter(logger, psParams, systemTopology, node2, 1);
   createEMTConverter(logger, psParams, systemTopology, node3, 2);
 
-  // events
-  auto disconnectLoad1 =
-      DPsim::SwitchEvent3Ph::make(simParams.eventTime, load1Switch, false);
-  auto connectLoad2 =
-      DPsim::SwitchEvent3Ph::make(simParams.eventTime, load2Switch, true);
-
   // simulation
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::EMT);
-
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::EMT);
-  sim.addEvent(disconnectLoad1);
-  sim.addEvent(connectLoad2);
+
+  // events
+  switch (psEvent) {
+  case PowerSystemEventType::LoadStep: {
+    auto disconnectLoad1 =
+        DPsim::SwitchEvent3Ph::make(simParams.eventTime, load1Switch, false);
+    auto connectLoad2 =
+        DPsim::SwitchEvent3Ph::make(simParams.eventTime, load2Switch, true);
+    sim.addEvent(disconnectLoad1);
+    sim.addEvent(connectLoad2);
+    break;
+  }
+  case PowerSystemEventType::InfeedVoltageAngleRamp: {
+    break;
+  }
+  case PowerSystemEventType::None:
+  default:
+    // No events to add
+    break;
+  }
+
   sim.run();
 }
 
 void simulateDP(const SimulationParameters &simParams,
                 const PowerSystemParameters &psParams,
-                const SystemTopology &systemTopologyPF) {
+                const SystemTopology &systemTopologyPF,
+                const PowerSystemEventType &psEvent) {
   String simName = "DP_simulation";
   Logger::setLogDir("logs/" + simName);
   auto logger = DataLogger::make(simName);
@@ -595,24 +611,38 @@ void simulateDP(const SimulationParameters &simParams,
   createDPConverter(logger, psParams, systemTopology, node2, 1);
   createDPConverter(logger, psParams, systemTopology, node3, 2);
 
-  // events
-  auto disconnectLoad1 =
-      DPsim::SwitchEvent::make(simParams.eventTime, load1Switch, false);
-  auto connectLoad2 =
-      DPsim::SwitchEvent::make(simParams.eventTime, load2Switch, true);
-
   // simulation
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::DP);
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::DP);
-  sim.addEvent(disconnectLoad1);
-  sim.addEvent(connectLoad2);
+
+  // events
+  switch (psEvent) {
+  case PowerSystemEventType::LoadStep: {
+    auto disconnectLoad1 =
+        DPsim::SwitchEvent::make(simParams.eventTime, load1Switch, false);
+    auto connectLoad2 =
+        DPsim::SwitchEvent::make(simParams.eventTime, load2Switch, true);
+    sim.addEvent(disconnectLoad1);
+    sim.addEvent(connectLoad2);
+    break;
+  }
+  case PowerSystemEventType::InfeedVoltageAngleRamp: {
+    break;
+  }
+  case PowerSystemEventType::None:
+  default:
+    // No events to add
+    break;
+  }
+
   sim.run();
 }
 
 void simulateSP(const SimulationParameters &simParams,
                 const PowerSystemParameters &psParams,
-                const SystemTopology &systemTopologyPF) {
+                const SystemTopology &systemTopologyPF,
+                const PowerSystemEventType &psEvent) {
   String simName = "SP_simulation";
   Logger::setLogDir("logs/" + simName);
   auto logger = DataLogger::make(simName);
@@ -693,18 +723,31 @@ void simulateSP(const SimulationParameters &simParams,
   createSPConverter(logger, psParams, systemTopology, node2, 1);
   createSPConverter(logger, psParams, systemTopology, node3, 2);
 
-  // events
-  auto disconnectLoad1 =
-      DPsim::SwitchEvent::make(simParams.eventTime, load1Switch, false);
-  auto connectLoad2 =
-      DPsim::SwitchEvent::make(simParams.eventTime, load2Switch, true);
-
   // simulation
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::SP);
   auto sim =
       setupSimulation(simName, simParams, systemTopology, logger, Domain::SP);
-  sim.addEvent(disconnectLoad1);
-  sim.addEvent(connectLoad2);
+
+  // events
+  switch (psEvent) {
+  case PowerSystemEventType::LoadStep: {
+    auto disconnectLoad1 =
+        DPsim::SwitchEvent::make(simParams.eventTime, load1Switch, false);
+    auto connectLoad2 =
+        DPsim::SwitchEvent::make(simParams.eventTime, load2Switch, true);
+    sim.addEvent(disconnectLoad1);
+    sim.addEvent(connectLoad2);
+    break;
+  }
+  case PowerSystemEventType::InfeedVoltageAngleRamp: {
+    break;
+  }
+  case PowerSystemEventType::None:
+  default:
+    // No events to add
+    break;
+  }
+
   sim.run();
 }
 
@@ -829,10 +872,11 @@ int main() {
   HVDCWise::PowerSystemInputParameters psInputParams;
   HVDCWise::PowerSystemParameters psParams =
       calculatePowerSystemParameters(psInputParams);
+  auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
 
   auto systemTopologyPF = HVDCWise::calculatePF(simParams, psParams);
-  HVDCWise::simulateEMT(simParams, psParams, systemTopologyPF);
-  HVDCWise::simulateDP(simParams, psParams, systemTopologyPF);
-  HVDCWise::simulateSP(simParams, psParams, systemTopologyPF);
+  HVDCWise::simulateEMT(simParams, psParams, systemTopologyPF, psEvent);
+  HVDCWise::simulateDP(simParams, psParams, systemTopologyPF, psEvent);
+  HVDCWise::simulateSP(simParams, psParams, systemTopologyPF, psEvent);
   return 0;
 }
