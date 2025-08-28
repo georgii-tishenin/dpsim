@@ -726,6 +726,7 @@ auto vD = VoltageSource::make("vD", Logger::Level::debug);
     voltageSpeedTermD->setInitialOmega(omega);
     voltageSpeedTermD->setInductance(l);
     voltageSpeedTermD->setIsNegative(true);
+    voltageSpeedTermD->setIsConstantSpeed(true);
     voltageSpeedTermD->connect({n7, n8, n2, n3});
 
     auto resistorQ = Resistor::make("resistorQ", Logger::Level::debug);
@@ -741,6 +742,7 @@ auto vD = VoltageSource::make("vD", Logger::Level::debug);
     voltageSpeedTermQ->setInitialOmega(omega);
     voltageSpeedTermQ->setInductance(l);
     voltageSpeedTermQ->setIsNegative(false);
+    voltageSpeedTermQ->setIsConstantSpeed(true);
     voltageSpeedTermQ->connect({n3, n4, n6, n7}); // through other speed term
 
     // Define system topology
@@ -765,7 +767,7 @@ auto vD = VoltageSource::make("vD", Logger::Level::debug);
     Simulation sim(simName);
     sim.setSystem(system);
     sim.setTimeStep(timeStep);
-    sim.doSystemMatrixRecomputation(false);
+    sim.doSystemMatrixRecomputation(true);
     sim.setFinalTime(finalTime);
     sim.setDomain(Domain::EMT);
     sim.addLogger(logger);
