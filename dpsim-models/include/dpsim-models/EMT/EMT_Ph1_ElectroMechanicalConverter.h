@@ -42,12 +42,6 @@ public:
 
   std::shared_ptr<CPS::SimNode<Real>> mVoltageReferenceNode;
 
-  void setVoltageReferenceNode(const std::shared_ptr<CPS::SimNode<Real>> &pt) {
-    mVoltageReferenceNode = pt;
-  }
-
-  void setIsNegative(bool isNegative) { mIsNegative = isNegative; }
-
   /// Defines UID, name and logging level
   ElectroMechanicalConverter(String uid, String name,
                              Logger::Level logLevel = Logger::Level::off);
@@ -60,6 +54,12 @@ public:
   // #### General ####
   /// Sets initial flux
   void setInitialFlux(Real flux);
+
+  void setVoltageReferenceNode(const std::shared_ptr<CPS::SimNode<Real>> &pt) {
+    mVoltageReferenceNode = pt;
+  }
+
+  void setIsNegative(bool isNegative) { mIsNegative = isNegative; }
 
   // #### MNA section ####
   /// Initializes internal variables of the component
