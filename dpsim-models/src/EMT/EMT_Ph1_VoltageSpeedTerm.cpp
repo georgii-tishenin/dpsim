@@ -69,5 +69,27 @@ void EMT::Ph1::VoltageSpeedTerm::mnaCompApplySystemMatrixStamp(
   Math::setMatrixElement(systemMatrix, ipq, imn, -alpha);
 }
 
+void EMT::Ph1::VoltageSpeedTerm::mnaCompAddPostStepDependencies(
+    AttributeBase::List &prevStepDependencies,
+    AttributeBase::List &attributeDependencies,
+    AttributeBase::List &modifiedAttributes,
+    Attribute<Matrix>::Ptr &leftVector) {
+  prevStepDependencies.push_back(mOmega);
+  attributeDependencies.push_back(leftVector);
+  modifiedAttributes.push_back(mOmega);
+}
+
+void EMT::Ph1::VoltageSpeedTerm::mnaCompPostStep(
+    Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) {
+  if (mIsConstantSpeed) {
+    return;
+  }
+  if (!mOmegaReferenceNode) {
+    SPDLOG_LOGGER_ERROR(mSLog, "{}: No omega reference node set", name());
+    throw std::runtime_error("No omega reference node set");
+  }
+  **mOmega = mOmegaReferenceNode->voltage()(0, 0);
+}
+
 void EMT::Ph1::VoltageSpeedTerm::stampBranchNodeIncidenceMatrix(
     UInt branchIdx, Matrix &branchNodeIncidenceMatrix) {}
