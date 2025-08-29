@@ -39,7 +39,7 @@ void EMT::Ph1::VoltageSpeedTerm::mnaCompApplySystemMatrixStamp(
   int imn = mVirtualNodes[0]->matrixNodeIndex();
   int ipq = mVirtualNodes[1]->matrixNodeIndex();
 
-  // Ideal transformer equations
+  // current controlled voltage source equations
   //m
   if (terminalNotGrounded(0)) {
     Math::setMatrixElement(systemMatrix, m, imn, 1);
