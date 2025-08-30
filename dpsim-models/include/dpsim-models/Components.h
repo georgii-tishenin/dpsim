@@ -92,6 +92,7 @@
 #include <dpsim-models/EMT/EMT_Ph1_ElectroMechanicalConverter.h>
 #include <dpsim-models/EMT/EMT_Ph1_VoltageSpeedTerm.h>
 #include <dpsim-models/EMT/EMT_Ph1_InertiaMoment.h>
+#include <dpsim-models/EMT/EMT_Ph1_CurrentControlledTorqueSource.h>
 
 #include <dpsim-models/EMT/EMT_Ph3_AvVoltSourceInverterStateSpace.h>
 #include <dpsim-models/EMT/EMT_Ph3_AvVoltageSourceInverterDQ.h>
