@@ -5,7 +5,7 @@ using namespace CPS;
 EMT::Ph1::CurrentControlledTorqueSource::CurrentControlledTorqueSource(
     String uid, String name, Logger::Level logLevel)
     : MNASimPowerComp<Real>(uid, name, true, true, logLevel),
-      mCoefficientCurrent(mAttributes->create<Real>("coeffI")) {
+      mFlux(mAttributes->create<Real>("flux")) {
 
   setVirtualNodeNumber(1);
   setTerminalNumber(4);
@@ -15,9 +15,14 @@ EMT::Ph1::CurrentControlledTorqueSource::CurrentControlledTorqueSource(
   **mIntfCurrent = Matrix::Zero(1, 1);
 }
 
+void EMT::Ph1::CurrentControlledTorqueSource::setInitialFlux(Real flux) {
+  **mFlux = flux;
+}
+
 void EMT::Ph1::CurrentControlledTorqueSource::mnaCompInitialize(
     Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
   updateMatrixNodeIndices();
+  mTimeStep = timeStep;
 }
 
 void EMT::Ph1::CurrentControlledTorqueSource::mnaCompApplySystemMatrixStamp(
@@ -29,7 +34,7 @@ void EMT::Ph1::CurrentControlledTorqueSource::mnaCompApplySystemMatrixStamp(
 
   int imn = mVirtualNodes[0]->matrixNodeIndex();
 
-  double alpha = calculateAlpha();
+  double alpha = mCoefficient * **mFlux;
 
   // current controlled torque source equations
   //m
@@ -52,25 +57,25 @@ void EMT::Ph1::CurrentControlledTorqueSource::mnaCompApplySystemMatrixStamp(
   }
 }
 
-double EMT::Ph1::CurrentControlledTorqueSource::calculateAlpha() {
-  updateCoefficientCurrent();
-  double alpha = mCoefficient * **mCoefficientCurrent;
-  if (mIsNegative) {
-    alpha = -alpha;
-  }
-  return alpha;
+void EMT::Ph1::CurrentControlledTorqueSource::mnaCompAddPostStepDependencies(
+    AttributeBase::List &prevStepDependencies,
+    AttributeBase::List &attributeDependencies,
+    AttributeBase::List &modifiedAttributes,
+    Attribute<Matrix>::Ptr &leftVector) {
+  prevStepDependencies.push_back(mFlux);
+  attributeDependencies.push_back(leftVector);
+  modifiedAttributes.push_back(mFlux);
 }
 
-void EMT::Ph1::CurrentControlledTorqueSource::updateCoefficientCurrent() {
-  if (mInductor == nullptr) {
-    SPDLOG_LOGGER_ERROR(mSLog, "CurrentControlledTorqueSource has no inductor "
-                               "set for current reference");
-    throw std::runtime_error("No inductor set for current reference");
+void EMT::Ph1::CurrentControlledTorqueSource::mnaCompPostStep(
+    Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) {
+  if (mVoltageReferenceNode == nullptr) {
+    throw std::runtime_error(
+        "mFluxNode is null in CurrentControlledTorqueSource.");
   }
-  auto inductorCurrent = mInductor->intfCurrent();
-  **mCoefficientCurrent = inductorCurrent(0, 0);
-  **mCoefficientCurrent *=
-      -1; // interface current in inductor is from terminal 1 to terminal 0
+  mOldVoltage = mVoltage;
+  mVoltage = mVoltageReferenceNode->voltage()(0, 0);
+  **mFlux = **mFlux + (mTimeStep / 2) * (mOldVoltage + mVoltage);
 }
 
 void EMT::Ph1::CurrentControlledTorqueSource::stampBranchNodeIncidenceMatrix(
