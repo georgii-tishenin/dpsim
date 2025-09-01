@@ -6,11 +6,14 @@
 #include <dpsim-models/Attribute.h>
 #include <dpsim-models/AttributeList.h>
 #include <dpsim-models/Definitions.h>
-#include <dpsim-models/EMT/EMT_Ph1_Inductor.h>
 #include <dpsim-models/MNASimPowerComp.h>
 #include <dpsim-models/Solver/EigenvalueCompInterface.h>
 #include <dpsim-models/Solver/MNAInterface.h>
 #include <dpsim-models/Solver/MNAVariableCompInterface.h>
+
+namespace CPS {
+template <typename VarType> class SimNode;
+}
 
 namespace CPS {
 namespace EMT {
@@ -22,13 +25,20 @@ class CurrentControlledTorqueSource
       public SharedFactory<CurrentControlledTorqueSource>,
       public EigenvalueCompInterface {
 public:
-  const typename Attribute<Real>::Ptr mCoefficientCurrent;
 
-  std::shared_ptr<CPS::EMT::Ph1::Inductor> mInductor;
+  /// flux is turns ratio (v = flux * omega, torque = flux * i)
+  const typename Attribute<Real>::Ptr mFlux;
+  
+  std::shared_ptr<CPS::SimNode<Real>> mVoltageReferenceNode;
 
   Real mCoefficient;
 
-  bool mIsNegative = false;
+  // In order to get the discrete integration of a voltage (flux)
+  Real mTimeStep = 0.0;
+
+  Real mOldVoltage = 0.0;
+
+  Real mVoltage = 0.0;
 
   /// Defines UID, name and logging level
   CurrentControlledTorqueSource(String uid, String name,
@@ -43,11 +53,10 @@ public:
   /// Sets coefficient
   void setCoefficient(Real coefficient) { mCoefficient = coefficient; };
 
-  void setIsNegative(bool isNegative) { mIsNegative = isNegative; }
+  void setInitialFlux(Real flux);
 
-  void setInductorForCurrentRerefence(
-      const std::shared_ptr<CPS::EMT::Ph1::Inductor> &pt) {
-    mInductor = pt;
+  void setVoltageReferenceNode(const std::shared_ptr<CPS::SimNode<Real>> &pt) {
+    mVoltageReferenceNode = pt;
   }
 
   // #### MNA section ####
@@ -57,6 +66,15 @@ public:
   /// Stamps system matrix
   void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
 
+  void mnaCompPostStep(Real time, Int timeStepCount,
+                       Attribute<Matrix>::Ptr &leftVector) override;
+  /// Add MNA post step dependencies
+  void
+  mnaCompAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
+                                 AttributeBase::List &attributeDependencies,
+                                 AttributeBase::List &modifiedAttributes,
+                                 Attribute<Matrix>::Ptr &leftVector) override;
+
   // #### Implementation of eigenvalue component interface ####
   void stampBranchNodeIncidenceMatrix(UInt branchIdx,
                                       Matrix &branchNodeIncidenceMatrix) final;
@@ -64,10 +82,6 @@ public:
   // Mark that parameter changes so that system matrix is updated
   Bool hasParameterChanged() override { return true; }
 
-private:
-  double calculateAlpha();
-
-  void updateCoefficientCurrent();
 };
 } // namespace Ph1
 } // namespace EMT
