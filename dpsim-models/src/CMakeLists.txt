@@ -75,6 +75,7 @@ list(APPEND MODELS_SOURCES
 	EMT/EMT_Ph1_VoltageSpeedTerm.cpp
 	EMT/EMT_Ph1_InertiaMoment.cpp
 	EMT/EMT_Ph1_CurrentControlledTorqueSource.cpp
+	EMT/EMT_Ph1_CCTSAsCCVS.cpp
 
 	EMT/EMT_Ph3_CurrentSource.cpp
 	EMT/EMT_Ph3_VoltageSource.cpp
