@@ -61,7 +61,7 @@ void EMT::Ph1::VoltageSpeedTerm::mnaCompApplySystemMatrixStamp(
     Math::setMatrixElement(systemMatrix, ipq, q, -1);
   }
 
-  double alpha = **mOmega * mInductance;
+  double alpha = (**mOmega + mOmegaOffset) * mInductance;
   if (mIsNegative) {
     alpha = -alpha;
   }

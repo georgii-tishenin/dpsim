@@ -28,6 +28,8 @@ public:
 
   std::shared_ptr<CPS::SimNode<Real>> mOmegaReferenceNode;
 
+  Real mOmegaOffset = 0.0;
+
   Real mInductance;
 
   bool mIsConstantSpeed = false;
@@ -45,6 +47,8 @@ public:
   // #### General ####
   /// Sets initial omega
   void setInitialOmega(Real omega);
+
+  void setOmegaOffset(Real omegaOffset) { mOmegaOffset = omegaOffset; }
 
   void setIsConstantSpeed(bool isConstantSpeed) {
     mIsConstantSpeed = isConstantSpeed;
