@@ -77,6 +77,7 @@ list(APPEND MODELS_SOURCES
 	EMT/EMT_Ph1_CurrentControlledTorqueSource.cpp
 	EMT/EMT_Ph1_CCTSAsCCVS.cpp
 	EMT/EMT_Ph1_TimeLaggingVoltageSource.cpp
+	EMT/EMT_Ph1_TimeLaggingTorqueSource.cpp
 
 	EMT/EMT_Ph3_CurrentSource.cpp
 	EMT/EMT_Ph3_VoltageSource.cpp
