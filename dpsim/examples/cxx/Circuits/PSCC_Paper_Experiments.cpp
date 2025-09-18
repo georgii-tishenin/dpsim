@@ -1600,8 +1600,62 @@ void timeLaggingVoltageSourceTest() {
   sim.run();
 }
 
+void timeLaggingTorqueSourceTest() {
+  // Parameters
+  Real frequency = 50;
+  Real r = 1.0;                 // Resistance
+  Real voltageMagnitude = 10.0; // Voltage magnitude
+
+  // Nodes
+  auto n1 = SimNode::make("n1");
+  auto n2 = SimNode::make("n2");
+  auto n3 = SimNode::make("n3");
+
+  // Components
+  auto vS = VoltageSource::make("vS", Logger::Level::debug);
+  vS->setParameters(Complex(voltageMagnitude, 0.0), frequency);
+  vS->connect({SimNode::GND, n1});
+
+  auto r1 = Resistor::make("r1", Logger::Level::debug);
+  r1->setParameters(r);
+  r1->connect({n2, SimNode::GND});
+
+  auto r2 = Resistor::make("r2", Logger::Level::debug);
+  r2->setParameters(r);
+  r2->connect({n3, SimNode::GND});
+
+  auto tLTS = TimeLaggingTorqueSource::make("tLTS", Logger::Level::debug);
+  tLTS->connect({n1, n2, SimNode::GND, n3});
+
+  // Define system topology
+  SystemTopology system(50, SystemNodeList{n1, n2, n3},
+                        SystemComponentList{vS, r1, r2, tLTS});
+
+  // Define simulation scenario
+  String simName = "timeLaggingTorqueSourceTest";
+  // Logger
+  auto logger = DataLogger::make(simName);
+  logger->logAttribute("V1", n1->attribute("v"));
+  logger->logAttribute("V2", n2->attribute("v"));
+  logger->logAttribute("V3", n3->attribute("v"));
+  logger->logAttribute("I_r1", r1->attribute("i_intf"));
+  logger->logAttribute("I_r2", r2->attribute("i_intf"));
+  logger->logAttribute("I_TLTS", tLTS->attribute("i"));
+
+  Simulation sim(simName);
+  sim.setSystem(system);
+  sim.setTimeStep(1e-4);
+  sim.doSystemMatrixRecomputation(false);
+  sim.setFinalTime(0.1);
+  sim.setDomain(Domain::EMT);
+  sim.addLogger(logger);
+  sim.doEigenvalueExtraction(false);
+  sim.run();
+}
+
 int main(int argc, char *argv[]) {
-    timeLaggingVoltageSourceTest();
+    timeLaggingTorqueSourceTest();
+    // timeLaggingVoltageSourceTest();
     // motorStartingTestSynchReferenceSpeedVoltageTermsEMConverter(1e-4, 3, true);
     // motorStartingTestSynchReferenceSpeedVoltageTerms(1e-4, 3, false);
 //   motorStartingTestRotorReferenceSpeedVoltageTerms(1e-4, 3, false);
