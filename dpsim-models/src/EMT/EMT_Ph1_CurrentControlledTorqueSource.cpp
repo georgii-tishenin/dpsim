@@ -15,14 +15,10 @@ EMT::Ph1::CurrentControlledTorqueSource::CurrentControlledTorqueSource(
   **mIntfCurrent = Matrix::Zero(1, 1);
 }
 
-void EMT::Ph1::CurrentControlledTorqueSource::setInitialFlux(Real flux) {
-  **mFlux = flux;
-}
 
 void EMT::Ph1::CurrentControlledTorqueSource::mnaCompInitialize(
     Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
   updateMatrixNodeIndices();
-  mTimeStep = timeStep;
 }
 
 void EMT::Ph1::CurrentControlledTorqueSource::mnaCompApplySystemMatrixStamp(
@@ -34,7 +30,11 @@ void EMT::Ph1::CurrentControlledTorqueSource::mnaCompApplySystemMatrixStamp(
 
   int imn = mVirtualNodes[0]->matrixNodeIndex();
 
-  double alpha = mCoefficient * **mFlux;
+  if (**mFlux == 0) {
+    **mFlux = 1e-12; // Avoid division by zero
+  }
+
+  double alpha = **mFlux;
 
   // current controlled torque source equations
   //m
@@ -69,13 +69,13 @@ void EMT::Ph1::CurrentControlledTorqueSource::mnaCompAddPostStepDependencies(
 
 void EMT::Ph1::CurrentControlledTorqueSource::mnaCompPostStep(
     Real time, Int timeStepCount, Attribute<Matrix>::Ptr &leftVector) {
-  if (mVoltageReferenceNode == nullptr) {
+  if(mInductor == nullptr) {
     throw std::runtime_error(
-        "mFluxNode is null in CurrentControlledTorqueSource.");
+        "mInductor is null in CurrentControlledTorqueSource.");
   }
-  mOldVoltage = mVoltage;
-  mVoltage = mVoltageReferenceNode->voltage()(0, 0);
-  **mFlux = **mFlux + (mTimeStep / 2) * (mOldVoltage + mVoltage);
+
+  Real i = mInductor->intfCurrent()(0, 0);
+  **mFlux = -mInductance * i;
 }
 
 void EMT::Ph1::CurrentControlledTorqueSource::stampBranchNodeIncidenceMatrix(
