@@ -10,10 +10,7 @@
 #include <dpsim-models/Solver/EigenvalueCompInterface.h>
 #include <dpsim-models/Solver/MNAInterface.h>
 #include <dpsim-models/Solver/MNAVariableCompInterface.h>
-
-namespace CPS {
-template <typename VarType> class SimNode;
-}
+#include <dpsim-models/EMT/EMT_Ph1_Inductor.h>
 
 namespace CPS {
 namespace EMT {
@@ -25,20 +22,9 @@ class CurrentControlledTorqueSource
       public SharedFactory<CurrentControlledTorqueSource>,
       public EigenvalueCompInterface {
 public:
-
-  /// flux is turns ratio (v = flux * omega, torque = flux * i)
+  std::shared_ptr<CPS::EMT::Ph1::Inductor> mInductor;
   const typename Attribute<Real>::Ptr mFlux;
-  
-  std::shared_ptr<CPS::SimNode<Real>> mVoltageReferenceNode;
-
-  Real mCoefficient;
-
-  // In order to get the discrete integration of a voltage (flux)
-  Real mTimeStep = 0.0;
-
-  Real mOldVoltage = 0.0;
-
-  Real mVoltage = 0.0;
+  Real mInductance = 0.0;
 
   /// Defines UID, name and logging level
   CurrentControlledTorqueSource(String uid, String name,
@@ -50,14 +36,11 @@ public:
       : CurrentControlledTorqueSource(name, name, logLevel) {}
 
   // #### General ####
-  /// Sets coefficient
-  void setCoefficient(Real coefficient) { mCoefficient = coefficient; };
-
-  void setInitialFlux(Real flux);
-
-  void setVoltageReferenceNode(const std::shared_ptr<CPS::SimNode<Real>> &pt) {
-    mVoltageReferenceNode = pt;
+  void setInductor(const std::shared_ptr<CPS::EMT::Ph1::Inductor> &pt) {
+    mInductor = pt;
   }
+
+  void setInductance(Real inductance) { mInductance = inductance; }
 
   // #### MNA section ####
   /// Initializes internal variables of the component
