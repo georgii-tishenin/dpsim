@@ -785,14 +785,9 @@ void motorStartingTest(Real timeStep, Real finalTime,
   String simName = "motorStartingTest";
   // Logger
   auto logger = DataLogger::make(simName);
-  logger->logAttribute("V_A", n1->attribute("v"));
-  logger->logAttribute("V_B", n2->attribute("v"));
-  logger->logAttribute("V_C", n3->attribute("v"));
+  logger->logAttribute("i_A", v1->attribute("i_intf"));
   logger->logAttribute("omega", n47->attribute("v"));
-  logger->logAttribute("I_rSd", rSd->attribute("i_intf"));
-  logger->logAttribute("I_lSd", lSd->attribute("i_intf"));
-  logger->logAttribute("I_rSq", rSq->attribute("i_intf"));
-  logger->logAttribute("omega_park", parkTrafo->attribute("omega"));
+  logger->logAttribute("torque", inertiaMoment->attribute("i_intf"));
 
   Simulation sim(simName);
   sim.setSystem(system);
@@ -806,7 +801,7 @@ void motorStartingTest(Real timeStep, Real finalTime,
 }
 
 int main(int argc, char *argv[]) {
-  motorStartingTest(1e-4, 3.0, true);
+  motorStartingTest(5e-5, 3.0, true);
   // timeLaggingTorqueSourceTest();
   // timeLaggingVoltageSourceTest();
   //  speedVoltageTermTest(1e-4, 1, true);
