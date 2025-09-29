@@ -119,8 +119,18 @@ void SimPowerComp<VarType>::setIntfCurrent(MatrixVar<VarType> current) {
 }
 
 template <typename VarType>
+void SimPowerComp<VarType>::setIntfCurrent(VarType current) {
+  (**mIntfCurrent)(0,0) = current;
+}
+
+template <typename VarType>
 void SimPowerComp<VarType>::setIntfVoltage(MatrixVar<VarType> voltage) {
   **mIntfVoltage = voltage;
+}
+
+template <typename VarType>
+void SimPowerComp<VarType>::setIntfVoltage(VarType voltage) {
+  (**mIntfVoltage)(0,0) = voltage;
 }
 
 // #### Terminals ####
