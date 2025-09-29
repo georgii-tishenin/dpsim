@@ -130,8 +130,10 @@ public:
 
   // #### Setters ####
   void setIntfCurrent(MatrixVar<VarType> current);
+  void setIntfCurrent(VarType current);
   ///
   void setIntfVoltage(MatrixVar<VarType> voltage);
+  void setIntfVoltage(VarType voltage);
   ///
   void setVirtualNodeNumber(UInt num);
   /// Sets the virtual node at index nodeNum.
