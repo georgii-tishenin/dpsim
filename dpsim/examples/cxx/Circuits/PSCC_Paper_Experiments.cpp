@@ -818,18 +818,21 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
   Real l1q = 0.00239;
   Real r2q = 0.02458;
   Real l2q = 4.129e-4;
-//   Real rSource = 1.0;
+  Real rSource = voltageMagnitudeLL * voltageMagnitudeLL / 100.0e6;
 
-  Real inertia = 2.25e4;
-  Real shaftTorque = 3.1831e5;
+  //   Real inertia = 2.25e4;
+  Real inertia = 2.25e4 * 1000; 
+  Real shaftTorque = 3.1831e5; // 2.8760e5
   Real vExcitation = 7.0829; // 92.95;
 
-  Real voltageMagnitude = voltageMagnitudeLL * sqrt(2.0) / sqrt(3.0);
-  Complex voltageL1 = Complex(voltageMagnitude, 0.0);
-  Complex voltageL2 = Complex(voltageMagnitude * cos(-2 * M_PI / 3),
-                              voltageMagnitude * sin(-2 * M_PI / 3));
-  Complex voltageL3 = Complex(voltageMagnitude * cos(2 * M_PI / 3),
-                              voltageMagnitude * sin(2 * M_PI / 3));
+//   Real angle = (3 * M_PI / 180.0);
+//   Real voltageMagnitude = voltageMagnitudeLL * sqrt(2.0) / sqrt(3.0);
+//   Complex voltageL1 = Complex(voltageMagnitude * cos(angle), 
+//                               voltageMagnitude * sin(angle));
+//   Complex voltageL2 = Complex(voltageMagnitude * cos(-2 * M_PI / 3 + angle),
+//                               voltageMagnitude * sin(-2 * M_PI / 3 + angle));
+//   Complex voltageL3 = Complex(voltageMagnitude * cos(2 * M_PI / 3 + angle),
+//                               voltageMagnitude * sin(2 * M_PI / 3 + angle));
 
   // Nodes
   auto n1 = SimNode::make("n1");
@@ -872,25 +875,25 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
 
   // Components
   // Infeed
-  auto v1 = VoltageSource::make("v1", Logger::Level::debug);
-  v1->setParameters(voltageL1, frequency);
-  v1->connect({SimNode::GND, n32});
-  auto v2 = VoltageSource::make("v2", Logger::Level::debug);
-  v2->setParameters(voltageL2, frequency);
-  v2->connect({SimNode::GND, n33});
-  auto v3 = VoltageSource::make("v3", Logger::Level::debug);
-  v3->setParameters(voltageL3, frequency);
-  v3->connect({SimNode::GND, n34});
+//   auto v1 = VoltageSource::make("v1", Logger::Level::debug);
+//   v1->setParameters(voltageL1, frequency);
+//   v1->connect({SimNode::GND, n32});
+//   auto v2 = VoltageSource::make("v2", Logger::Level::debug);
+//   v2->setParameters(voltageL2, frequency);
+//   v2->connect({SimNode::GND, n33});
+//   auto v3 = VoltageSource::make("v3", Logger::Level::debug);
+//   v3->setParameters(voltageL3, frequency);
+//   v3->connect({SimNode::GND, n34});
 
-//   auto rSourceComp1 = Resistor::make("rSourceComp1", Logger::Level::debug);
-//   rSourceComp1->setParameters(rSource);
-//   rSourceComp1->connect({n32, n35});
-//   auto rSourceComp2 = Resistor::make("rSourceComp2", Logger::Level::debug);
-//   rSourceComp2->setParameters(rSource);
-//   rSourceComp2->connect({n33, n36});
-//   auto rSourceComp3 = Resistor::make("rSourceComp3", Logger::Level::debug);
-//   rSourceComp3->setParameters(rSource);
-//   rSourceComp3->connect({n34, n37});
+  auto rSourceComp1 = Resistor::make("rSourceComp1", Logger::Level::debug);
+  rSourceComp1->setParameters(rSource);
+  rSourceComp1->connect({SimNode::GND, n32});
+  auto rSourceComp2 = Resistor::make("rSourceComp2", Logger::Level::debug);
+  rSourceComp2->setParameters(rSource);
+  rSourceComp2->connect({SimNode::GND, n33});
+  auto rSourceComp3 = Resistor::make("rSourceComp3", Logger::Level::debug);
+  rSourceComp3->setParameters(rSource);
+  rSourceComp3->connect({SimNode::GND, n34});
   // Park transformer
   auto parkTrafo =
       ParkTransformer::make("ParkTransformer", Logger::Level::debug);
@@ -905,14 +908,14 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
     rSd->connect({n1, n4});
 
     auto tlvs1 = TimeLaggingVoltageSource::make("tlvs1", Logger::Level::debug);
-    tlvs1->setVoltageReferenceNodes(n4, n13);
-    tlvs1->connect({n7, n4});
+    tlvs1->setVoltageReferenceNodes(n13, n4);
+    tlvs1->connect({n4, n7});
 
     auto rec1 = ElectroMechanicalConverter::make("rec1", Logger::Level::debug);
     rec1->setInitialFlux(0.0);
     rec1->setIsNegative(false);
     rec1->setVoltageReferenceNode(n18);
-    rec1->connect({n7, n9, n30, SimNode::GND});
+    rec1->connect({n9, n7, n30, SimNode::GND});
 
     auto ccvs1 = VoltageSpeedTerm::make("ccvs1", Logger::Level::debug);
     ccvs1->setInitialOmega(0.0);
@@ -920,7 +923,7 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
     ccvs1->setOmegaReferenceNode(n30);
     ccvs1->setInductance(lMq);
     ccvs1->setIsNegative(false);
-    ccvs1->connect({n24, SimNode::GND, n9, n11});
+    ccvs1->connect({n24, SimNode::GND, n11, n9});
 
     auto ccvs2 = VoltageSpeedTerm::make("ccvs2", Logger::Level::debug);
     ccvs2->setInitialOmega(0.0);
@@ -928,7 +931,7 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
     ccvs2->setOmegaReferenceNode(n30);
     ccvs2->setInductance(lS);
     ccvs2->setIsNegative(false);
-    ccvs2->connect({n16, n18, n11, n13});
+    ccvs2->connect({n16, n18, n13, n11});
 
     auto lSd = Inductor::make("lSd", Logger::Level::debug);
     lSd->setParameters(lS);
@@ -948,7 +951,7 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
 
     auto vFd = VoltageSource::make("vF", Logger::Level::debug);
     vFd->setParameters(vExcitation, 0.0);
-    vFd->connect({n27, SimNode::GND});
+    vFd->connect({SimNode::GND, n27});
 
     auto l1dComponent = Inductor::make("l1dComponent", Logger::Level::debug);
     l1dComponent->setParameters(l1d);
@@ -964,14 +967,14 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
     rSq->connect({n2, n5});
 
     auto tlvs2 = TimeLaggingVoltageSource::make("tlvs2", Logger::Level::debug);
-    tlvs2->setVoltageReferenceNodes(n14, n5);
-    tlvs2->connect({n5, n8});
+    tlvs2->setVoltageReferenceNodes(n5, n14);
+    tlvs2->connect({n8, n5});
 
     auto rec2 = ElectroMechanicalConverter::make("rec2", Logger::Level::debug);
     rec2->setInitialFlux(0.0);
     rec2->setIsNegative(false);
     rec2->setVoltageReferenceNode(n17);
-    rec2->connect({n10, n8, n30, SimNode::GND});
+    rec2->connect({n8, n10, n30, SimNode::GND});
 
     auto ccvs3 = VoltageSpeedTerm::make("ccvs3", Logger::Level::debug);
     ccvs3->setInitialOmega(0.0);
@@ -979,7 +982,7 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
     ccvs3->setOmegaReferenceNode(n30);
     ccvs3->setInductance(lMd);
     ccvs3->setIsNegative(false);
-    ccvs3->connect({n23, SimNode::GND, n12, n10});
+    ccvs3->connect({n23, SimNode::GND, n10, n12});
 
     auto ccvs4 = VoltageSpeedTerm::make("ccvs4", Logger::Level::debug);
     ccvs4->setInitialOmega(0.0);
@@ -987,7 +990,7 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
     ccvs4->setOmegaReferenceNode(n30);
     ccvs4->setInductance(lS);
     ccvs4->setIsNegative(false);
-    ccvs4->connect({n15, n17, n14, n12});
+    ccvs4->connect({n15, n17, n12, n14});
 
     auto lSq = Inductor::make("lSq", Logger::Level::debug);
     lSq->setParameters(lS);
@@ -1073,8 +1076,8 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
                         // n35, n36, n37
                        },
         SystemComponentList{
-            v1,        v2,        v3,        
-            // rSourceComp1, rSourceComp2, rSourceComp3, 
+            // v1,        v2,        v3,        
+            rSourceComp1, rSourceComp2, rSourceComp3, 
             parkTrafo, rSd,       tlvs1,        rec1,
             ccvs1,     ccvs2,     lSd,       lMdComponent, lfdComponent,
             rfdComponent, vFd,      l1dComponent, r1dComponent, rSq,
@@ -1089,37 +1092,49 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
     String simName = "synchronousGeneratorTest";
     // Logger
     auto logger = DataLogger::make(simName);
-    logger->logAttribute("i_A", v1->attribute("i_intf"));
+    // logger->logAttribute("i_A", v1->attribute("i_intf"));
     logger->logAttribute("omega", n31->attribute("v"));
     logger->logAttribute("torqueDiff", inertiaMoment->attribute("i_intf"));
     logger->logAttribute("torque_EM_old", tlts->attribute("i"));
     logger->logAttribute("torque_Mech", tMech->attribute("i_intf"));
-    logger->logAttribute("iSd", lSd->attribute("i_intf"));
-    logger->logAttribute("vSd", lSd->attribute("v_intf"));
-    logger->logAttribute("iSq", lSq->attribute("i_intf"));
-    logger->logAttribute("vSq", lSq->attribute("v_intf"));
-    logger->logAttribute("iFd", lfdComponent->attribute("i_intf"));
-    logger->logAttribute("vFd", lfdComponent->attribute("v_intf"));
-    logger->logAttribute("iMd", lMdComponent->attribute("i_intf"));
-    logger->logAttribute("vMd", lMdComponent->attribute("v_intf"));
-    logger->logAttribute("iMq", lMqComponent->attribute("i_intf"));
-    logger->logAttribute("vMq", lMqComponent->attribute("v_intf"));
+    // logger->logAttribute("iSd", lSd->attribute("i_intf"));
+    // logger->logAttribute("vSd", lSd->attribute("v_intf"));
+    // logger->logAttribute("iSq", lSq->attribute("i_intf"));
+    // logger->logAttribute("vSq", lSq->attribute("v_intf"));
+    // logger->logAttribute("iFd", lfdComponent->attribute("i_intf"));
+    // logger->logAttribute("vFd", lfdComponent->attribute("v_intf"));
+    // logger->logAttribute("iMd", lMdComponent->attribute("i_intf"));
+    // logger->logAttribute("vMd", lMdComponent->attribute("v_intf"));
+    // logger->logAttribute("iMq", lMqComponent->attribute("i_intf"));
+    // logger->logAttribute("vMq", lMqComponent->attribute("v_intf"));
+    // logger->logAttribute("nVFd", n27->attribute("v"));
 
     Simulation sim(simName);
     sim.setSystem(system);
     sim.setTimeStep(timeStep);
     sim.doSystemMatrixRecomputation(true);
+    sim.doInitFromNodesAndTerminals(false);
     sim.setFinalTime(finalTime);
     sim.setDomain(Domain::EMT);
     sim.addLogger(logger);
     sim.doEigenvalueExtraction(doEigenvalueExtraction);
     inertiaMoment->setIntfVoltage(-omega);
+    // lfdComponent->setIntfCurrent(6731.961635);
+    // lfdComponent->setIntfVoltage(0.281461);
+    // lMdComponent->setIntfCurrent(-6117.525984);
+    // lMdComponent->setIntfVoltage(-2.609447);
+    // lMqComponent->setIntfCurrent(1641.591699);
+    // lMqComponent->setIntfVoltage(0.854205);
+    // lSd->setIntfCurrent(525.700214);
+    // lSd->setIntfVoltage(0.024798);
+    // lSq->setIntfCurrent(1813.758967);
+    // lSq->setIntfVoltage(0.078799);
     sim.run();
 }
 
 int main(int argc, char *argv[]) {
   //   motorStartingTest(5e-5, 3.0, false);
-  synchronousGeneratorTest(1e-4, 8, false);
+  synchronousGeneratorTest(1e-4, 60, false);
   // timeLaggingTorqueSourceTest();
   // timeLaggingVoltageSourceTest();
   //  speedVoltageTermTest(1e-4, 1, true);
