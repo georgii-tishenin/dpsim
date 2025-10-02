@@ -820,10 +820,9 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
   Real l2q = 4.129e-4;
   Real rSource = voltageMagnitudeLL * voltageMagnitudeLL / 100.0e6;
 
-  //   Real inertia = 2.25e4;
-  Real inertia = 2.25e4 * 1000; 
-  Real shaftTorque = 3.1831e5; // 2.8760e5
-  Real vExcitation = 7.0829; // 92.95;
+  Real inertia = 2.25e4;
+  Real shaftTorque = 2.8760e5; //  3.1831e5
+  Real vExcitation = 7.0829 * sqrt(3) / sqrt(2); // 92.95;
 
 //   Real angle = (3 * M_PI / 180.0);
 //   Real voltageMagnitude = voltageMagnitudeLL * sqrt(2.0) / sqrt(3.0);
@@ -1038,7 +1037,7 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
 
     auto ccts1 =
         CurrentControlledTorqueSource::make("ccts1", Logger::Level::debug);
-    ccts1->setInductance(lMq);
+    ccts1->setInductance(lMd);
     ccts1->setInductor(lSq);
     ccts1->connect({n21, n23, SimNode::GND, n30});
 
@@ -1050,7 +1049,7 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
 
     auto ccts3 =
         CurrentControlledTorqueSource::make("ccts3", Logger::Level::debug);
-    ccts3->setInductance(lMd);
+    ccts3->setInductance(lMq);
     ccts3->setInductor(lSd);
     ccts3->connect({n22, n24, n30, SimNode::GND});
 
@@ -1085,7 +1084,7 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
             lMqComponent, l1qComponent, r1qComponent, l2qComponent, r2qComponent,
             r0,        l0,        inertiaMoment, ccts1,       ccts2,
             ccts3,     ccts4,     tlts,      tMech,
-            constantOmegaSource 
+            // constantOmegaSource 
             });
 
     // Define simulation scenario
@@ -1093,13 +1092,14 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
     // Logger
     auto logger = DataLogger::make(simName);
     // logger->logAttribute("i_A", v1->attribute("i_intf"));
+    // logger->logAttribute("iA", rSourceComp1->attribute("i_intf"));
     logger->logAttribute("omega", n31->attribute("v"));
     logger->logAttribute("torqueDiff", inertiaMoment->attribute("i_intf"));
     logger->logAttribute("torque_EM_old", tlts->attribute("i"));
     logger->logAttribute("torque_Mech", tMech->attribute("i_intf"));
     // logger->logAttribute("iSd", lSd->attribute("i_intf"));
     // logger->logAttribute("vSd", lSd->attribute("v_intf"));
-    // logger->logAttribute("iSq", lSq->attribute("i_intf"));
+    // logger->logAttribute("iSq", lSq->attribute("i_intf"));   
     // logger->logAttribute("vSq", lSq->attribute("v_intf"));
     // logger->logAttribute("iFd", lfdComponent->attribute("i_intf"));
     // logger->logAttribute("vFd", lfdComponent->attribute("v_intf"));
@@ -1119,22 +1119,22 @@ void synchronousGeneratorTest(Real timeStep, Real finalTime,
     sim.addLogger(logger);
     sim.doEigenvalueExtraction(doEigenvalueExtraction);
     inertiaMoment->setIntfVoltage(-omega);
-    // lfdComponent->setIntfCurrent(6731.961635);
-    // lfdComponent->setIntfVoltage(0.281461);
-    // lMdComponent->setIntfCurrent(-6117.525984);
-    // lMdComponent->setIntfVoltage(-2.609447);
-    // lMqComponent->setIntfCurrent(1641.591699);
-    // lMqComponent->setIntfVoltage(0.854205);
-    // lSd->setIntfCurrent(525.700214);
-    // lSd->setIntfVoltage(0.024798);
-    // lSq->setIntfCurrent(1813.758967);
-    // lSq->setIntfVoltage(0.078799);
+    // lfdComponent->setIntfCurrent(13930.654226);
+    // lfdComponent->setIntfVoltage(0.000012);
+    // lMdComponent->setIntfCurrent(-12734.882799);
+    // lMdComponent->setIntfVoltage(-0.000115);
+    // lMqComponent->setIntfCurrent(3771.936815);
+    // lMqComponent->setIntfVoltage(0);
+    // lSd->setIntfCurrent(1195.767526);
+    // lSd->setIntfVoltage(0);
+    // lSq->setIntfCurrent(3771.944428);
+    // lSq->setIntfVoltage(0);
     sim.run();
 }
 
 int main(int argc, char *argv[]) {
   //   motorStartingTest(5e-5, 3.0, false);
-  synchronousGeneratorTest(1e-4, 60, false);
+  synchronousGeneratorTest(5e-5, 300, true);
   // timeLaggingTorqueSourceTest();
   // timeLaggingVoltageSourceTest();
   //  speedVoltageTermTest(1e-4, 1, true);
