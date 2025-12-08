@@ -121,3 +121,13 @@ void EMT::Ph1::VoltageSource::mnaCompUpdateCurrent(const Matrix &leftVector) {
   (**mIntfCurrent)(0, 0) = Math::realFromVectorElement(
       leftVector, mVirtualNodes[0]->matrixNodeIndex());
 }
+
+void EMT::Ph1::VoltageSource::stampBranchNodeIncidenceMatrix(
+    UInt branchIdx, Matrix &branchNodeIncidenceMatrix) {
+  if (terminalNotGrounded(0)) {
+    branchNodeIncidenceMatrix(branchIdx, matrixNodeIndex(0)) = 1.0;
+  }
+  if (terminalNotGrounded(1)) {
+    branchNodeIncidenceMatrix(branchIdx, matrixNodeIndex(1)) = -1.0;
+  }
+}

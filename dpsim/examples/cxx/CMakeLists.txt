@@ -36,6 +36,8 @@ set(CIRCUIT_SOURCES
 	Circuits/EMT_DecouplingLine_Ph3.cpp
 	Circuits/EMT_Ph3_R3C1L1CS1_RC_vs_SSN.cpp
 	Circuits/EMT_Ph3_RLC1VS1_RC_vs_SSN.cpp
+	Circuits/EMT_DP_SinglePhaseRLC.cpp
+	Circuits/PSCC_Paper_Experiments.cpp
 
 	# EMT examples with PF initialization
 	Circuits/EMT_Slack_PiLine_PQLoad_with_PF_Init.cpp
