@@ -1,5 +1,8 @@
 #include "../Examples.h"
 #include <DPsim.h>
+#include <iostream>
+#include <cmath>
+
 using namespace DPsim;
 using namespace CPS;
 
@@ -29,26 +32,31 @@ constexpr const char *iq = "Irc_q";
 constexpr const char *vd = "Vc_d";
 constexpr const char *vq = "Vc_q";
 constexpr const char *f = "f_src";
+constexpr const char *pref = "P_ref";
+constexpr const char *qref = "Q_ref";
 } // namespace AttributeNames
 
 struct SimulationParameters {
   double timeStep = 1e-4;
   double eventTime = 3.8;
   double finalTime = 4.0;
-  
+
   // frequency ramp parameters
   double frequencyRampDuration = 0.1;
   double rocof = -10; // in Hz/s
 
   // frequency step parameters
   double frequencyStepDelta = -1.0; // in Hz
+
+  double prefStepFactor = 2.0;
 };
 
 enum class PowerSystemEventType {
   None,
   LoadStep,
   InfeedFrequencyRamp,
-  InfeedFrequencyStep
+  InfeedFrequencyStep,
+  Converter1PrefStep
 };
 
 struct PowerSystemInputParameters {
@@ -123,7 +131,7 @@ struct PowerSystemParameters {
 
 PowerSystemParameters
 calculatePowerSystemParameters(const PowerSystemInputParameters &inputParams) {
-  double voltageLineToGround = inputParams.baseVoltageLineToLine / sqrt(3);
+  double voltageLineToGround = inputParams.baseVoltageLineToLine / std::sqrt(3);
   double baseImpedance = inputParams.baseVoltageLineToLine *
                          inputParams.baseVoltageLineToLine /
                          inputParams.baseThreePhasePower;
@@ -183,11 +191,48 @@ Simulation setupSimulation(const std::string &simName,
   return sim;
 }
 
-void createEMTConverter(const std::shared_ptr<DataLogger> &logger,
-                        const PowerSystemParameters &psParams,
-                        CPS::SystemTopology &systemTopology,
-                        const std::shared_ptr<EMT::SimNode> &node,
-                        int converterNumber) {
+template <typename Hook>
+static void runStepped(DPsim::Simulation &sim, Hook &&hook) {
+  sim.initialize();
+  sim.start();
+  while (sim.time() < sim.finalTime()) {
+    hook(sim); // hook runs at every step (before step())
+    sim.step();
+  }
+  sim.stop();
+}
+
+// -------------------- Converter handles (store sysOmega/sysVoltNom once) --------------------
+
+struct EMTConverterHandle {
+  std::shared_ptr<EMT::Ph3::AvVoltageSourceInverterDQ> conv;
+  double sysOmega;
+  double sysVoltNom;
+  double qRef;
+};
+
+struct DPConverterHandle {
+  std::shared_ptr<DP::Ph1::AvVoltageSourceInverterDQ> conv;
+  double sysOmega;
+  double sysVoltNom;
+  double qRef;
+};
+
+struct SPConverterHandle {
+  std::shared_ptr<SP::Ph1::AvVoltageSourceInverterDQ> conv;
+  double sysOmega;
+  double sysVoltNom;
+  double qRef;
+};
+
+// -------------------- Converter creation (returns handle) --------------------
+
+EMTConverterHandle
+createEMTConverter(const std::shared_ptr<DataLogger> &logger,
+                   const PowerSystemParameters &psParams,
+                   CPS::SystemTopology &systemTopology,
+                   const std::shared_ptr<EMT::SimNode> &node,
+                   int converterNumber) {
   CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
 
   double converterP = 0.0;
@@ -206,14 +251,17 @@ void createEMTConverter(const std::shared_ptr<DataLogger> &logger,
                                 std::to_string(converterNumber));
   }
 
-  // Create the converter
   auto converter = EMT::Ph3::AvVoltageSourceInverterDQ::make(
       "Converter" + std::to_string(converterNumber),
       "Converter" + std::to_string(converterNumber), Logger::Level::debug,
       true);
 
-  converter->setParameters(scenario.systemOmega, scenario.pvNominalVoltage,
-                           converterP, converterQ);
+  // Keep sysOmega from your power-system params (not from scenario),
+  // and keep sysVoltNom constant by storing it once here.
+  const double sysOmega   = 2.0 * M_PI * psParams.frequency;
+  const double sysVoltNom = scenario.pvNominalVoltage;
+
+  converter->setParameters(sysOmega, sysVoltNom, converterP, converterQ);
   converter->setControllerParameters(
       1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
       1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
@@ -221,7 +269,7 @@ void createEMTConverter(const std::shared_ptr<DataLogger> &logger,
   converter->setFilterParameters(scenario.Lf, scenario.Cf, scenario.Rf,
                                  scenario.Rc);
   converter->setTransformerParameters(
-      psParams.voltageLineToLine, scenario.pvNominalVoltage,
+      psParams.voltageLineToLine, sysVoltNom,
       scenario.transformerNominalPower,
       psParams.voltageLineToLine / scenario.pvNominalVoltage, 0, 0,
       scenario.transformerInductance, scenario.systemOmega);
@@ -235,7 +283,6 @@ void createEMTConverter(const std::shared_ptr<DataLogger> &logger,
   converter->connect({node});
   systemTopology.addComponent(converter);
 
-  // Log attributes
   logger->logAttribute("vConverter" + std::to_string(converterNumber),
                        node->attribute(AttributeNames::v));
   logger->logAttribute("idConverter" + std::to_string(converterNumber),
@@ -246,13 +293,20 @@ void createEMTConverter(const std::shared_ptr<DataLogger> &logger,
                        converter->attribute(AttributeNames::vd));
   logger->logAttribute("vqConverter" + std::to_string(converterNumber),
                        converter->attribute(AttributeNames::vq));
+  logger->logAttribute("PrefConverter" + std::to_string(converterNumber),
+                       converter->attribute(AttributeNames::pref));
+  logger->logAttribute("QrefConverter" + std::to_string(converterNumber),
+                       converter->attribute(AttributeNames::qref));
+
+  return {converter, sysOmega, sysVoltNom, converterQ};
 }
 
-void createDPConverter(const std::shared_ptr<DataLogger> &logger,
-                       const PowerSystemParameters &psParams,
-                       CPS::SystemTopology &systemTopology,
-                       const std::shared_ptr<DP::SimNode> &node,
-                       int converterNumber) {
+DPConverterHandle
+createDPConverter(const std::shared_ptr<DataLogger> &logger,
+                  const PowerSystemParameters &psParams,
+                  CPS::SystemTopology &systemTopology,
+                  const std::shared_ptr<DP::SimNode> &node,
+                  int converterNumber) {
   CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
 
   double converterP = 0.0;
@@ -276,8 +330,10 @@ void createDPConverter(const std::shared_ptr<DataLogger> &logger,
       "Converter" + std::to_string(converterNumber), Logger::Level::debug,
       true);
 
-  converter->setParameters(scenario.systemOmega, scenario.pvNominalVoltage,
-                           converterP, converterQ);
+  const double sysOmega   = 2.0 * M_PI * psParams.frequency;
+  const double sysVoltNom = scenario.pvNominalVoltage;
+
+  converter->setParameters(sysOmega, sysVoltNom, converterP, converterQ);
   converter->setControllerParameters(
       1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
       1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
@@ -285,9 +341,9 @@ void createDPConverter(const std::shared_ptr<DataLogger> &logger,
   converter->setFilterParameters(scenario.Lf, scenario.Cf, scenario.Rf,
                                  scenario.Rc);
   converter->setTransformerParameters(
-      psParams.voltageLineToLine, scenario.pvNominalVoltage,
+      psParams.voltageLineToLine, sysVoltNom,
       scenario.transformerNominalPower,
-      psParams.voltageLineToLine / scenario.pvNominalVoltage, 0, 0,
+      psParams.voltageLineToLine / sysVoltNom, 0, 0,
       scenario.transformerInductance);
 
   // Uncomment if initial state values are needed
@@ -309,13 +365,20 @@ void createDPConverter(const std::shared_ptr<DataLogger> &logger,
                        converter->attribute(AttributeNames::vd));
   logger->logAttribute("vqConverter" + std::to_string(converterNumber),
                        converter->attribute(AttributeNames::vq));
+  logger->logAttribute("PrefConverter" + std::to_string(converterNumber),
+                       converter->attribute(AttributeNames::pref));
+  logger->logAttribute("QrefConverter" + std::to_string(converterNumber),
+                       converter->attribute(AttributeNames::qref));
+
+  return {converter, sysOmega, sysVoltNom, converterQ};
 }
 
-void createSPConverter(const std::shared_ptr<DataLogger> &logger,
-                       const PowerSystemParameters &psParams,
-                       CPS::SystemTopology &systemTopology,
-                       const std::shared_ptr<SP::SimNode> &node,
-                       int converterNumber) {
+SPConverterHandle
+createSPConverter(const std::shared_ptr<DataLogger> &logger,
+                  const PowerSystemParameters &psParams,
+                  CPS::SystemTopology &systemTopology,
+                  const std::shared_ptr<SP::SimNode> &node,
+                  int converterNumber) {
   CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
 
   double converterP = 0.0;
@@ -339,8 +402,10 @@ void createSPConverter(const std::shared_ptr<DataLogger> &logger,
       "Converter" + std::to_string(converterNumber), Logger::Level::debug,
       true);
 
-  converter->setParameters(scenario.systemOmega, scenario.pvNominalVoltage,
-                           converterP, converterQ);
+  const double sysOmega   = 2.0 * M_PI * psParams.frequency;
+  const double sysVoltNom = scenario.pvNominalVoltage;
+
+  converter->setParameters(sysOmega, sysVoltNom, converterP, converterQ);
   converter->setControllerParameters(
       1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
       1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
@@ -348,9 +413,9 @@ void createSPConverter(const std::shared_ptr<DataLogger> &logger,
   converter->setFilterParameters(scenario.Lf, scenario.Cf, scenario.Rf,
                                  scenario.Rc);
   converter->setTransformerParameters(
-      psParams.voltageLineToLine, scenario.pvNominalVoltage,
+      psParams.voltageLineToLine, sysVoltNom,
       scenario.transformerNominalPower,
-      psParams.voltageLineToLine / scenario.pvNominalVoltage, 0, 0,
+      psParams.voltageLineToLine / sysVoltNom, 0, 0,
       scenario.transformerInductance);
 
   // Uncomment if initial state values are needed
@@ -372,45 +437,15 @@ void createSPConverter(const std::shared_ptr<DataLogger> &logger,
                        converter->attribute(AttributeNames::vd));
   logger->logAttribute("vqConverter" + std::to_string(converterNumber),
                        converter->attribute(AttributeNames::vq));
+  logger->logAttribute("PrefConverter" + std::to_string(converterNumber),
+                       converter->attribute(AttributeNames::pref));
+  logger->logAttribute("QrefConverter" + std::to_string(converterNumber),
+                       converter->attribute(AttributeNames::qref));
+
+  return {converter, sysOmega, sysVoltNom, converterQ};
 }
 
-void createEMTConverterAsVoltageSource(
-    const std::shared_ptr<DataLogger> &logger,
-    const PowerSystemParameters &psParams, CPS::SystemTopology &systemTopology,
-    const std::shared_ptr<EMT::SimNode> &node, const std::string &name) {
-  auto converter = EMT::Ph3::VoltageSource::make(name);
-  converter->setParameters(
-      CPS::Math::singlePhaseVariableToThreePhase(
-          CPS::Math::polar(psParams.voltageLineToLine, 0.0)),
-      psParams.frequency);
-  converter->connect({EMT::SimNode::GND, node});
-  systemTopology.addComponent(converter);
-  logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
-}
-
-void createDPConverterAsVoltageSource(const std::shared_ptr<DataLogger> &logger,
-                                      const PowerSystemParameters &psParams,
-                                      CPS::SystemTopology &systemTopology,
-                                      const std::shared_ptr<DP::SimNode> &node,
-                                      const std::string &name) {
-  auto converter = DP::Ph1::VoltageSource::make(name);
-  converter->setParameters(CPS::Math::polar(psParams.voltageLineToGround, 0.0));
-  converter->connect({DP::SimNode::GND, node});
-  systemTopology.addComponent(converter);
-  logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
-}
-
-void createSPConverterAsVoltageSource(const std::shared_ptr<DataLogger> &logger,
-                                      const PowerSystemParameters &psParams,
-                                      CPS::SystemTopology &systemTopology,
-                                      const std::shared_ptr<SP::SimNode> &node,
-                                      const std::string &name) {
-  auto converter = SP::Ph1::VoltageSource::make(name);
-  converter->setParameters(CPS::Math::polar(psParams.voltageLineToGround, 0.0));
-  converter->connect({SP::SimNode::GND, node});
-  systemTopology.addComponent(converter);
-  logger->logAttribute("v" + name, node->attribute(AttributeNames::v));
-}
+// --------- Simulation functions ---------
 
 void simulateEMT(const SimulationParameters &simParams,
                  const PowerSystemParameters &psParams,
@@ -512,8 +547,8 @@ void simulateEMT(const SimulationParameters &simParams,
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
-  createEMTConverter(logger, psParams, systemTopology, node2, 1);
-  createEMTConverter(logger, psParams, systemTopology, node3, 2);
+  auto conv1 = createEMTConverter(logger, psParams, systemTopology, node2, 1);
+  (void)createEMTConverter(logger, psParams, systemTopology, node3, 2);
 
   // simulation
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::EMT);
@@ -545,13 +580,30 @@ void simulateEMT(const SimulationParameters &simParams,
         simParams.eventTime, simParams.timeStep, false);
     break;
   }
+  case PowerSystemEventType::Converter1PrefStep:
   case PowerSystemEventType::None:
   default:
     // No events to add
     break;
   }
 
-  sim.run();
+  // ---- Hook (only for Converter1PrefStep): change Converter1 Pref at t=eventTime ----
+  const double prefStepTime = simParams.eventTime;
+  const double newPref = psParams.converter1P * simParams.prefStepFactor;
+  bool prefStepApplied = false;
+
+  runStepped(sim, [&](DPsim::Simulation &s) {
+    if (psEvent == PowerSystemEventType::Converter1PrefStep &&
+        !prefStepApplied &&
+        s.time() >= (prefStepTime - 0.5 * simParams.timeStep)) {
+
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qRef);
+
+      prefStepApplied = true;
+      std::cout << "[HOOK][EMT] t=" << s.time()
+                << " set Converter1 Pref=" << newPref << " W\n";
+    }
+  });
 }
 
 void simulateDP(const SimulationParameters &simParams,
@@ -637,8 +689,8 @@ void simulateDP(const SimulationParameters &simParams,
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
-  createDPConverter(logger, psParams, systemTopology, node2, 1);
-  createDPConverter(logger, psParams, systemTopology, node3, 2);
+  auto conv1 = createDPConverter(logger, psParams, systemTopology, node2, 1);
+  (void)createDPConverter(logger, psParams, systemTopology, node3, 2);
 
   // simulation
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::DP);
@@ -669,13 +721,30 @@ void simulateDP(const SimulationParameters &simParams,
                                 simParams.eventTime, simParams.timeStep, false);
     break;
   }
+  case PowerSystemEventType::Converter1PrefStep:
   case PowerSystemEventType::None:
   default:
-    // No events to add
     break;
   }
 
-  sim.run();
+  // ---- Hook (only for Converter1PrefStep): change Converter1 Pref at t=eventTime ----
+  const double prefStepTime = simParams.eventTime;
+  const double newPref = psParams.converter1P * simParams.prefStepFactor;
+  bool prefStepApplied = false;
+
+  runStepped(sim, [&](DPsim::Simulation &s) {
+    if (psEvent == PowerSystemEventType::Converter1PrefStep &&
+        !prefStepApplied &&
+        s.time() >= (prefStepTime - 0.5 * simParams.timeStep)) {
+
+      // IMPORTANT: use setParameters so PowerControllerVSI's internal mPref updates too
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qRef);
+
+      prefStepApplied = true;
+      std::cout << "[HOOK][DP] t=" << s.time()
+                << " set Converter1 Pref=" << newPref << " W\n";
+    }
+  });
 }
 
 void simulateSP(const SimulationParameters &simParams,
@@ -761,8 +830,8 @@ void simulateSP(const SimulationParameters &simParams,
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
-  createSPConverter(logger, psParams, systemTopology, node2, 1);
-  createSPConverter(logger, psParams, systemTopology, node3, 2);
+  auto conv1 = createSPConverter(logger, psParams, systemTopology, node2, 1);
+  (void)createSPConverter(logger, psParams, systemTopology, node3, 2);
 
   // simulation
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::SP);
@@ -793,14 +862,33 @@ void simulateSP(const SimulationParameters &simParams,
                                 simParams.eventTime, simParams.timeStep, false);
     break;
   }
+  case PowerSystemEventType::Converter1PrefStep:
   case PowerSystemEventType::None:
   default:
-    // No events to add
     break;
   }
 
-  sim.run();
+  // ---- Hook (only for Converter1PrefStep): change Converter1 Pref at t=eventTime ----
+  const double prefStepTime = simParams.eventTime;
+  const double newPref = psParams.converter1P * simParams.prefStepFactor;
+  bool prefStepApplied = false;
+
+  runStepped(sim, [&](DPsim::Simulation &s) {
+    if (psEvent == PowerSystemEventType::Converter1PrefStep &&
+        !prefStepApplied &&
+        s.time() >= (prefStepTime - 0.5 * simParams.timeStep)) {
+
+      // IMPORTANT: use setParameters so PowerControllerVSI's internal mPref updates too
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qRef);
+
+      prefStepApplied = true;
+      std::cout << "[HOOK][SP] t=" << s.time()
+                << " set Converter1 Pref=" << newPref << " W\n";
+    }
+  });
 }
+
+// --------- PF calculation---------
 
 SystemTopology calculatePF(const SimulationParameters &simParams,
                            const PowerSystemParameters &psParams) {
@@ -912,18 +1000,21 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
 
   return systemTopology;
 }
+
 } // namespace HVDCWise
 
 int main() {
   HVDCWise::SimulationParameters simParams;
   HVDCWise::PowerSystemInputParameters psInputParams;
   HVDCWise::PowerSystemParameters psParams =
-      calculatePowerSystemParameters(psInputParams);
+      HVDCWise::calculatePowerSystemParameters(psInputParams);
+
   auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
 
   auto systemTopologyPF = HVDCWise::calculatePF(simParams, psParams);
   HVDCWise::simulateEMT(simParams, psParams, systemTopologyPF, psEvent);
   HVDCWise::simulateDP(simParams, psParams, systemTopologyPF, psEvent);
   HVDCWise::simulateSP(simParams, psParams, systemTopologyPF, psEvent);
+
   return 0;
 }
