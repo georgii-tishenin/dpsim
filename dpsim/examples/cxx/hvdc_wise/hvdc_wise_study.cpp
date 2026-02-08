@@ -37,10 +37,25 @@ constexpr const char *qref = "Q_ref";
 constexpr const char *pllOut = "pll_output";
 } // namespace AttributeNames
 
+static inline double clamp01(double x) {
+  if (x < 0.0) return 0.0;
+  if (x > 1.0) return 1.0;
+  return x;
+}
+
 struct SimulationParameters {
   double timeStep = 1e-4;
   double eventTime = 3.8;
-  double finalTime = 4.0;
+  double finalTime = 4.2;
+
+  // Startup ramp of converter P/Q references (to avoid numerical issues at t=0)
+  bool enableStartupRampPQ = true;
+
+  // hold Pref/Qref = 0 for this time BEFORE ramp starts (lets PLL settle)
+  double startupPQZeroHoldTime = 0.5; // seconds, Pref=Qref=0 for t in [0, hold)
+
+  // ramp from 0 -> target during [hold, hold + startupRampDuration]
+  double startupRampDuration = 0.5; // seconds
 
   // frequency ramp parameters
   double frequencyRampDuration = 0.1;
@@ -70,8 +85,8 @@ struct PowerSystemInputParameters {
   double infeedReactanceInPerUnit = 0.1;
 
   // coefficients for line parameters
-  double lineLengthCoefficient = 1;     //3;
-  double lineResistanceCoefficient = 1; //0.1;
+  double lineLengthCoefficient = 1;        // 3, 5;
+  double lineResistanceCoefficient = 1;  // 0.1;
 
   // line1 parameters
   double line1LengthInKm = 80 * lineLengthCoefficient;
@@ -213,21 +228,24 @@ struct EMTConverterHandle {
   std::shared_ptr<EMT::Ph3::AvVoltageSourceInverterDQ> conv;
   double sysOmega;
   double sysVoltNom;
-  double qRef;
+  double pFinal;
+  double qFinal;
 };
 
 struct DPConverterHandle {
   std::shared_ptr<DP::Ph1::AvVoltageSourceInverterDQ> conv;
   double sysOmega;
   double sysVoltNom;
-  double qRef;
+  double pFinal;
+  double qFinal;
 };
 
 struct SPConverterHandle {
   std::shared_ptr<SP::Ph1::AvVoltageSourceInverterDQ> conv;
   double sysOmega;
   double sysVoltNom;
-  double qRef;
+  double pFinal;
+  double qFinal;
 };
 
 // -------------------- Converter creation (returns handle) --------------------
@@ -237,19 +255,20 @@ createEMTConverter(const std::shared_ptr<DataLogger> &logger,
                    const PowerSystemParameters &psParams,
                    CPS::SystemTopology &systemTopology,
                    const std::shared_ptr<EMT::SimNode> &node,
-                   int converterNumber) {
+                   int converterNumber,
+                   bool startRampEnabled = false) {
   CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
 
-  double converterP = 0.0;
-  double converterQ = 0.0;
+  double converterP_final = 0.0;
+  double converterQ_final = 0.0;
   switch (converterNumber) {
   case 1:
-    converterP = psParams.converter1P;
-    converterQ = psParams.converter1Q;
+    converterP_final = psParams.converter1P;
+    converterQ_final = psParams.converter1Q;
     break;
   case 2:
-    converterP = psParams.converter2P;
-    converterQ = psParams.converter2Q;
+    converterP_final = psParams.converter2P;
+    converterQ_final = psParams.converter2Q;
     break;
   default:
     throw std::invalid_argument("Unsupported converter number: " +
@@ -261,12 +280,13 @@ createEMTConverter(const std::shared_ptr<DataLogger> &logger,
       "Converter" + std::to_string(converterNumber), Logger::Level::debug,
       true);
 
-  // Keep sysOmega from your power-system params (not from scenario),
-  // and keep sysVoltNom constant by storing it once here.
   const double sysOmega   = 2.0 * M_PI * psParams.frequency;
   const double sysVoltNom = scenario.pvNominalVoltage;
 
-  converter->setParameters(sysOmega, sysVoltNom, converterP, converterQ);
+  const double converterP_init = startRampEnabled ? 0.0 : converterP_final;
+  const double converterQ_init = startRampEnabled ? 0.0 : converterQ_final;
+
+  converter->setParameters(sysOmega, sysVoltNom, converterP_init, converterQ_init);
   converter->setControllerParameters(
       1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
       1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
@@ -278,11 +298,6 @@ createEMTConverter(const std::shared_ptr<DataLogger> &logger,
       scenario.transformerNominalPower,
       psParams.voltageLineToLine / scenario.pvNominalVoltage, 0, 0,
       scenario.transformerInductance, scenario.systemOmega);
-
-  // Uncomment if initial state values are needed
-  // converter->setInitialStateValues(converterP, converterQ,
-  //                                  scenario.phi_dInit, scenario.phi_qInit,
-  //                                  scenario.gamma_dInit, scenario.gamma_qInit);
 
   converter->withControl(true);
   converter->connect({node});
@@ -305,7 +320,7 @@ createEMTConverter(const std::shared_ptr<DataLogger> &logger,
   logger->logAttribute("pllOutputConverter" + std::to_string(converterNumber),
                        converter->attribute(AttributeNames::pllOut));
 
-  return {converter, sysOmega, sysVoltNom, converterQ};
+  return {converter, sysOmega, sysVoltNom, converterP_final, converterQ_final};
 }
 
 DPConverterHandle
@@ -313,19 +328,20 @@ createDPConverter(const std::shared_ptr<DataLogger> &logger,
                   const PowerSystemParameters &psParams,
                   CPS::SystemTopology &systemTopology,
                   const std::shared_ptr<DP::SimNode> &node,
-                  int converterNumber) {
+                  int converterNumber,
+                  bool startRampEnabled = false) {
   CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
 
-  double converterP = 0.0;
-  double converterQ = 0.0;
+  double converterP_final = 0.0;
+  double converterQ_final = 0.0;
   switch (converterNumber) {
   case 1:
-    converterP = psParams.converter1P;
-    converterQ = psParams.converter1Q;
+    converterP_final = psParams.converter1P;
+    converterQ_final = psParams.converter1Q;
     break;
   case 2:
-    converterP = psParams.converter2P;
-    converterQ = psParams.converter2Q;
+    converterP_final = psParams.converter2P;
+    converterQ_final = psParams.converter2Q;
     break;
   default:
     throw std::invalid_argument("Unsupported converter number: " +
@@ -340,7 +356,10 @@ createDPConverter(const std::shared_ptr<DataLogger> &logger,
   const double sysOmega   = 2.0 * M_PI * psParams.frequency;
   const double sysVoltNom = scenario.pvNominalVoltage;
 
-  converter->setParameters(sysOmega, sysVoltNom, converterP, converterQ);
+  const double converterP_init = startRampEnabled ? 0.0 : converterP_final;
+  const double converterQ_init = startRampEnabled ? 0.0 : converterQ_final;
+
+  converter->setParameters(sysOmega, sysVoltNom, converterP_init, converterQ_init);
   converter->setControllerParameters(
       1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
       1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
@@ -352,11 +371,6 @@ createDPConverter(const std::shared_ptr<DataLogger> &logger,
       scenario.transformerNominalPower,
       psParams.voltageLineToLine / sysVoltNom, 0, 0,
       scenario.transformerInductance);
-
-  // Uncomment if initial state values are needed
-  // converter->setInitialStateValues(converterP, converterQ,
-  //                                  scenario.phi_dInit, scenario.phi_qInit,
-  //                                  scenario.gamma_dInit, scenario.gamma_qInit);
 
   converter->withControl(true);
   converter->connect({node});
@@ -379,7 +393,7 @@ createDPConverter(const std::shared_ptr<DataLogger> &logger,
   logger->logAttribute("pllOutputConverter" + std::to_string(converterNumber),
                        converter->attribute(AttributeNames::pllOut));
 
-  return {converter, sysOmega, sysVoltNom, converterQ};
+  return {converter, sysOmega, sysVoltNom, converterP_final, converterQ_final};
 }
 
 SPConverterHandle
@@ -387,19 +401,20 @@ createSPConverter(const std::shared_ptr<DataLogger> &logger,
                   const PowerSystemParameters &psParams,
                   CPS::SystemTopology &systemTopology,
                   const std::shared_ptr<SP::SimNode> &node,
-                  int converterNumber) {
+                  int converterNumber,
+                  bool startRampEnabled = false) {
   CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
 
-  double converterP = 0.0;
-  double converterQ = 0.0;
+  double converterP_final = 0.0;
+  double converterQ_final = 0.0;
   switch (converterNumber) {
   case 1:
-    converterP = psParams.converter1P;
-    converterQ = psParams.converter1Q;
+    converterP_final = psParams.converter1P;
+    converterQ_final = psParams.converter1Q;
     break;
   case 2:
-    converterP = psParams.converter2P;
-    converterQ = psParams.converter2Q;
+    converterP_final = psParams.converter2P;
+    converterQ_final = psParams.converter2Q;
     break;
   default:
     throw std::invalid_argument("Unsupported converter number: " +
@@ -414,7 +429,10 @@ createSPConverter(const std::shared_ptr<DataLogger> &logger,
   const double sysOmega   = 2.0 * M_PI * psParams.frequency;
   const double sysVoltNom = scenario.pvNominalVoltage;
 
-  converter->setParameters(sysOmega, sysVoltNom, converterP, converterQ);
+  const double converterP_init = startRampEnabled ? 0.0 : converterP_final;
+  const double converterQ_init = startRampEnabled ? 0.0 : converterQ_final;
+
+  converter->setParameters(sysOmega, sysVoltNom, converterP_init, converterQ_init);
   converter->setControllerParameters(
       1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
       1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
@@ -426,11 +444,6 @@ createSPConverter(const std::shared_ptr<DataLogger> &logger,
       scenario.transformerNominalPower,
       psParams.voltageLineToLine / sysVoltNom, 0, 0,
       scenario.transformerInductance);
-
-  // Uncomment if initial state values are needed
-  // converter->setInitialStateValues(converterP, converterQ,
-  //                                  scenario.phi_dInit, scenario.phi_qInit,
-  //                                  scenario.gamma_dInit, scenario.gamma_qInit);
 
   converter->withControl(true);
   converter->connect({node});
@@ -453,7 +466,7 @@ createSPConverter(const std::shared_ptr<DataLogger> &logger,
   logger->logAttribute("pllOutputConverter" + std::to_string(converterNumber),
                        converter->attribute(AttributeNames::pllOut));
 
-  return {converter, sysOmega, sysVoltNom, converterQ};
+  return {converter, sysOmega, sysVoltNom, converterP_final, converterQ_final};
 }
 
 // --------- Simulation functions ---------
@@ -558,8 +571,9 @@ void simulateEMT(const SimulationParameters &simParams,
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
-  auto conv1 = createEMTConverter(logger, psParams, systemTopology, node2, 1);
-  (void)createEMTConverter(logger, psParams, systemTopology, node3, 2);
+  const bool doStartupRamp = simParams.enableStartupRampPQ;
+  auto conv1 = createEMTConverter(logger, psParams, systemTopology, node2, 1, doStartupRamp);
+  auto conv2 = createEMTConverter(logger, psParams, systemTopology, node3, 2, doStartupRamp);
 
   // simulation
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::EMT);
@@ -594,24 +608,69 @@ void simulateEMT(const SimulationParameters &simParams,
   case PowerSystemEventType::Converter1PrefStep:
   case PowerSystemEventType::None:
   default:
-    // No events to add
     break;
   }
 
-  // ---- Hook (only for Converter1PrefStep): change Converter1 Pref at t=eventTime ----
+  // ---- Hook: (1) optional startup hold+ ramp for BOTH converters, (2) optional Converter1 Pref step ----
+  const double holdT = std::max(0.0, simParams.startupPQZeroHoldTime);
+  const double rampDur = std::max(0.0, simParams.startupRampDuration);
+  const double rampEndT = holdT + rampDur;
+
+  bool rampDone = !doStartupRamp;
+  bool printedHold = false;
+  bool printedDone = false;
+
   const double prefStepTime = simParams.eventTime;
   const double newPref = psParams.converter1P * simParams.prefStepFactor;
   bool prefStepApplied = false;
 
   runStepped(sim, [&](DPsim::Simulation &s) {
+    const double t = s.time();
+
+    // (1) Startup: Pref/Qref = 0 for [0, holdT), then ramp to final during [holdT, holdT+rampDur]
+    if (doStartupRamp && !rampDone) {
+      double alpha = 0.0;
+
+      if (t < holdT) {
+        alpha = 0.0;
+        if (!printedHold && t >= (0.0 + 0.5 * simParams.timeStep)) {
+          printedHold = true;
+          std::cout << "[HOOK][EMT] holding Pref/Qref at 0 for " << holdT << " s\n";
+        }
+      } else if (rampDur <= 0.0) {
+        alpha = 1.0;
+      } else {
+        alpha = clamp01((t - holdT) / rampDur);
+      }
+
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
+                                alpha * conv1.pFinal, alpha * conv1.qFinal);
+      conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
+                                alpha * conv2.pFinal, alpha * conv2.qFinal);
+
+      if (!printedDone && t >= (rampEndT - 0.5 * simParams.timeStep)) {
+        // snap exactly to final once
+        conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, conv1.pFinal, conv1.qFinal);
+        conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom, conv2.pFinal, conv2.qFinal);
+        rampDone = true;
+        printedDone = true;
+        std::cout << "[HOOK][EMT] t=" << t
+                  << " finished startup hold+ramp: "
+                  << "hold=" << holdT << "s, ramp=" << rampDur << "s, "
+                  << "Conv1(P,Q)=(" << conv1.pFinal << "," << conv1.qFinal << ") "
+                  << "Conv2(P,Q)=(" << conv2.pFinal << "," << conv2.qFinal << ")\n";
+      }
+    }
+
+    // (2) Converter1 Pref step (keeps Q at its nominal/target value)
     if (psEvent == PowerSystemEventType::Converter1PrefStep &&
         !prefStepApplied &&
-        s.time() >= (prefStepTime - 0.5 * simParams.timeStep)) {
+        t >= (prefStepTime - 0.5 * simParams.timeStep)) {
 
-      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qRef);
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qFinal);
 
       prefStepApplied = true;
-      std::cout << "[HOOK][EMT] t=" << s.time()
+      std::cout << "[HOOK][EMT] t=" << t
                 << " set Converter1 Pref=" << newPref << " W\n";
     }
   });
@@ -700,8 +759,9 @@ void simulateDP(const SimulationParameters &simParams,
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
-  auto conv1 = createDPConverter(logger, psParams, systemTopology, node2, 1);
-  (void)createDPConverter(logger, psParams, systemTopology, node3, 2);
+  const bool doStartupRamp = simParams.enableStartupRampPQ;
+  auto conv1 = createDPConverter(logger, psParams, systemTopology, node2, 1, doStartupRamp);
+  auto conv2 = createDPConverter(logger, psParams, systemTopology, node3, 2, doStartupRamp);
 
   // simulation
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::DP);
@@ -738,21 +798,66 @@ void simulateDP(const SimulationParameters &simParams,
     break;
   }
 
-  // ---- Hook (only for Converter1PrefStep): change Converter1 Pref at t=eventTime ----
+  // ---- Hook: (1) optional startup hold+ ramp for BOTH converters, (2) optional Converter1 Pref step ----
+  const double holdT = std::max(0.0, simParams.startupPQZeroHoldTime);
+  const double rampDur = std::max(0.0, simParams.startupRampDuration);
+  const double rampEndT = holdT + rampDur;
+
+  bool rampDone = !doStartupRamp;
+  bool printedHold = false;
+  bool printedDone = false;
+
   const double prefStepTime = simParams.eventTime;
   const double newPref = psParams.converter1P * simParams.prefStepFactor;
   bool prefStepApplied = false;
 
   runStepped(sim, [&](DPsim::Simulation &s) {
+    const double t = s.time();
+
+    // (1) Startup: Pref/Qref = 0 for [0, holdT), then ramp to final during [holdT, holdT+rampDur]
+    if (doStartupRamp && !rampDone) {
+      double alpha = 0.0;
+
+      if (t < holdT) {
+        alpha = 0.0;
+        if (!printedHold && t >= (0.0 + 0.5 * simParams.timeStep)) {
+          printedHold = true;
+          std::cout << "[HOOK][DP] holding Pref/Qref at 0 for " << holdT << " s\n";
+        }
+      } else if (rampDur <= 0.0) {
+        alpha = 1.0;
+      } else {
+        alpha = clamp01((t - holdT) / rampDur);
+      }
+
+      // IMPORTANT: use setParameters so PowerControllerVSI internal mPref updates too
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
+                                alpha * conv1.pFinal, alpha * conv1.qFinal);
+      conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
+                                alpha * conv2.pFinal, alpha * conv2.qFinal);
+
+      if (!printedDone && t >= (rampEndT - 0.5 * simParams.timeStep)) {
+        conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, conv1.pFinal, conv1.qFinal);
+        conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom, conv2.pFinal, conv2.qFinal);
+        rampDone = true;
+        printedDone = true;
+        std::cout << "[HOOK][DP] t=" << t
+                  << " finished startup hold+ramp: "
+                  << "hold=" << holdT << "s, ramp=" << rampDur << "s, "
+                  << "Conv1(P,Q)=(" << conv1.pFinal << "," << conv1.qFinal << ") "
+                  << "Conv2(P,Q)=(" << conv2.pFinal << "," << conv2.qFinal << ")\n";
+      }
+    }
+
+    // (2) Converter1 Pref step (keeps Q at its nominal/target value)
     if (psEvent == PowerSystemEventType::Converter1PrefStep &&
         !prefStepApplied &&
-        s.time() >= (prefStepTime - 0.5 * simParams.timeStep)) {
+        t >= (prefStepTime - 0.5 * simParams.timeStep)) {
 
-      // IMPORTANT: use setParameters so PowerControllerVSI's internal mPref updates too
-      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qRef);
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qFinal);
 
       prefStepApplied = true;
-      std::cout << "[HOOK][DP] t=" << s.time()
+      std::cout << "[HOOK][DP] t=" << t
                 << " set Converter1 Pref=" << newPref << " W\n";
     }
   });
@@ -841,8 +946,9 @@ void simulateSP(const SimulationParameters &simParams,
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
-  auto conv1 = createSPConverter(logger, psParams, systemTopology, node2, 1);
-  (void)createSPConverter(logger, psParams, systemTopology, node3, 2);
+  const bool doStartupRamp = simParams.enableStartupRampPQ;
+  auto conv1 = createSPConverter(logger, psParams, systemTopology, node2, 1, doStartupRamp);
+  auto conv2 = createSPConverter(logger, psParams, systemTopology, node3, 2, doStartupRamp);
 
   // simulation
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::SP);
@@ -879,21 +985,66 @@ void simulateSP(const SimulationParameters &simParams,
     break;
   }
 
-  // ---- Hook (only for Converter1PrefStep): change Converter1 Pref at t=eventTime ----
+  // ---- Hook: (1) optional startup hold+ ramp for BOTH converters, (2) optional Converter1 Pref step ----
+  const double holdT = std::max(0.0, simParams.startupPQZeroHoldTime);
+  const double rampDur = std::max(0.0, simParams.startupRampDuration);
+  const double rampEndT = holdT + rampDur;
+
+  bool rampDone = !doStartupRamp;
+  bool printedHold = false;
+  bool printedDone = false;
+
   const double prefStepTime = simParams.eventTime;
   const double newPref = psParams.converter1P * simParams.prefStepFactor;
   bool prefStepApplied = false;
 
   runStepped(sim, [&](DPsim::Simulation &s) {
+    const double t = s.time();
+
+    // (1) Startup: Pref/Qref = 0 for [0, holdT), then ramp to final during [holdT, holdT+rampDur]
+    if (doStartupRamp && !rampDone) {
+      double alpha = 0.0;
+
+      if (t < holdT) {
+        alpha = 0.0;
+        if (!printedHold && t >= (0.0 + 0.5 * simParams.timeStep)) {
+          printedHold = true;
+          std::cout << "[HOOK][SP] holding Pref/Qref at 0 for " << holdT << " s\n";
+        }
+      } else if (rampDur <= 0.0) {
+        alpha = 1.0;
+      } else {
+        alpha = clamp01((t - holdT) / rampDur);
+      }
+
+      // IMPORTANT: use setParameters so PowerControllerVSI internal mPref updates too
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
+                                alpha * conv1.pFinal, alpha * conv1.qFinal);
+      conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
+                                alpha * conv2.pFinal, alpha * conv2.qFinal);
+
+      if (!printedDone && t >= (rampEndT - 0.5 * simParams.timeStep)) {
+        conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, conv1.pFinal, conv1.qFinal);
+        conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom, conv2.pFinal, conv2.qFinal);
+        rampDone = true;
+        printedDone = true;
+        std::cout << "[HOOK][SP] t=" << t
+                  << " finished startup hold+ramp: "
+                  << "hold=" << holdT << "s, ramp=" << rampDur << "s, "
+                  << "Conv1(P,Q)=(" << conv1.pFinal << "," << conv1.qFinal << ") "
+                  << "Conv2(P,Q)=(" << conv2.pFinal << "," << conv2.qFinal << ")\n";
+      }
+    }
+
+    // (2) Converter1 Pref step (keeps Q at its nominal/target value)
     if (psEvent == PowerSystemEventType::Converter1PrefStep &&
         !prefStepApplied &&
-        s.time() >= (prefStepTime - 0.5 * simParams.timeStep)) {
+        t >= (prefStepTime - 0.5 * simParams.timeStep)) {
 
-      // IMPORTANT: use setParameters so PowerControllerVSI's internal mPref updates too
-      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qRef);
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qFinal);
 
       prefStepApplied = true;
-      std::cout << "[HOOK][SP] t=" << s.time()
+      std::cout << "[HOOK][SP] t=" << t
                 << " set Converter1 Pref=" << newPref << " W\n";
     }
   });
