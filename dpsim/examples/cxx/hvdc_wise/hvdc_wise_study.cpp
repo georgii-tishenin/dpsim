@@ -34,6 +34,7 @@ constexpr const char *vq = "Vc_q";
 constexpr const char *f = "f_src";
 constexpr const char *pref = "P_ref";
 constexpr const char *qref = "Q_ref";
+constexpr const char *pllOut = "pll_output";
 } // namespace AttributeNames
 
 struct SimulationParameters {
@@ -297,6 +298,8 @@ createEMTConverter(const std::shared_ptr<DataLogger> &logger,
                        converter->attribute(AttributeNames::pref));
   logger->logAttribute("QrefConverter" + std::to_string(converterNumber),
                        converter->attribute(AttributeNames::qref));
+  logger->logAttribute("pllOutputConverter" + std::to_string(converterNumber),
+                       converter->attribute(AttributeNames::pllOut));
 
   return {converter, sysOmega, sysVoltNom, converterQ};
 }
@@ -369,6 +372,8 @@ createDPConverter(const std::shared_ptr<DataLogger> &logger,
                        converter->attribute(AttributeNames::pref));
   logger->logAttribute("QrefConverter" + std::to_string(converterNumber),
                        converter->attribute(AttributeNames::qref));
+  logger->logAttribute("pllOutputConverter" + std::to_string(converterNumber),
+                       converter->attribute(AttributeNames::pllOut));
 
   return {converter, sysOmega, sysVoltNom, converterQ};
 }
@@ -441,6 +446,8 @@ createSPConverter(const std::shared_ptr<DataLogger> &logger,
                        converter->attribute(AttributeNames::pref));
   logger->logAttribute("QrefConverter" + std::to_string(converterNumber),
                        converter->attribute(AttributeNames::qref));
+  logger->logAttribute("pllOutputConverter" + std::to_string(converterNumber),
+                       converter->attribute(AttributeNames::pllOut));
 
   return {converter, sysOmega, sysVoltNom, converterQ};
 }
