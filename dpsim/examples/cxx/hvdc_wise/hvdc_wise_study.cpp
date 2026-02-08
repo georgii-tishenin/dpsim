@@ -49,7 +49,7 @@ struct SimulationParameters {
   // frequency step parameters
   double frequencyStepDelta = -1.0; // in Hz
 
-  double prefStepFactor = 2.0;
+  double prefStepFactor = 5.0; // 5.0;
 };
 
 enum class PowerSystemEventType {
@@ -69,15 +69,19 @@ struct PowerSystemInputParameters {
   double infeedResistanceInPerUnit = 0.01;
   double infeedReactanceInPerUnit = 0.1;
 
+  // coefficients for line parameters
+  double lineLengthCoefficient = 1;     //3;
+  double lineResistanceCoefficient = 1; //0.1;
+
   // line1 parameters
-  double line1LengthInKm = 80;
-  double line1ResistancePerKm = 0.1;
+  double line1LengthInKm = 80 * lineLengthCoefficient;
+  double line1ResistancePerKm = 0.1 * lineResistanceCoefficient;
   double line1ReactancePerKm = 0.4;
   double line1CapacitancePerKm = 1e-8;
 
   // line2 parameters
-  double line2LengthInKm = 20;
-  double line2ResistancePerKm = 0.2;
+  double line2LengthInKm = 20 * lineLengthCoefficient;
+  double line2ResistancePerKm = 0.2 * lineResistanceCoefficient;
   double line2ReactancePerKm = 0.4;
   double lin2CapacitancePerKm = 1e-8;
 
