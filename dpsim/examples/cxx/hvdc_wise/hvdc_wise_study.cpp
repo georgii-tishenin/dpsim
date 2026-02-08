@@ -12,16 +12,17 @@ namespace VariableNames {
 constexpr const char *vInfeed = "vInfeed";
 constexpr const char *iInfeed = "iInfeed";
 constexpr const char *fInfeed = "fInfeed";
-constexpr const char *vLoad = "vLoad";
-constexpr const char *iLoad1 = "iLoad1";
-constexpr const char *iLoad2 = "iLoad2";
-constexpr const char *iLine1 = "iLine1";
-constexpr const char *iLine2 = "iLine2";
+constexpr const char *vLoad   = "vLoad";
+constexpr const char *iLoad1  = "iLoad1";
+constexpr const char *iLoad2  = "iLoad2";
+constexpr const char *iLine1  = "iLine1";
+constexpr const char *iLine2  = "iLine2";
+constexpr const char *iFault  = "iFault";
 } // namespace VariableNames
 
 namespace SwitchConstants {
 constexpr double closedResistance = 1e-4;
-constexpr double openResistance = 1e6;
+constexpr double openResistance   = 1e6;
 } // namespace SwitchConstants
 
 namespace AttributeNames {
@@ -44,7 +45,7 @@ static inline double clamp01(double x) {
 }
 
 struct SimulationParameters {
-  double timeStep = 1e-4;
+  double timeStep  = 1e-4;
   double eventTime = 3.8;
   double finalTime = 4.2;
 
@@ -64,12 +65,18 @@ struct SimulationParameters {
   // frequency step parameters
   double frequencyStepDelta = -1.0; // in Hz
 
-  double prefStepFactor = 5.0; // 5.0;
+  double prefStepFactor = 5.0;
+
+  // ---------------- Load-bus fault parameters ----------------
+  // Fault is modeled as a shunt branch at load bus (node5) to GND.
+  double faultDuration   = 0.02;     // seconds, clear at eventTime + faultDuration
+  double faultResistance = 1.0;     // Ohm when fault is "ON" (closed branch)
 };
 
 enum class PowerSystemEventType {
   None,
   LoadStep,
+  LoadBusFault,          // NEW
   InfeedFrequencyRamp,
   InfeedFrequencyStep,
   Converter1PrefStep
@@ -193,7 +200,8 @@ calculatePowerSystemParameters(const PowerSystemInputParameters &inputParams) {
       voltageLineToGround, infeedResistance, infeedInductance, line1Resistance,
       line1Inductance, line1Capacitance, line2Resistance, line2Inductance,
       line2Capacitance, loadResistance1, loadResistance2, converter1P,
-      converter1Q, converter2P, converter2Q);
+      converter1Q, converter2P,
+      converter2Q);
 }
 
 Simulation setupSimulation(const std::string &simName,
@@ -222,7 +230,7 @@ static void runStepped(DPsim::Simulation &sim, Hook &&hook) {
   sim.stop();
 }
 
-// -------------------- Converter handles (store sysOmega/sysVoltNom once) --------------------
+// -------------------- Converter handles --------------------
 
 struct EMTConverterHandle {
   std::shared_ptr<EMT::Ph3::AvVoltageSourceInverterDQ> conv;
@@ -248,7 +256,7 @@ struct SPConverterHandle {
   double qFinal;
 };
 
-// -------------------- Converter creation (returns handle) --------------------
+// -------------------- Converter creation --------------------
 
 EMTConverterHandle
 createEMTConverter(const std::shared_ptr<DataLogger> &logger,
@@ -532,6 +540,17 @@ void simulateEMT(const SimulationParameters &simParams,
   logger->logAttribute(VariableNames::vLoad,
                        node5->attribute(AttributeNames::v));
 
+  // load-bus fault as shunt switch node5 -> GND
+  auto loadBusFault = EMT::Ph3::Switch::make("load_bus_fault");
+  loadBusFault->setParameters(
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
+      CPS::Math::singlePhaseParameterToThreePhase(simParams.faultResistance),
+      false  // initially open (no fault)
+  );
+  loadBusFault->connect({node5, EMT::SimNode::GND});
+  logger->logAttribute(VariableNames::iFault,
+                       loadBusFault->attribute(AttributeNames::i));
+
   auto load1 = EMT::Ph3::Resistor::make("load1");
   load1->setParameters(
       CPS::Math::singlePhaseParameterToThreePhase(psParams.loadResistance1));
@@ -566,8 +585,10 @@ void simulateEMT(const SimulationParameters &simParams,
   auto systemNodeList =
       SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1, line2,      circuitBreaker,
-      load1,        load1Switch,     load2, load2Switch};
+      infeedSource, infeedImpedance, line1, line2, circuitBreaker,
+      loadBusFault,
+      load1, load1Switch, load2, load2Switch
+  };
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
@@ -591,6 +612,15 @@ void simulateEMT(const SimulationParameters &simParams,
     sim.addEvent(connectLoad2);
     break;
   }
+  case PowerSystemEventType::LoadBusFault: {
+    const double tOn  = simParams.eventTime;
+    const double tOff = simParams.eventTime + std::max(0.0, simParams.faultDuration);
+    auto faultOn  = DPsim::SwitchEvent3Ph::make(tOn,  loadBusFault, true);
+    auto faultOff = DPsim::SwitchEvent3Ph::make(tOff, loadBusFault, false);
+    sim.addEvent(faultOn);
+    sim.addEvent(faultOff);
+    break;
+  }
   case PowerSystemEventType::InfeedFrequencyRamp: {
     infeedSource->setParameters(
         CPS::Math::singlePhaseVariableToThreePhase(psParams.voltageLineToLine),
@@ -611,7 +641,7 @@ void simulateEMT(const SimulationParameters &simParams,
     break;
   }
 
-  // ---- Hook: (1) optional startup hold+ ramp for BOTH converters, (2) optional Converter1 Pref step ----
+  // ---- Hook: startup ramp + optional Converter1 Pref step ----
   const double holdT = std::max(0.0, simParams.startupPQZeroHoldTime);
   const double rampDur = std::max(0.0, simParams.startupRampDuration);
   const double rampEndT = holdT + rampDur;
@@ -627,7 +657,6 @@ void simulateEMT(const SimulationParameters &simParams,
   runStepped(sim, [&](DPsim::Simulation &s) {
     const double t = s.time();
 
-    // (1) Startup: Pref/Qref = 0 for [0, holdT), then ramp to final during [holdT, holdT+rampDur]
     if (doStartupRamp && !rampDone) {
       double alpha = 0.0;
 
@@ -649,20 +678,16 @@ void simulateEMT(const SimulationParameters &simParams,
                                 alpha * conv2.pFinal, alpha * conv2.qFinal);
 
       if (!printedDone && t >= (rampEndT - 0.5 * simParams.timeStep)) {
-        // snap exactly to final once
         conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, conv1.pFinal, conv1.qFinal);
         conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom, conv2.pFinal, conv2.qFinal);
         rampDone = true;
         printedDone = true;
         std::cout << "[HOOK][EMT] t=" << t
                   << " finished startup hold+ramp: "
-                  << "hold=" << holdT << "s, ramp=" << rampDur << "s, "
-                  << "Conv1(P,Q)=(" << conv1.pFinal << "," << conv1.qFinal << ") "
-                  << "Conv2(P,Q)=(" << conv2.pFinal << "," << conv2.qFinal << ")\n";
+                  << "hold=" << holdT << "s, ramp=" << rampDur << "s\n";
       }
     }
 
-    // (2) Converter1 Pref step (keeps Q at its nominal/target value)
     if (psEvent == PowerSystemEventType::Converter1PrefStep &&
         !prefStepApplied &&
         t >= (prefStepTime - 0.5 * simParams.timeStep)) {
@@ -728,6 +753,15 @@ void simulateDP(const SimulationParameters &simParams,
   logger->logAttribute(VariableNames::vLoad,
                        node5->attribute(AttributeNames::v));
 
+  // load-bus fault as shunt switch node5 -> GND
+  auto loadBusFault = DP::Ph1::Switch::make("load_bus_fault");
+  loadBusFault->setParameters(SwitchConstants::openResistance,
+                              simParams.faultResistance,
+                              false);
+  loadBusFault->connect({node5, DP::SimNode::GND});
+  logger->logAttribute(VariableNames::iFault,
+                       loadBusFault->attribute(AttributeNames::i));
+
   auto load1 = DP::Ph1::Resistor::make("load");
   load1->setParameters(psParams.loadResistance1);
   load1->connect({node6, DP::SimNode::GND});
@@ -754,8 +788,10 @@ void simulateDP(const SimulationParameters &simParams,
   auto systemNodeList =
       SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1, line2,      circuitBreaker,
-      load1,        load1Switch,     load2, load2Switch};
+      infeedSource, infeedImpedance, line1, line2, circuitBreaker,
+      loadBusFault, 
+      load1, load1Switch, load2, load2Switch
+  };
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
@@ -779,6 +815,15 @@ void simulateDP(const SimulationParameters &simParams,
     sim.addEvent(connectLoad2);
     break;
   }
+  case PowerSystemEventType::LoadBusFault: {
+    const double tOn  = simParams.eventTime;
+    const double tOff = simParams.eventTime + std::max(0.0, simParams.faultDuration);
+    auto faultOn  = DPsim::SwitchEvent::make(tOn,  loadBusFault, true);
+    auto faultOff = DPsim::SwitchEvent::make(tOff, loadBusFault, false);
+    sim.addEvent(faultOn);
+    sim.addEvent(faultOff);
+    break;
+  }
   case PowerSystemEventType::InfeedFrequencyRamp: {
     infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
                                 simParams.rocof, simParams.eventTime,
@@ -798,7 +843,7 @@ void simulateDP(const SimulationParameters &simParams,
     break;
   }
 
-  // ---- Hook: (1) optional startup hold+ ramp for BOTH converters, (2) optional Converter1 Pref step ----
+  // ---- Hook: startup ramp + optional Converter1 Pref step ----
   const double holdT = std::max(0.0, simParams.startupPQZeroHoldTime);
   const double rampDur = std::max(0.0, simParams.startupRampDuration);
   const double rampEndT = holdT + rampDur;
@@ -814,7 +859,6 @@ void simulateDP(const SimulationParameters &simParams,
   runStepped(sim, [&](DPsim::Simulation &s) {
     const double t = s.time();
 
-    // (1) Startup: Pref/Qref = 0 for [0, holdT), then ramp to final during [holdT, holdT+rampDur]
     if (doStartupRamp && !rampDone) {
       double alpha = 0.0;
 
@@ -830,7 +874,6 @@ void simulateDP(const SimulationParameters &simParams,
         alpha = clamp01((t - holdT) / rampDur);
       }
 
-      // IMPORTANT: use setParameters so PowerControllerVSI internal mPref updates too
       conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
                                 alpha * conv1.pFinal, alpha * conv1.qFinal);
       conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
@@ -842,14 +885,10 @@ void simulateDP(const SimulationParameters &simParams,
         rampDone = true;
         printedDone = true;
         std::cout << "[HOOK][DP] t=" << t
-                  << " finished startup hold+ramp: "
-                  << "hold=" << holdT << "s, ramp=" << rampDur << "s, "
-                  << "Conv1(P,Q)=(" << conv1.pFinal << "," << conv1.qFinal << ") "
-                  << "Conv2(P,Q)=(" << conv2.pFinal << "," << conv2.qFinal << ")\n";
+                  << " finished startup hold+ramp\n";
       }
     }
 
-    // (2) Converter1 Pref step (keeps Q at its nominal/target value)
     if (psEvent == PowerSystemEventType::Converter1PrefStep &&
         !prefStepApplied &&
         t >= (prefStepTime - 0.5 * simParams.timeStep)) {
@@ -915,6 +954,15 @@ void simulateSP(const SimulationParameters &simParams,
   logger->logAttribute(VariableNames::vLoad,
                        node5->attribute(AttributeNames::v));
 
+  // load-bus fault as shunt switch node5 -> GND
+  auto loadBusFault = SP::Ph1::Switch::make("load_bus_fault");
+  loadBusFault->setParameters(SwitchConstants::openResistance,
+                              simParams.faultResistance,
+                              false);
+  loadBusFault->connect({node5, SP::SimNode::GND});
+  logger->logAttribute(VariableNames::iFault,
+                       loadBusFault->attribute(AttributeNames::i));
+
   auto load1 = SP::Ph1::Resistor::make("load");
   load1->setParameters(psParams.loadResistance1);
   load1->connect({node6, SP::SimNode::GND});
@@ -941,8 +989,10 @@ void simulateSP(const SimulationParameters &simParams,
   auto systemNodeList =
       SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1, line2,      circuitBreaker,
-      load1,        load1Switch,     load2, load2Switch};
+      infeedSource, infeedImpedance, line1, line2, circuitBreaker,
+      loadBusFault,
+      load1, load1Switch, load2, load2Switch
+  };
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
@@ -966,6 +1016,15 @@ void simulateSP(const SimulationParameters &simParams,
     sim.addEvent(connectLoad2);
     break;
   }
+  case PowerSystemEventType::LoadBusFault: {
+    const double tOn  = simParams.eventTime;
+    const double tOff = simParams.eventTime + std::max(0.0, simParams.faultDuration);
+    auto faultOn  = DPsim::SwitchEvent::make(tOn,  loadBusFault, true);
+    auto faultOff = DPsim::SwitchEvent::make(tOff, loadBusFault, false);
+    sim.addEvent(faultOn);
+    sim.addEvent(faultOff);
+    break;
+  }
   case PowerSystemEventType::InfeedFrequencyRamp: {
     infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
                                 simParams.rocof, simParams.eventTime,
@@ -985,7 +1044,7 @@ void simulateSP(const SimulationParameters &simParams,
     break;
   }
 
-  // ---- Hook: (1) optional startup hold+ ramp for BOTH converters, (2) optional Converter1 Pref step ----
+  // ---- Hook: startup ramp + optional Converter1 Pref step ----
   const double holdT = std::max(0.0, simParams.startupPQZeroHoldTime);
   const double rampDur = std::max(0.0, simParams.startupRampDuration);
   const double rampEndT = holdT + rampDur;
@@ -1001,7 +1060,6 @@ void simulateSP(const SimulationParameters &simParams,
   runStepped(sim, [&](DPsim::Simulation &s) {
     const double t = s.time();
 
-    // (1) Startup: Pref/Qref = 0 for [0, holdT), then ramp to final during [holdT, holdT+rampDur]
     if (doStartupRamp && !rampDone) {
       double alpha = 0.0;
 
@@ -1017,7 +1075,6 @@ void simulateSP(const SimulationParameters &simParams,
         alpha = clamp01((t - holdT) / rampDur);
       }
 
-      // IMPORTANT: use setParameters so PowerControllerVSI internal mPref updates too
       conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
                                 alpha * conv1.pFinal, alpha * conv1.qFinal);
       conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
@@ -1029,14 +1086,10 @@ void simulateSP(const SimulationParameters &simParams,
         rampDone = true;
         printedDone = true;
         std::cout << "[HOOK][SP] t=" << t
-                  << " finished startup hold+ramp: "
-                  << "hold=" << holdT << "s, ramp=" << rampDur << "s, "
-                  << "Conv1(P,Q)=(" << conv1.pFinal << "," << conv1.qFinal << ") "
-                  << "Conv2(P,Q)=(" << conv2.pFinal << "," << conv2.qFinal << ")\n";
+                  << " finished startup hold+ramp\n";
       }
     }
 
-    // (2) Converter1 Pref step (keeps Q at its nominal/target value)
     if (psEvent == PowerSystemEventType::Converter1PrefStep &&
         !prefStepApplied &&
         t >= (prefStepTime - 0.5 * simParams.timeStep)) {
@@ -1074,6 +1127,7 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   infeedSource->setBaseVoltage(psParams.voltageLineToLine);
   infeedSource->modifyPowerFlowBusType(PowerflowBusType::VD);
   infeedSource->connect({node1});
+
   auto infeedImpedance =
       SP::Ph1::PiLine::make("infeed_impedance", Logger::Level::debug);
   infeedImpedance->setParameters(psParams.infeedResistance,
@@ -1098,6 +1152,13 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   circuitBreaker->setParameters(SwitchConstants::closedResistance, 0);
   circuitBreaker->setBaseVoltage(psParams.voltageLineToLine);
   circuitBreaker->connect({node4, node5});
+
+  // include fault branch in PF as "open" (very large shunt resistance)
+  auto loadBusFaultPF =
+      SP::Ph1::PiLine::make("load_bus_fault", Logger::Level::debug);
+  loadBusFaultPF->setParameters(SwitchConstants::openResistance, 0);
+  loadBusFaultPF->setBaseVoltage(psParams.voltageLineToLine);
+  loadBusFaultPF->connect({node5, SP::SimNode::GND});
 
   auto load1 = SP::Ph1::PiLine::make("load", Logger::Level::debug);
   load1->setParameters(psParams.loadResistance1, 0);
@@ -1137,8 +1198,12 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   auto systemNodeList =
       SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
   auto componentList = SystemComponentList{
-      infeedSource,   infeedImpedance, converter1,  line1, converter2, line2,
-      circuitBreaker, load1,           load1Switch, load2, load2Switch};
+      infeedSource, infeedImpedance,
+      converter1, line1, converter2, line2,
+      circuitBreaker,
+      loadBusFaultPF, // NEW
+      load1, load1Switch, load2, load2Switch
+  };
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
@@ -1146,7 +1211,7 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   logger->logAttribute(VariableNames::vInfeed,
                        node1->attribute(AttributeNames::v));
   logger->logAttribute("vConverter1", node2->attribute(AttributeNames::v));
-  logger->logAttribute("vLoad", node4->attribute(AttributeNames::v));
+  logger->logAttribute("vLoadBus", node5->attribute(AttributeNames::v)); // (more direct than node4)
 
   // simulation
   Simulation sim(simName, Logger::Level::debug);
@@ -1171,7 +1236,8 @@ int main() {
   HVDCWise::PowerSystemParameters psParams =
       HVDCWise::calculatePowerSystemParameters(psInputParams);
 
-  auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
+  auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
+  // auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
 
   auto systemTopologyPF = HVDCWise::calculatePF(simParams, psParams);
   HVDCWise::simulateEMT(simParams, psParams, systemTopologyPF, psEvent);
