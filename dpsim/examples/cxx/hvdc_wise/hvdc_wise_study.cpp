@@ -1,9 +1,10 @@
 #include "../Examples.h"
 #include <DPsim.h>
-#include <iostream>
-#include <cmath>
-#include <stdexcept>
 #include <algorithm>
+#include <cmath>
+#include <complex>
+#include <iostream>
+#include <stdexcept>
 
 using namespace DPsim;
 using namespace CPS;
@@ -13,20 +14,20 @@ namespace HVDCWise {
 namespace VariableNames {
 constexpr const char *vInfeed = "vInfeed";
 constexpr const char *iInfeedStrong = "iInfeedStrong";
-constexpr const char *iInfeedWeak   = "iInfeedWeak";
+constexpr const char *iInfeedWeak = "iInfeedWeak";
 constexpr const char *fInfeed = "fInfeed";
 
-constexpr const char *vLoad   = "vLoad";
-constexpr const char *iLoad1  = "iLoad1";
-constexpr const char *iLoad2  = "iLoad2";
-constexpr const char *iLine1  = "iLine1";
-constexpr const char *iLine2  = "iLine2";
-constexpr const char *iFault  = "iFault";
+constexpr const char *vLoad = "vLoad";
+constexpr const char *iLoad1 = "iLoad1";
+constexpr const char *iLoad2 = "iLoad2";
+constexpr const char *iLine1 = "iLine1";
+constexpr const char *iLine2 = "iLine2";
+constexpr const char *iFault = "iFault";
 } // namespace VariableNames
 
 namespace SwitchConstants {
 constexpr double closedResistance = 1e-4;
-constexpr double openResistance   = 1e6;
+constexpr double openResistance = 1e6;
 } // namespace SwitchConstants
 
 namespace AttributeNames {
@@ -43,13 +44,15 @@ constexpr const char *pllOut = "pll_output";
 } // namespace AttributeNames
 
 static inline double clamp01(double x) {
-  if (x < 0.0) return 0.0;
-  if (x > 1.0) return 1.0;
+  if (x < 0.0)
+    return 0.0;
+  if (x > 1.0)
+    return 1.0;
   return x;
 }
 
 struct SimulationParameters {
-  double timeStep  = 1e-4;
+  double timeStep = 1e-4;
   double eventTime = 3.8;
   double finalTime = 4.2;
 
@@ -73,24 +76,30 @@ struct SimulationParameters {
 
   // ---------------- Load-bus fault parameters ----------------
   // Fault is modeled as a shunt branch at load bus (node5) to GND.
-  double faultDuration   = 0.02;  // seconds, clear at eventTime + faultDuration
-  double faultResistance = 1.0;   // Ohm when fault is "ON" (closed branch)
+  double faultDuration = 0.02;  // seconds, clear at eventTime + faultDuration
+  double faultResistance = 1.0; // Ohm when fault is "ON" (closed branch)
 
   // ---------------- Infeed SCR-step parameters ----------------
   // Two parallel infeed impedance branches (strong/weak),
   // each gated by a series switch. At eventTime we open strong and close weak.
   // If factor > 1 => weaker grid (lower SCR). If factor < 1 => stronger grid (higher SCR).
   double infeedImpedanceStepFactor = 3.0;
+
+  // ---------------- Infeed voltage ANGLE-step parameters ----------------
+  // Single angle step (degrees) applied at eventTime to NetworkInjection voltage phasor.
+  // Positive => advance angle.
+  double infeedVoltageAngleStepDeg = 10.0;
 };
 
 enum class PowerSystemEventType {
   None,
   LoadStep,
   LoadBusFault,
-  InfeedSCRStep,         
+  InfeedSCRStep,
   InfeedFrequencyRamp,
   InfeedFrequencyStep,
-  Converter1PrefStep
+  Converter1PrefStep,
+  InfeedVoltageAngleStep
 };
 
 struct PowerSystemInputParameters {
@@ -103,8 +112,8 @@ struct PowerSystemInputParameters {
   double infeedReactanceInPerUnit = 0.1;
 
   // coefficients for line parameters
-  double lineLengthCoefficient = 1;        // 3, 5;
-  double lineResistanceCoefficient = 1;  // 0.1;
+  double lineLengthCoefficient = 1;     // 3, 5;
+  double lineResistanceCoefficient = 1; // 0.1;
 
   // line1 parameters
   double line1LengthInKm = 80 * lineLengthCoefficient;
@@ -268,13 +277,12 @@ struct SPConverterHandle {
 
 // -------------------- Converter creation --------------------
 
-EMTConverterHandle
-createEMTConverter(const std::shared_ptr<DataLogger> &logger,
-                   const PowerSystemParameters &psParams,
-                   CPS::SystemTopology &systemTopology,
-                   const std::shared_ptr<EMT::SimNode> &node,
-                   int converterNumber,
-                   bool startRampEnabled = false) {
+EMTConverterHandle createEMTConverter(const std::shared_ptr<DataLogger> &logger,
+                                      const PowerSystemParameters &psParams,
+                                      CPS::SystemTopology &systemTopology,
+                                      const std::shared_ptr<EMT::SimNode> &node,
+                                      int converterNumber,
+                                      bool startRampEnabled = false) {
   CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
 
   double converterP_final = 0.0;
@@ -298,13 +306,14 @@ createEMTConverter(const std::shared_ptr<DataLogger> &logger,
       "Converter" + std::to_string(converterNumber), Logger::Level::debug,
       true);
 
-  const double sysOmega   = 2.0 * M_PI * psParams.frequency;
+  const double sysOmega = 2.0 * M_PI * psParams.frequency;
   const double sysVoltNom = scenario.pvNominalVoltage;
 
   const double converterP_init = startRampEnabled ? 0.0 : converterP_final;
   const double converterQ_init = startRampEnabled ? 0.0 : converterQ_final;
 
-  converter->setParameters(sysOmega, sysVoltNom, converterP_init, converterQ_init);
+  converter->setParameters(sysOmega, sysVoltNom, converterP_init,
+                           converterQ_init);
   converter->setControllerParameters(
       1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
       1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
@@ -312,8 +321,7 @@ createEMTConverter(const std::shared_ptr<DataLogger> &logger,
   converter->setFilterParameters(scenario.Lf, scenario.Cf, scenario.Rf,
                                  scenario.Rc);
   converter->setTransformerParameters(
-      psParams.voltageLineToLine, sysVoltNom,
-      scenario.transformerNominalPower,
+      psParams.voltageLineToLine, sysVoltNom, scenario.transformerNominalPower,
       psParams.voltageLineToLine / scenario.pvNominalVoltage, 0, 0,
       scenario.transformerInductance, scenario.systemOmega);
 
@@ -341,13 +349,12 @@ createEMTConverter(const std::shared_ptr<DataLogger> &logger,
   return {converter, sysOmega, sysVoltNom, converterP_final, converterQ_final};
 }
 
-DPConverterHandle
-createDPConverter(const std::shared_ptr<DataLogger> &logger,
-                  const PowerSystemParameters &psParams,
-                  CPS::SystemTopology &systemTopology,
-                  const std::shared_ptr<DP::SimNode> &node,
-                  int converterNumber,
-                  bool startRampEnabled = false) {
+DPConverterHandle createDPConverter(const std::shared_ptr<DataLogger> &logger,
+                                    const PowerSystemParameters &psParams,
+                                    CPS::SystemTopology &systemTopology,
+                                    const std::shared_ptr<DP::SimNode> &node,
+                                    int converterNumber,
+                                    bool startRampEnabled = false) {
   CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
 
   double converterP_final = 0.0;
@@ -371,24 +378,24 @@ createDPConverter(const std::shared_ptr<DataLogger> &logger,
       "Converter" + std::to_string(converterNumber), Logger::Level::debug,
       true);
 
-  const double sysOmega   = 2.0 * M_PI * psParams.frequency;
+  const double sysOmega = 2.0 * M_PI * psParams.frequency;
   const double sysVoltNom = scenario.pvNominalVoltage;
 
   const double converterP_init = startRampEnabled ? 0.0 : converterP_final;
   const double converterQ_init = startRampEnabled ? 0.0 : converterQ_final;
 
-  converter->setParameters(sysOmega, sysVoltNom, converterP_init, converterQ_init);
+  converter->setParameters(sysOmega, sysVoltNom, converterP_init,
+                           converterQ_init);
   converter->setControllerParameters(
       1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
       1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
       1 * scenario.KiCurrCtrl, scenario.OmegaCutoff);
   converter->setFilterParameters(scenario.Lf, scenario.Cf, scenario.Rf,
                                  scenario.Rc);
-  converter->setTransformerParameters(
-      psParams.voltageLineToLine, sysVoltNom,
-      scenario.transformerNominalPower,
-      psParams.voltageLineToLine / sysVoltNom, 0, 0,
-      scenario.transformerInductance);
+  converter->setTransformerParameters(psParams.voltageLineToLine, sysVoltNom,
+                                      scenario.transformerNominalPower,
+                                      psParams.voltageLineToLine / sysVoltNom,
+                                      0, 0, scenario.transformerInductance);
 
   converter->withControl(true);
   converter->connect({node});
@@ -414,13 +421,12 @@ createDPConverter(const std::shared_ptr<DataLogger> &logger,
   return {converter, sysOmega, sysVoltNom, converterP_final, converterQ_final};
 }
 
-SPConverterHandle
-createSPConverter(const std::shared_ptr<DataLogger> &logger,
-                  const PowerSystemParameters &psParams,
-                  CPS::SystemTopology &systemTopology,
-                  const std::shared_ptr<SP::SimNode> &node,
-                  int converterNumber,
-                  bool startRampEnabled = false) {
+SPConverterHandle createSPConverter(const std::shared_ptr<DataLogger> &logger,
+                                    const PowerSystemParameters &psParams,
+                                    CPS::SystemTopology &systemTopology,
+                                    const std::shared_ptr<SP::SimNode> &node,
+                                    int converterNumber,
+                                    bool startRampEnabled = false) {
   CIM::Examples::Grids::SGIB::ScenarioConfig scenario;
 
   double converterP_final = 0.0;
@@ -444,24 +450,24 @@ createSPConverter(const std::shared_ptr<DataLogger> &logger,
       "Converter" + std::to_string(converterNumber), Logger::Level::debug,
       true);
 
-  const double sysOmega   = 2.0 * M_PI * psParams.frequency;
+  const double sysOmega = 2.0 * M_PI * psParams.frequency;
   const double sysVoltNom = scenario.pvNominalVoltage;
 
   const double converterP_init = startRampEnabled ? 0.0 : converterP_final;
   const double converterQ_init = startRampEnabled ? 0.0 : converterQ_final;
 
-  converter->setParameters(sysOmega, sysVoltNom, converterP_init, converterQ_init);
+  converter->setParameters(sysOmega, sysVoltNom, converterP_init,
+                           converterQ_init);
   converter->setControllerParameters(
       1 * scenario.KpPLL, 1 * scenario.KiPLL, 1 * scenario.KpPowerCtrl,
       1 * scenario.KiPowerCtrl, 1 * scenario.KpCurrCtrl,
       1 * scenario.KiCurrCtrl, scenario.OmegaCutoff);
   converter->setFilterParameters(scenario.Lf, scenario.Cf, scenario.Rf,
                                  scenario.Rc);
-  converter->setTransformerParameters(
-      psParams.voltageLineToLine, sysVoltNom,
-      scenario.transformerNominalPower,
-      psParams.voltageLineToLine / sysVoltNom, 0, 0,
-      scenario.transformerInductance);
+  converter->setTransformerParameters(psParams.voltageLineToLine, sysVoltNom,
+                                      scenario.transformerNominalPower,
+                                      psParams.voltageLineToLine / sysVoltNom,
+                                      0, 0, scenario.transformerInductance);
 
   converter->withControl(true);
   converter->connect({node});
@@ -508,7 +514,7 @@ void simulateEMT(const SimulationParameters &simParams,
 
   // extra nodes for robust SCR step (series switches need intermediate nodes)
   auto node1s = EMT::SimNode::make("node1_strong", PhaseType::ABC);
-  auto node1w = EMT::SimNode::make("node1_weak",   PhaseType::ABC);
+  auto node1w = EMT::SimNode::make("node1_weak", PhaseType::ABC);
 
   // ---------------- Components ----------------
   auto infeedSource = EMT::Ph3::NetworkInjection::make("infeed_source");
@@ -518,14 +524,15 @@ void simulateEMT(const SimulationParameters &simParams,
   const double kZ = std::max(1e-9, simParams.infeedImpedanceStepFactor);
   const double Rstrong = psParams.infeedResistance;
   const double Lstrong = psParams.infeedInductance;
-  const double Rweak   = psParams.infeedResistance * kZ;
-  const double Lweak   = psParams.infeedInductance * kZ;
+  const double Rweak = psParams.infeedResistance * kZ;
+  const double Lweak = psParams.infeedInductance * kZ;
 
   auto infeedSwStrong = EMT::Ph3::Switch::make("infeed_sw_strong");
-  infeedSwStrong->setParameters(
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance),
-      true // initially CLOSED (strong grid)
+  infeedSwStrong->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
+                                    SwitchConstants::openResistance),
+                                CPS::Math::singlePhaseParameterToThreePhase(
+                                    SwitchConstants::closedResistance),
+                                true // initially CLOSED (strong grid)
   );
   infeedSwStrong->connect({node1, node1s});
 
@@ -537,18 +544,18 @@ void simulateEMT(const SimulationParameters &simParams,
   infeedZStrong->connect({node1s, node4});
 
   auto infeedSwWeak = EMT::Ph3::Switch::make("infeed_sw_weak");
-  infeedSwWeak->setParameters(
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance),
-      false // initially OPEN (weak grid disconnected)
+  infeedSwWeak->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
+                                  SwitchConstants::openResistance),
+                              CPS::Math::singlePhaseParameterToThreePhase(
+                                  SwitchConstants::closedResistance),
+                              false // initially OPEN (weak grid disconnected)
   );
   infeedSwWeak->connect({node1, node1w});
 
   auto infeedZWeak = EMT::Ph3::PiLine::make("infeed_impedance_weak");
-  infeedZWeak->setParameters(
-      CPS::Math::singlePhaseParameterToThreePhase(Rweak),
-      CPS::Math::singlePhaseParameterToThreePhase(Lweak),
-      CPS::Math::singlePhaseParameterToThreePhase(0.0));
+  infeedZWeak->setParameters(CPS::Math::singlePhaseParameterToThreePhase(Rweak),
+                             CPS::Math::singlePhaseParameterToThreePhase(Lweak),
+                             CPS::Math::singlePhaseParameterToThreePhase(0.0));
   infeedZWeak->connect({node1w, node4});
 
   logger->logAttribute(VariableNames::vInfeed,
@@ -579,10 +586,11 @@ void simulateEMT(const SimulationParameters &simParams,
                        line2->attribute(AttributeNames::i));
 
   auto circuitBreaker = EMT::Ph3::Switch::make("circuit_breaker");
-  circuitBreaker->setParameters(
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance),
-      true);
+  circuitBreaker->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
+                                    SwitchConstants::openResistance),
+                                CPS::Math::singlePhaseParameterToThreePhase(
+                                    SwitchConstants::closedResistance),
+                                true);
   circuitBreaker->connect({node4, node5});
   logger->logAttribute(VariableNames::vLoad,
                        node5->attribute(AttributeNames::v));
@@ -590,9 +598,10 @@ void simulateEMT(const SimulationParameters &simParams,
   // load-bus fault as shunt switch node5 -> GND
   auto loadBusFault = EMT::Ph3::Switch::make("load_bus_fault");
   loadBusFault->setParameters(
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
+      CPS::Math::singlePhaseParameterToThreePhase(
+          SwitchConstants::openResistance),
       CPS::Math::singlePhaseParameterToThreePhase(simParams.faultResistance),
-      false  // initially open (no fault)
+      false // initially open (no fault)
   );
   loadBusFault->connect({node5, EMT::SimNode::GND});
   logger->logAttribute(VariableNames::iFault,
@@ -606,10 +615,11 @@ void simulateEMT(const SimulationParameters &simParams,
                        load1->attribute(AttributeNames::i));
 
   auto load1Switch = EMT::Ph3::Switch::make("load1_switch");
-  load1Switch->setParameters(
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance),
-      true);
+  load1Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
+                                 SwitchConstants::openResistance),
+                             CPS::Math::singlePhaseParameterToThreePhase(
+                                 SwitchConstants::closedResistance),
+                             true);
   load1Switch->connect({node5, node6});
 
   auto load2 = EMT::Ph3::Resistor::make("load2");
@@ -620,37 +630,35 @@ void simulateEMT(const SimulationParameters &simParams,
                        load2->attribute(AttributeNames::i));
 
   auto load2Switch = EMT::Ph3::Switch::make("load2_switch");
-  load2Switch->setParameters(
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
-      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance),
-      false);
+  load2Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
+                                 SwitchConstants::openResistance),
+                             CPS::Math::singlePhaseParameterToThreePhase(
+                                 SwitchConstants::closedResistance),
+                             false);
   load2Switch->connect({node5, node7});
 
   // ---------------- Topology ----------------
-  auto systemNodeList =
-      SystemNodeList{node1, node1s, node1w, node2, node3, node4, node5, node6, node7};
+  auto systemNodeList = SystemNodeList{node1, node1s, node1w, node2, node3,
+                                       node4, node5,  node6,  node7};
 
   auto componentList = SystemComponentList{
-      infeedSource,
-      infeedSwStrong, infeedZStrong,
-      infeedSwWeak,   infeedZWeak,
-      line1, line2,
-      circuitBreaker,
-      loadBusFault,
-      load1, load1Switch,
-      load2, load2Switch
-  };
+      infeedSource, infeedSwStrong, infeedZStrong,  infeedSwWeak, infeedZWeak,
+      line1,        line2,          circuitBreaker, loadBusFault, load1,
+      load1Switch,  load2,          load2Switch};
 
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
   const bool doStartupRamp = simParams.enableStartupRampPQ;
-  auto conv1 = createEMTConverter(logger, psParams, systemTopology, node2, 1, doStartupRamp);
-  auto conv2 = createEMTConverter(logger, psParams, systemTopology, node3, 2, doStartupRamp);
+  auto conv1 = createEMTConverter(logger, psParams, systemTopology, node2, 1,
+                                  doStartupRamp);
+  auto conv2 = createEMTConverter(logger, psParams, systemTopology, node3, 2,
+                                  doStartupRamp);
 
   // ---------------- Simulation ----------------
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::EMT);
-  auto sim = setupSimulation(simName, simParams, systemTopology, logger, Domain::EMT);
+  auto sim =
+      setupSimulation(simName, simParams, systemTopology, logger, Domain::EMT);
 
   // ---------------- Events ----------------
   switch (psEvent) {
@@ -664,9 +672,10 @@ void simulateEMT(const SimulationParameters &simParams,
     break;
   }
   case PowerSystemEventType::LoadBusFault: {
-    const double tOn  = simParams.eventTime;
-    const double tOff = simParams.eventTime + std::max(0.0, simParams.faultDuration);
-    auto faultOn  = DPsim::SwitchEvent3Ph::make(tOn,  loadBusFault, true);
+    const double tOn = simParams.eventTime;
+    const double tOff =
+        simParams.eventTime + std::max(0.0, simParams.faultDuration);
+    auto faultOn = DPsim::SwitchEvent3Ph::make(tOn, loadBusFault, true);
     auto faultOff = DPsim::SwitchEvent3Ph::make(tOff, loadBusFault, false);
     sim.addEvent(faultOn);
     sim.addEvent(faultOff);
@@ -676,7 +685,7 @@ void simulateEMT(const SimulationParameters &simParams,
     // Open strong branch and close weak branch at eventTime
     const double t = simParams.eventTime;
     auto openStrong = DPsim::SwitchEvent3Ph::make(t, infeedSwStrong, false);
-    auto closeWeak  = DPsim::SwitchEvent3Ph::make(t, infeedSwWeak,   true);
+    auto closeWeak = DPsim::SwitchEvent3Ph::make(t, infeedSwWeak, true);
     sim.addEvent(openStrong);
     sim.addEvent(closeWeak);
     break;
@@ -695,13 +704,14 @@ void simulateEMT(const SimulationParameters &simParams,
         simParams.eventTime, simParams.timeStep, false);
     break;
   }
+  case PowerSystemEventType::InfeedVoltageAngleStep:
   case PowerSystemEventType::Converter1PrefStep:
   case PowerSystemEventType::None:
   default:
     break;
   }
 
-  // ---- Hook: startup ramp + optional Converter1 Pref step ----
+  // ---- Hook: startup ramp + optional Converter1 Pref step + optional infeed angle step ----
   const double holdT = std::max(0.0, simParams.startupPQZeroHoldTime);
   const double rampDur = std::max(0.0, simParams.startupRampDuration);
   const double rampEndT = holdT + rampDur;
@@ -714,6 +724,11 @@ void simulateEMT(const SimulationParameters &simParams,
   const double newPref = psParams.converter1P * simParams.prefStepFactor;
   bool prefStepApplied = false;
 
+  // Infeed voltage angle step state
+  const double angleStepTime = simParams.eventTime;
+  const double deltaRad = simParams.infeedVoltageAngleStepDeg * M_PI / 180.0;
+  bool angleStepApplied = false;
+
   runStepped(sim, [&](DPsim::Simulation &s) {
     const double t = s.time();
 
@@ -724,7 +739,8 @@ void simulateEMT(const SimulationParameters &simParams,
         alpha = 0.0;
         if (!printedHold && t >= (0.0 + 0.5 * simParams.timeStep)) {
           printedHold = true;
-          std::cout << "[HOOK][EMT] holding Pref/Qref at 0 for " << holdT << " s\n";
+          std::cout << "[HOOK][EMT] holding Pref/Qref at 0 for " << holdT
+                    << " s\n";
         }
       } else if (rampDur <= 0.0) {
         alpha = 1.0;
@@ -738,8 +754,10 @@ void simulateEMT(const SimulationParameters &simParams,
                                 alpha * conv2.pFinal, alpha * conv2.qFinal);
 
       if (!printedDone && t >= (rampEndT - 0.5 * simParams.timeStep)) {
-        conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, conv1.pFinal, conv1.qFinal);
-        conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom, conv2.pFinal, conv2.qFinal);
+        conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
+                                  conv1.pFinal, conv1.qFinal);
+        conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
+                                  conv2.pFinal, conv2.qFinal);
         rampDone = true;
         printedDone = true;
         std::cout << "[HOOK][EMT] t=" << t
@@ -749,14 +767,33 @@ void simulateEMT(const SimulationParameters &simParams,
     }
 
     if (psEvent == PowerSystemEventType::Converter1PrefStep &&
-        !prefStepApplied &&
-        t >= (prefStepTime - 0.5 * simParams.timeStep)) {
+        !prefStepApplied && t >= (prefStepTime - 0.5 * simParams.timeStep)) {
 
-      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qFinal);
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref,
+                                conv1.qFinal);
 
       prefStepApplied = true;
-      std::cout << "[HOOK][EMT] t=" << t
-                << " set Converter1 Pref=" << newPref << " W\n";
+      std::cout << "[HOOK][EMT] t=" << t << " set Converter1 Pref=" << newPref
+                << " W\n";
+    }
+
+    if (psEvent == PowerSystemEventType::InfeedVoltageAngleStep &&
+        !angleStepApplied && t >= (angleStepTime - 0.5 * simParams.timeStep)) {
+
+      const Complex Vref = std::polar(psParams.voltageLineToLine, deltaRad);
+
+      // Use the existing 6-arg overload (same as frequency ramp/step) with rocof=0.
+      // The complex Vref carries the desired phase angle.
+      infeedSource->setParameters(
+          CPS::Math::singlePhaseVariableToThreePhase(Vref), psParams.frequency,
+          0.0,                // rocof = 0
+          t,                  // "start time" (irrelevant when rocof=0)
+          simParams.timeStep, // small duration
+          false);
+
+      angleStepApplied = true;
+      std::cout << "[HOOK][EMT] t=" << t << " infeed voltage angle step = "
+                << simParams.infeedVoltageAngleStepDeg << " deg\n";
     }
   });
 }
@@ -779,7 +816,7 @@ void simulateDP(const SimulationParameters &simParams,
   auto node7 = DP::SimNode::make("node7", PhaseType::Single);
 
   auto node1s = DP::SimNode::make("node1_strong", PhaseType::Single);
-  auto node1w = DP::SimNode::make("node1_weak",   PhaseType::Single);
+  auto node1w = DP::SimNode::make("node1_weak", PhaseType::Single);
 
   // ---------------- Components ----------------
   auto infeedSource = DP::Ph1::NetworkInjection::make("infeed_source");
@@ -788,8 +825,8 @@ void simulateDP(const SimulationParameters &simParams,
   const double kZ = std::max(1e-9, simParams.infeedImpedanceStepFactor);
   const double Rstrong = psParams.infeedResistance;
   const double Lstrong = psParams.infeedInductance;
-  const double Rweak   = psParams.infeedResistance * kZ;
-  const double Lweak   = psParams.infeedInductance * kZ;
+  const double Rweak = psParams.infeedResistance * kZ;
+  const double Lweak = psParams.infeedInductance * kZ;
 
   auto infeedSwStrong = DP::Ph1::Switch::make("infeed_sw_strong");
   infeedSwStrong->setParameters(SwitchConstants::openResistance,
@@ -844,8 +881,7 @@ void simulateDP(const SimulationParameters &simParams,
   // load-bus fault as shunt switch node5 -> GND
   auto loadBusFault = DP::Ph1::Switch::make("load_bus_fault");
   loadBusFault->setParameters(SwitchConstants::openResistance,
-                              simParams.faultResistance,
-                              false);
+                              simParams.faultResistance, false);
   loadBusFault->connect({node5, DP::SimNode::GND});
   logger->logAttribute(VariableNames::iFault,
                        loadBusFault->attribute(AttributeNames::i));
@@ -873,30 +909,27 @@ void simulateDP(const SimulationParameters &simParams,
   load2Switch->connect({node5, node7});
 
   // ---------------- Topology ----------------
-  auto systemNodeList =
-      SystemNodeList{node1, node1s, node1w, node2, node3, node4, node5, node6, node7};
+  auto systemNodeList = SystemNodeList{node1, node1s, node1w, node2, node3,
+                                       node4, node5,  node6,  node7};
 
   auto componentList = SystemComponentList{
-      infeedSource,
-      infeedSwStrong, infeedZStrong,
-      infeedSwWeak,   infeedZWeak,
-      line1, line2,
-      circuitBreaker,
-      loadBusFault,
-      load1, load1Switch,
-      load2, load2Switch
-  };
+      infeedSource, infeedSwStrong, infeedZStrong,  infeedSwWeak, infeedZWeak,
+      line1,        line2,          circuitBreaker, loadBusFault, load1,
+      load1Switch,  load2,          load2Switch};
 
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
   const bool doStartupRamp = simParams.enableStartupRampPQ;
-  auto conv1 = createDPConverter(logger, psParams, systemTopology, node2, 1, doStartupRamp);
-  auto conv2 = createDPConverter(logger, psParams, systemTopology, node3, 2, doStartupRamp);
+  auto conv1 = createDPConverter(logger, psParams, systemTopology, node2, 1,
+                                 doStartupRamp);
+  auto conv2 = createDPConverter(logger, psParams, systemTopology, node3, 2,
+                                 doStartupRamp);
 
   // ---------------- Simulation ----------------
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::DP);
-  auto sim = setupSimulation(simName, simParams, systemTopology, logger, Domain::DP);
+  auto sim =
+      setupSimulation(simName, simParams, systemTopology, logger, Domain::DP);
 
   // ---------------- Events ----------------
   switch (psEvent) {
@@ -910,9 +943,10 @@ void simulateDP(const SimulationParameters &simParams,
     break;
   }
   case PowerSystemEventType::LoadBusFault: {
-    const double tOn  = simParams.eventTime;
-    const double tOff = simParams.eventTime + std::max(0.0, simParams.faultDuration);
-    auto faultOn  = DPsim::SwitchEvent::make(tOn,  loadBusFault, true);
+    const double tOn = simParams.eventTime;
+    const double tOff =
+        simParams.eventTime + std::max(0.0, simParams.faultDuration);
+    auto faultOn = DPsim::SwitchEvent::make(tOn, loadBusFault, true);
     auto faultOff = DPsim::SwitchEvent::make(tOff, loadBusFault, false);
     sim.addEvent(faultOn);
     sim.addEvent(faultOff);
@@ -921,7 +955,7 @@ void simulateDP(const SimulationParameters &simParams,
   case PowerSystemEventType::InfeedSCRStep: {
     const double t = simParams.eventTime;
     auto openStrong = DPsim::SwitchEvent::make(t, infeedSwStrong, false);
-    auto closeWeak  = DPsim::SwitchEvent::make(t, infeedSwWeak,   true);
+    auto closeWeak = DPsim::SwitchEvent::make(t, infeedSwWeak, true);
     sim.addEvent(openStrong);
     sim.addEvent(closeWeak);
     break;
@@ -934,17 +968,19 @@ void simulateDP(const SimulationParameters &simParams,
   }
   case PowerSystemEventType::InfeedFrequencyStep: {
     infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
-                                simParams.frequencyStepDelta / simParams.timeStep,
+                                simParams.frequencyStepDelta /
+                                    simParams.timeStep,
                                 simParams.eventTime, simParams.timeStep, false);
     break;
   }
+  case PowerSystemEventType::InfeedVoltageAngleStep:
   case PowerSystemEventType::Converter1PrefStep:
   case PowerSystemEventType::None:
   default:
     break;
   }
 
-  // ---- Hook: startup ramp + optional Converter1 Pref step ----
+  // ---- Hook: startup ramp + optional Converter1 Pref step + optional infeed angle step ----
   const double holdT = std::max(0.0, simParams.startupPQZeroHoldTime);
   const double rampDur = std::max(0.0, simParams.startupRampDuration);
   const double rampEndT = holdT + rampDur;
@@ -957,6 +993,11 @@ void simulateDP(const SimulationParameters &simParams,
   const double newPref = psParams.converter1P * simParams.prefStepFactor;
   bool prefStepApplied = false;
 
+  // Infeed voltage angle step state
+  const double angleStepTime = simParams.eventTime;
+  const double deltaRad = simParams.infeedVoltageAngleStepDeg * M_PI / 180.0;
+  bool angleStepApplied = false;
+
   runStepped(sim, [&](DPsim::Simulation &s) {
     const double t = s.time();
 
@@ -967,7 +1008,8 @@ void simulateDP(const SimulationParameters &simParams,
         alpha = 0.0;
         if (!printedHold && t >= (0.0 + 0.5 * simParams.timeStep)) {
           printedHold = true;
-          std::cout << "[HOOK][DP] holding Pref/Qref at 0 for " << holdT << " s\n";
+          std::cout << "[HOOK][DP] holding Pref/Qref at 0 for " << holdT
+                    << " s\n";
         }
       } else if (rampDur <= 0.0) {
         alpha = 1.0;
@@ -981,8 +1023,10 @@ void simulateDP(const SimulationParameters &simParams,
                                 alpha * conv2.pFinal, alpha * conv2.qFinal);
 
       if (!printedDone && t >= (rampEndT - 0.5 * simParams.timeStep)) {
-        conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, conv1.pFinal, conv1.qFinal);
-        conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom, conv2.pFinal, conv2.qFinal);
+        conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
+                                  conv1.pFinal, conv1.qFinal);
+        conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
+                                  conv2.pFinal, conv2.qFinal);
         rampDone = true;
         printedDone = true;
         std::cout << "[HOOK][DP] t=" << t << " finished startup hold+ramp\n";
@@ -990,14 +1034,33 @@ void simulateDP(const SimulationParameters &simParams,
     }
 
     if (psEvent == PowerSystemEventType::Converter1PrefStep &&
-        !prefStepApplied &&
-        t >= (prefStepTime - 0.5 * simParams.timeStep)) {
+        !prefStepApplied && t >= (prefStepTime - 0.5 * simParams.timeStep)) {
 
-      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qFinal);
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref,
+                                conv1.qFinal);
 
       prefStepApplied = true;
-      std::cout << "[HOOK][DP] t=" << t
-                << " set Converter1 Pref=" << newPref << " W\n";
+      std::cout << "[HOOK][DP] t=" << t << " set Converter1 Pref=" << newPref
+                << " W\n";
+    }
+
+    if (psEvent == PowerSystemEventType::InfeedVoltageAngleStep &&
+        !angleStepApplied && t >= (angleStepTime - 0.5 * simParams.timeStep)) {
+
+      const Complex Vref = std::polar(psParams.voltageLineToLine, deltaRad);
+
+      // DP/SP NetworkInjection has a 6-arg overload already used for frequency ramp/step.
+      // Here we use it with rocof=0, and set the *phase* via the 2nd argument.
+      // (Voltage magnitude is kept the same.)
+      infeedSource->setParameters(Vref,
+                                  0.0, // phase step [rad]
+                                  0.0, // rocof = 0
+                                  t,   // start time (irrelevant when rocof=0)
+                                  simParams.timeStep, false);
+
+      angleStepApplied = true;
+      std::cout << "[HOOK][DP] t=" << t << " infeed voltage angle step = "
+                << simParams.infeedVoltageAngleStepDeg << " deg\n";
     }
   });
 }
@@ -1020,7 +1083,7 @@ void simulateSP(const SimulationParameters &simParams,
   auto node7 = SP::SimNode::make("node7", PhaseType::Single);
 
   auto node1s = SP::SimNode::make("node1_strong", PhaseType::Single);
-  auto node1w = SP::SimNode::make("node1_weak",   PhaseType::Single);
+  auto node1w = SP::SimNode::make("node1_weak", PhaseType::Single);
 
   // ---------------- Components ----------------
   auto infeedSource = SP::Ph1::NetworkInjection::make("infeed_source");
@@ -1029,13 +1092,12 @@ void simulateSP(const SimulationParameters &simParams,
   const double kZ = std::max(1e-9, simParams.infeedImpedanceStepFactor);
   const double Rstrong = psParams.infeedResistance;
   const double Lstrong = psParams.infeedInductance;
-  const double Rweak   = psParams.infeedResistance * kZ;
-  const double Lweak   = psParams.infeedInductance * kZ;
+  const double Rweak = psParams.infeedResistance * kZ;
+  const double Lweak = psParams.infeedInductance * kZ;
 
   auto infeedSwStrong = SP::Ph1::Switch::make("infeed_sw_strong");
   infeedSwStrong->setParameters(SwitchConstants::openResistance,
-                                SwitchConstants::closedResistance,
-                                true);
+                                SwitchConstants::closedResistance, true);
   infeedSwStrong->connect({node1, node1s});
 
   auto infeedZStrong = SP::Ph1::PiLine::make("infeed_impedance_strong");
@@ -1044,8 +1106,7 @@ void simulateSP(const SimulationParameters &simParams,
 
   auto infeedSwWeak = SP::Ph1::Switch::make("infeed_sw_weak");
   infeedSwWeak->setParameters(SwitchConstants::openResistance,
-                              SwitchConstants::closedResistance,
-                              false);
+                              SwitchConstants::closedResistance, false);
   infeedSwWeak->connect({node1, node1w});
 
   auto infeedZWeak = SP::Ph1::PiLine::make("infeed_impedance_weak");
@@ -1085,8 +1146,7 @@ void simulateSP(const SimulationParameters &simParams,
   // load-bus fault as shunt switch node5 -> GND
   auto loadBusFault = SP::Ph1::Switch::make("load_bus_fault");
   loadBusFault->setParameters(SwitchConstants::openResistance,
-                              simParams.faultResistance,
-                              false);
+                              simParams.faultResistance, false);
   loadBusFault->connect({node5, SP::SimNode::GND});
   logger->logAttribute(VariableNames::iFault,
                        loadBusFault->attribute(AttributeNames::i));
@@ -1114,30 +1174,27 @@ void simulateSP(const SimulationParameters &simParams,
   load2Switch->connect({node5, node7});
 
   // ---------------- Topology ----------------
-  auto systemNodeList =
-      SystemNodeList{node1, node1s, node1w, node2, node3, node4, node5, node6, node7};
+  auto systemNodeList = SystemNodeList{node1, node1s, node1w, node2, node3,
+                                       node4, node5,  node6,  node7};
 
   auto componentList = SystemComponentList{
-      infeedSource,
-      infeedSwStrong, infeedZStrong,
-      infeedSwWeak,   infeedZWeak,
-      line1, line2,
-      circuitBreaker,
-      loadBusFault,
-      load1, load1Switch,
-      load2, load2Switch
-  };
+      infeedSource, infeedSwStrong, infeedZStrong,  infeedSwWeak, infeedZWeak,
+      line1,        line2,          circuitBreaker, loadBusFault, load1,
+      load1Switch,  load2,          load2Switch};
 
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
   const bool doStartupRamp = simParams.enableStartupRampPQ;
-  auto conv1 = createSPConverter(logger, psParams, systemTopology, node2, 1, doStartupRamp);
-  auto conv2 = createSPConverter(logger, psParams, systemTopology, node3, 2, doStartupRamp);
+  auto conv1 = createSPConverter(logger, psParams, systemTopology, node2, 1,
+                                 doStartupRamp);
+  auto conv2 = createSPConverter(logger, psParams, systemTopology, node3, 2,
+                                 doStartupRamp);
 
   // ---------------- Simulation ----------------
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::SP);
-  auto sim = setupSimulation(simName, simParams, systemTopology, logger, Domain::SP);
+  auto sim =
+      setupSimulation(simName, simParams, systemTopology, logger, Domain::SP);
 
   // ---------------- Events ----------------
   switch (psEvent) {
@@ -1151,9 +1208,10 @@ void simulateSP(const SimulationParameters &simParams,
     break;
   }
   case PowerSystemEventType::LoadBusFault: {
-    const double tOn  = simParams.eventTime;
-    const double tOff = simParams.eventTime + std::max(0.0, simParams.faultDuration);
-    auto faultOn  = DPsim::SwitchEvent::make(tOn,  loadBusFault, true);
+    const double tOn = simParams.eventTime;
+    const double tOff =
+        simParams.eventTime + std::max(0.0, simParams.faultDuration);
+    auto faultOn = DPsim::SwitchEvent::make(tOn, loadBusFault, true);
     auto faultOff = DPsim::SwitchEvent::make(tOff, loadBusFault, false);
     sim.addEvent(faultOn);
     sim.addEvent(faultOff);
@@ -1162,7 +1220,7 @@ void simulateSP(const SimulationParameters &simParams,
   case PowerSystemEventType::InfeedSCRStep: {
     const double t = simParams.eventTime;
     auto openStrong = DPsim::SwitchEvent::make(t, infeedSwStrong, false);
-    auto closeWeak  = DPsim::SwitchEvent::make(t, infeedSwWeak,   true);
+    auto closeWeak = DPsim::SwitchEvent::make(t, infeedSwWeak, true);
     sim.addEvent(openStrong);
     sim.addEvent(closeWeak);
     break;
@@ -1175,17 +1233,19 @@ void simulateSP(const SimulationParameters &simParams,
   }
   case PowerSystemEventType::InfeedFrequencyStep: {
     infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
-                                simParams.frequencyStepDelta / simParams.timeStep,
+                                simParams.frequencyStepDelta /
+                                    simParams.timeStep,
                                 simParams.eventTime, simParams.timeStep, false);
     break;
   }
+  case PowerSystemEventType::InfeedVoltageAngleStep:
   case PowerSystemEventType::Converter1PrefStep:
   case PowerSystemEventType::None:
   default:
     break;
   }
 
-  // ---- Hook: startup ramp + optional Converter1 Pref step ----
+  // ---- Hook: startup ramp + optional Converter1 Pref step + optional infeed angle step ----
   const double holdT = std::max(0.0, simParams.startupPQZeroHoldTime);
   const double rampDur = std::max(0.0, simParams.startupRampDuration);
   const double rampEndT = holdT + rampDur;
@@ -1198,6 +1258,11 @@ void simulateSP(const SimulationParameters &simParams,
   const double newPref = psParams.converter1P * simParams.prefStepFactor;
   bool prefStepApplied = false;
 
+  // Infeed voltage angle step state
+  const double angleStepTime = simParams.eventTime;
+  const double deltaRad = simParams.infeedVoltageAngleStepDeg * M_PI / 180.0;
+  bool angleStepApplied = false;
+
   runStepped(sim, [&](DPsim::Simulation &s) {
     const double t = s.time();
 
@@ -1208,7 +1273,8 @@ void simulateSP(const SimulationParameters &simParams,
         alpha = 0.0;
         if (!printedHold && t >= (0.0 + 0.5 * simParams.timeStep)) {
           printedHold = true;
-          std::cout << "[HOOK][SP] holding Pref/Qref at 0 for " << holdT << " s\n";
+          std::cout << "[HOOK][SP] holding Pref/Qref at 0 for " << holdT
+                    << " s\n";
         }
       } else if (rampDur <= 0.0) {
         alpha = 1.0;
@@ -1222,8 +1288,10 @@ void simulateSP(const SimulationParameters &simParams,
                                 alpha * conv2.pFinal, alpha * conv2.qFinal);
 
       if (!printedDone && t >= (rampEndT - 0.5 * simParams.timeStep)) {
-        conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, conv1.pFinal, conv1.qFinal);
-        conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom, conv2.pFinal, conv2.qFinal);
+        conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
+                                  conv1.pFinal, conv1.qFinal);
+        conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
+                                  conv2.pFinal, conv2.qFinal);
         rampDone = true;
         printedDone = true;
         std::cout << "[HOOK][SP] t=" << t << " finished startup hold+ramp\n";
@@ -1231,14 +1299,29 @@ void simulateSP(const SimulationParameters &simParams,
     }
 
     if (psEvent == PowerSystemEventType::Converter1PrefStep &&
-        !prefStepApplied &&
-        t >= (prefStepTime - 0.5 * simParams.timeStep)) {
+        !prefStepApplied && t >= (prefStepTime - 0.5 * simParams.timeStep)) {
 
-      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref, conv1.qFinal);
+      conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom, newPref,
+                                conv1.qFinal);
 
       prefStepApplied = true;
-      std::cout << "[HOOK][SP] t=" << t
-                << " set Converter1 Pref=" << newPref << " W\n";
+      std::cout << "[HOOK][SP] t=" << t << " set Converter1 Pref=" << newPref
+                << " W\n";
+    }
+
+    if (psEvent == PowerSystemEventType::InfeedVoltageAngleStep &&
+        !angleStepApplied && t >= (angleStepTime - 0.5 * simParams.timeStep)) {
+
+      const Complex Vref = std::polar(psParams.voltageLineToLine, deltaRad);
+      infeedSource->setParameters(Vref,
+                                  0.0, // phase step [rad]
+                                  0.0, // rocof = 0
+                                  t,   // start time (irrelevant when rocof=0)
+                                  simParams.timeStep, false);
+
+      angleStepApplied = true;
+      std::cout << "[HOOK][SP] t=" << t << " infeed voltage angle step = "
+                << simParams.infeedVoltageAngleStepDeg << " deg\n";
     }
   });
 }
@@ -1262,7 +1345,7 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
 
   // extra nodes for SCR-step branches
   auto node1s = SP::SimNode::make("node1_strong", PhaseType::Single);
-  auto node1w = SP::SimNode::make("node1_weak",   PhaseType::Single);
+  auto node1w = SP::SimNode::make("node1_weak", PhaseType::Single);
 
   // ---------------- Components ----------------
   auto infeedSource =
@@ -1275,8 +1358,8 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   const double kZ = std::max(1e-9, simParams.infeedImpedanceStepFactor);
   const double Rstrong = psParams.infeedResistance;
   const double Lstrong = psParams.infeedInductance;
-  const double Rweak   = psParams.infeedResistance * kZ;
-  const double Lweak   = psParams.infeedInductance * kZ;
+  const double Rweak = psParams.infeedResistance * kZ;
+  const double Lweak = psParams.infeedInductance * kZ;
 
   // In PF we approximate "switches" as purely resistive PiLines.
   // Start in STRONG configuration: strong-switch closed, weak-switch open.
@@ -1364,26 +1447,24 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   converter2->connect({node3});
 
   // ---------------- Topology ----------------
-  auto systemNodeList =
-      SystemNodeList{node1, node1s, node1w, node2, node3, node4, node5, node6, node7};
+  auto systemNodeList = SystemNodeList{node1, node1s, node1w, node2, node3,
+                                       node4, node5,  node6,  node7};
 
-  auto componentList = SystemComponentList{
-      infeedSource,
-      infeedSwStrongPF, infeedZStrongPF,
-      infeedSwWeakPF,   infeedZWeakPF,
-      converter1, line1,
-      converter2, line2,
-      circuitBreaker,
-      loadBusFaultPF,
-      load1, load1Switch,
-      load2, load2Switch
-  };
+  auto componentList = SystemComponentList{infeedSource,    infeedSwStrongPF,
+                                           infeedZStrongPF, infeedSwWeakPF,
+                                           infeedZWeakPF,   converter1,
+                                           line1,           converter2,
+                                           line2,           circuitBreaker,
+                                           loadBusFaultPF,  load1,
+                                           load1Switch,     load2,
+                                           load2Switch};
 
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
   // logging (optional)
-  logger->logAttribute(VariableNames::vInfeed, node1->attribute(AttributeNames::v));
+  logger->logAttribute(VariableNames::vInfeed,
+                       node1->attribute(AttributeNames::v));
   logger->logAttribute("vConverter1", node2->attribute(AttributeNames::v));
   logger->logAttribute("vLoadBus", node5->attribute(AttributeNames::v));
 
@@ -1413,8 +1494,9 @@ int main() {
 
   // Choose one:
   // auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
-  // auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
-  auto psEvent = HVDCWise::PowerSystemEventType::InfeedSCRStep;
+  auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
+  // auto psEvent = HVDCWise::PowerSystemEventType::InfeedSCRStep;
+  // auto psEvent = HVDCWise::PowerSystemEventType::InfeedVoltageAngleStep;
 
   auto systemTopologyPF = HVDCWise::calculatePF(simParams, psParams);
 
