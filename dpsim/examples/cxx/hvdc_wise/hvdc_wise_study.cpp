@@ -89,6 +89,9 @@ struct SimulationParameters {
   // Single angle step (degrees) applied at eventTime to NetworkInjection voltage phasor.
   // Positive => advance angle.
   double infeedVoltageAngleStepDeg = 10.0;
+
+  // ---------------- Optional converter3 (same PCC as converter1) ----------------
+  bool enableConverter3 = false; // if true: add Converter3 at node2 with same P/Q as Converter1
 };
 
 enum class PowerSystemEventType {
@@ -296,6 +299,10 @@ EMTConverterHandle createEMTConverter(const std::shared_ptr<DataLogger> &logger,
     converterP_final = psParams.converter2P;
     converterQ_final = psParams.converter2Q;
     break;
+  case 3: // same as converter1 by default
+    converterP_final = psParams.converter1P;
+    converterQ_final = psParams.converter1Q;
+    break;
   default:
     throw std::invalid_argument("Unsupported converter number: " +
                                 std::to_string(converterNumber));
@@ -368,6 +375,10 @@ DPConverterHandle createDPConverter(const std::shared_ptr<DataLogger> &logger,
     converterP_final = psParams.converter2P;
     converterQ_final = psParams.converter2Q;
     break;
+  case 3: // same as converter1 by default
+    converterP_final = psParams.converter1P;
+    converterQ_final = psParams.converter1Q;
+    break;
   default:
     throw std::invalid_argument("Unsupported converter number: " +
                                 std::to_string(converterNumber));
@@ -439,6 +450,10 @@ SPConverterHandle createSPConverter(const std::shared_ptr<DataLogger> &logger,
   case 2:
     converterP_final = psParams.converter2P;
     converterQ_final = psParams.converter2Q;
+    break;
+  case 3: // same as converter1 by default
+    converterP_final = psParams.converter1P;
+    converterQ_final = psParams.converter1Q;
     break;
   default:
     throw std::invalid_argument("Unsupported converter number: " +
@@ -655,6 +670,13 @@ void simulateEMT(const SimulationParameters &simParams,
   auto conv2 = createEMTConverter(logger, psParams, systemTopology, node3, 2,
                                   doStartupRamp);
 
+  // Optional converter3 at same PCC as converter1 (node2)
+  EMTConverterHandle conv3{nullptr, 0.0, 0.0, 0.0, 0.0};
+  const bool hasConv3 = simParams.enableConverter3;
+  if (hasConv3) {
+    conv3 = createEMTConverter(logger, psParams, systemTopology, node2, 3, doStartupRamp);
+  }
+
   // ---------------- Simulation ----------------
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::EMT);
   auto sim =
@@ -752,12 +774,20 @@ void simulateEMT(const SimulationParameters &simParams,
                                 alpha * conv1.pFinal, alpha * conv1.qFinal);
       conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
                                 alpha * conv2.pFinal, alpha * conv2.qFinal);
+      if (hasConv3) {
+        conv3.conv->setParameters(conv3.sysOmega, conv3.sysVoltNom,
+                                  alpha * conv3.pFinal, alpha * conv3.qFinal);
+      }
 
       if (!printedDone && t >= (rampEndT - 0.5 * simParams.timeStep)) {
         conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
                                   conv1.pFinal, conv1.qFinal);
         conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
                                   conv2.pFinal, conv2.qFinal);
+        if (hasConv3) {
+          conv3.conv->setParameters(conv3.sysOmega, conv3.sysVoltNom,
+                                    conv3.pFinal, conv3.qFinal);
+        }
         rampDone = true;
         printedDone = true;
         std::cout << "[HOOK][EMT] t=" << t
@@ -926,6 +956,13 @@ void simulateDP(const SimulationParameters &simParams,
   auto conv2 = createDPConverter(logger, psParams, systemTopology, node3, 2,
                                  doStartupRamp);
 
+  // Optional converter3 at same PCC as converter1 (node2)
+  DPConverterHandle conv3{nullptr, 0.0, 0.0, 0.0, 0.0};
+  const bool hasConv3 = simParams.enableConverter3;
+  if (hasConv3) {
+    conv3 = createDPConverter(logger, psParams, systemTopology, node2, 3, doStartupRamp);
+  }
+
   // ---------------- Simulation ----------------
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::DP);
   auto sim =
@@ -1021,12 +1058,20 @@ void simulateDP(const SimulationParameters &simParams,
                                 alpha * conv1.pFinal, alpha * conv1.qFinal);
       conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
                                 alpha * conv2.pFinal, alpha * conv2.qFinal);
+      if (hasConv3) {
+        conv3.conv->setParameters(conv3.sysOmega, conv3.sysVoltNom,
+                                  alpha * conv3.pFinal, alpha * conv3.qFinal);
+      }
 
       if (!printedDone && t >= (rampEndT - 0.5 * simParams.timeStep)) {
         conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
                                   conv1.pFinal, conv1.qFinal);
         conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
                                   conv2.pFinal, conv2.qFinal);
+        if (hasConv3) {
+          conv3.conv->setParameters(conv3.sysOmega, conv3.sysVoltNom,
+                                    conv3.pFinal, conv3.qFinal);
+        }
         rampDone = true;
         printedDone = true;
         std::cout << "[HOOK][DP] t=" << t << " finished startup hold+ramp\n";
@@ -1049,11 +1094,8 @@ void simulateDP(const SimulationParameters &simParams,
 
       const Complex Vref = std::polar(psParams.voltageLineToLine, deltaRad);
 
-      // DP/SP NetworkInjection has a 6-arg overload already used for frequency ramp/step.
-      // Here we use it with rocof=0, and set the *phase* via the 2nd argument.
-      // (Voltage magnitude is kept the same.)
       infeedSource->setParameters(Vref,
-                                  0.0, // phase step [rad]
+                                  0.0, // 
                                   0.0, // rocof = 0
                                   t,   // start time (irrelevant when rocof=0)
                                   simParams.timeStep, false);
@@ -1191,6 +1233,13 @@ void simulateSP(const SimulationParameters &simParams,
   auto conv2 = createSPConverter(logger, psParams, systemTopology, node3, 2,
                                  doStartupRamp);
 
+  // Optional converter3 at same PCC as converter1 (node2)
+  SPConverterHandle conv3{nullptr, 0.0, 0.0, 0.0, 0.0};
+  const bool hasConv3 = simParams.enableConverter3;
+  if (hasConv3) {
+    conv3 = createSPConverter(logger, psParams, systemTopology, node2, 3, doStartupRamp);
+  }
+
   // ---------------- Simulation ----------------
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::SP);
   auto sim =
@@ -1286,12 +1335,20 @@ void simulateSP(const SimulationParameters &simParams,
                                 alpha * conv1.pFinal, alpha * conv1.qFinal);
       conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
                                 alpha * conv2.pFinal, alpha * conv2.qFinal);
+      if (hasConv3) {
+        conv3.conv->setParameters(conv3.sysOmega, conv3.sysVoltNom,
+                                  alpha * conv3.pFinal, alpha * conv3.qFinal);
+      }
 
       if (!printedDone && t >= (rampEndT - 0.5 * simParams.timeStep)) {
         conv1.conv->setParameters(conv1.sysOmega, conv1.sysVoltNom,
                                   conv1.pFinal, conv1.qFinal);
         conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom,
                                   conv2.pFinal, conv2.qFinal);
+        if (hasConv3) {
+          conv3.conv->setParameters(conv3.sysOmega, conv3.sysVoltNom,
+                                    conv3.pFinal, conv3.qFinal);
+        }
         rampDone = true;
         printedDone = true;
         std::cout << "[HOOK][SP] t=" << t << " finished startup hold+ramp\n";
@@ -1314,7 +1371,7 @@ void simulateSP(const SimulationParameters &simParams,
 
       const Complex Vref = std::polar(psParams.voltageLineToLine, deltaRad);
       infeedSource->setParameters(Vref,
-                                  0.0, // phase step [rad]
+                                  0.0, // 
                                   0.0, // rocof = 0
                                   t,   // start time (irrelevant when rocof=0)
                                   simParams.timeStep, false);
@@ -1440,6 +1497,16 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   converter1->modifyPowerFlowBusType(PowerflowBusType::PQ);
   converter1->connect({node2});
 
+  // Optional converter3 in PF (same as converter1, same PCC node2)
+  std::shared_ptr<SP::Ph1::Load> converter3 = nullptr;
+  if (simParams.enableConverter3) {
+    converter3 = SP::Ph1::Load::make("Converter3", Logger::Level::debug);
+    converter3->setParameters(-psParams.converter1P, -psParams.converter1Q,
+                              psParams.voltageLineToLine);
+    converter3->modifyPowerFlowBusType(PowerflowBusType::PQ);
+    converter3->connect({node2});
+  }
+
   auto converter2 = SP::Ph1::Load::make("Converter2", Logger::Level::debug);
   converter2->setParameters(-psParams.converter2P, -psParams.converter2Q,
                             psParams.voltageLineToLine);
@@ -1450,14 +1517,29 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   auto systemNodeList = SystemNodeList{node1, node1s, node1w, node2, node3,
                                        node4, node5,  node6,  node7};
 
-  auto componentList = SystemComponentList{infeedSource,    infeedSwStrongPF,
-                                           infeedZStrongPF, infeedSwWeakPF,
-                                           infeedZWeakPF,   converter1,
-                                           line1,           converter2,
-                                           line2,           circuitBreaker,
-                                           loadBusFaultPF,  load1,
-                                           load1Switch,     load2,
-                                           load2Switch};
+  // Build component list (so Converter3 can be optional without inserting nullptrs)
+  SystemComponentList componentList;
+  componentList.push_back(infeedSource);
+  componentList.push_back(infeedSwStrongPF);
+  componentList.push_back(infeedZStrongPF);
+  componentList.push_back(infeedSwWeakPF);
+  componentList.push_back(infeedZWeakPF);
+
+  componentList.push_back(converter1);
+  if (converter3) {
+    componentList.push_back(converter3);
+  }
+  componentList.push_back(line1);
+
+  componentList.push_back(converter2);
+  componentList.push_back(line2);
+
+  componentList.push_back(circuitBreaker);
+  componentList.push_back(loadBusFaultPF);
+  componentList.push_back(load1);
+  componentList.push_back(load1Switch);
+  componentList.push_back(load2);
+  componentList.push_back(load2Switch);
 
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
@@ -1466,6 +1548,9 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   logger->logAttribute(VariableNames::vInfeed,
                        node1->attribute(AttributeNames::v));
   logger->logAttribute("vConverter1", node2->attribute(AttributeNames::v));
+  if (simParams.enableConverter3) {
+    logger->logAttribute("vConverter3", node2->attribute(AttributeNames::v));
+  }
   logger->logAttribute("vLoadBus", node5->attribute(AttributeNames::v));
 
   // ---------------- Simulation ----------------
@@ -1494,7 +1579,7 @@ int main() {
 
   // Choose one:
   // auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
-  auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
+  auto psEvent = HVDCWise::PowerSystemEventType::Converter1PrefStep;
   // auto psEvent = HVDCWise::PowerSystemEventType::InfeedSCRStep;
   // auto psEvent = HVDCWise::PowerSystemEventType::InfeedVoltageAngleStep;
 
