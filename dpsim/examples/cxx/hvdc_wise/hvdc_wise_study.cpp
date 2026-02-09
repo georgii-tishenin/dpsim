@@ -2,6 +2,8 @@
 #include <DPsim.h>
 #include <iostream>
 #include <cmath>
+#include <stdexcept>
+#include <algorithm>
 
 using namespace DPsim;
 using namespace CPS;
@@ -10,8 +12,10 @@ namespace HVDCWise {
 
 namespace VariableNames {
 constexpr const char *vInfeed = "vInfeed";
-constexpr const char *iInfeed = "iInfeed";
+constexpr const char *iInfeedStrong = "iInfeedStrong";
+constexpr const char *iInfeedWeak   = "iInfeedWeak";
 constexpr const char *fInfeed = "fInfeed";
+
 constexpr const char *vLoad   = "vLoad";
 constexpr const char *iLoad1  = "iLoad1";
 constexpr const char *iLoad2  = "iLoad2";
@@ -69,14 +73,21 @@ struct SimulationParameters {
 
   // ---------------- Load-bus fault parameters ----------------
   // Fault is modeled as a shunt branch at load bus (node5) to GND.
-  double faultDuration   = 0.02;     // seconds, clear at eventTime + faultDuration
-  double faultResistance = 1.0;     // Ohm when fault is "ON" (closed branch)
+  double faultDuration   = 0.02;  // seconds, clear at eventTime + faultDuration
+  double faultResistance = 1.0;   // Ohm when fault is "ON" (closed branch)
+
+  // ---------------- Infeed SCR-step parameters ----------------
+  // Two parallel infeed impedance branches (strong/weak),
+  // each gated by a series switch. At eventTime we open strong and close weak.
+  // If factor > 1 => weaker grid (lower SCR). If factor < 1 => stronger grid (higher SCR).
+  double infeedImpedanceStepFactor = 3.0;
 };
 
 enum class PowerSystemEventType {
   None,
   LoadStep,
-  LoadBusFault,          // NEW
+  LoadBusFault,
+  InfeedSCRStep,         
   InfeedFrequencyRamp,
   InfeedFrequencyStep,
   Converter1PrefStep
@@ -200,8 +211,7 @@ calculatePowerSystemParameters(const PowerSystemInputParameters &inputParams) {
       voltageLineToGround, infeedResistance, infeedInductance, line1Resistance,
       line1Inductance, line1Capacitance, line2Resistance, line2Inductance,
       line2Capacitance, loadResistance1, loadResistance2, converter1P,
-      converter1Q, converter2P,
-      converter2Q);
+      converter1Q, converter2P, converter2Q);
 }
 
 Simulation setupSimulation(const std::string &simName,
@@ -487,7 +497,7 @@ void simulateEMT(const SimulationParameters &simParams,
   Logger::setLogDir("logs/" + simName);
   auto logger = DataLogger::make(simName);
 
-  // nodes
+  // ---------------- Nodes ----------------
   auto node1 = EMT::SimNode::make("node1", PhaseType::ABC);
   auto node2 = EMT::SimNode::make("node2", PhaseType::ABC);
   auto node3 = EMT::SimNode::make("node3", PhaseType::ABC);
@@ -496,19 +506,57 @@ void simulateEMT(const SimulationParameters &simParams,
   auto node6 = EMT::SimNode::make("node6", PhaseType::ABC);
   auto node7 = EMT::SimNode::make("node7", PhaseType::ABC);
 
-  // components
+  // extra nodes for robust SCR step (series switches need intermediate nodes)
+  auto node1s = EMT::SimNode::make("node1_strong", PhaseType::ABC);
+  auto node1w = EMT::SimNode::make("node1_weak",   PhaseType::ABC);
+
+  // ---------------- Components ----------------
   auto infeedSource = EMT::Ph3::NetworkInjection::make("infeed_source");
   infeedSource->connect({node1});
-  auto infeedImpedance = EMT::Ph3::PiLine::make("infeed_impedance");
-  infeedImpedance->setParameters(
-      CPS::Math::singlePhaseParameterToThreePhase(psParams.infeedResistance),
-      CPS::Math::singlePhaseParameterToThreePhase(psParams.infeedInductance),
-      CPS::Math::singlePhaseParameterToThreePhase(0));
-  infeedImpedance->connect({node1, node4});
+
+  // Robust SCR step: strong/weak infeed branches with series switches
+  const double kZ = std::max(1e-9, simParams.infeedImpedanceStepFactor);
+  const double Rstrong = psParams.infeedResistance;
+  const double Lstrong = psParams.infeedInductance;
+  const double Rweak   = psParams.infeedResistance * kZ;
+  const double Lweak   = psParams.infeedInductance * kZ;
+
+  auto infeedSwStrong = EMT::Ph3::Switch::make("infeed_sw_strong");
+  infeedSwStrong->setParameters(
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance),
+      true // initially CLOSED (strong grid)
+  );
+  infeedSwStrong->connect({node1, node1s});
+
+  auto infeedZStrong = EMT::Ph3::PiLine::make("infeed_impedance_strong");
+  infeedZStrong->setParameters(
+      CPS::Math::singlePhaseParameterToThreePhase(Rstrong),
+      CPS::Math::singlePhaseParameterToThreePhase(Lstrong),
+      CPS::Math::singlePhaseParameterToThreePhase(0.0));
+  infeedZStrong->connect({node1s, node4});
+
+  auto infeedSwWeak = EMT::Ph3::Switch::make("infeed_sw_weak");
+  infeedSwWeak->setParameters(
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance),
+      false // initially OPEN (weak grid disconnected)
+  );
+  infeedSwWeak->connect({node1, node1w});
+
+  auto infeedZWeak = EMT::Ph3::PiLine::make("infeed_impedance_weak");
+  infeedZWeak->setParameters(
+      CPS::Math::singlePhaseParameterToThreePhase(Rweak),
+      CPS::Math::singlePhaseParameterToThreePhase(Lweak),
+      CPS::Math::singlePhaseParameterToThreePhase(0.0));
+  infeedZWeak->connect({node1w, node4});
+
   logger->logAttribute(VariableNames::vInfeed,
                        node4->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iInfeed,
-                       infeedImpedance->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::iInfeedStrong,
+                       infeedZStrong->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::iInfeedWeak,
+                       infeedZWeak->attribute(AttributeNames::i));
   logger->logAttribute(VariableNames::fInfeed,
                        infeedSource->attribute(AttributeNames::f));
 
@@ -531,11 +579,10 @@ void simulateEMT(const SimulationParameters &simParams,
                        line2->attribute(AttributeNames::i));
 
   auto circuitBreaker = EMT::Ph3::Switch::make("circuit_breaker");
-  circuitBreaker->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
-                                    SwitchConstants::openResistance),
-                                CPS::Math::singlePhaseParameterToThreePhase(
-                                    SwitchConstants::closedResistance),
-                                true);
+  circuitBreaker->setParameters(
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance),
+      true);
   circuitBreaker->connect({node4, node5});
   logger->logAttribute(VariableNames::vLoad,
                        node5->attribute(AttributeNames::v));
@@ -559,11 +606,10 @@ void simulateEMT(const SimulationParameters &simParams,
                        load1->attribute(AttributeNames::i));
 
   auto load1Switch = EMT::Ph3::Switch::make("load1_switch");
-  load1Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
-                                 SwitchConstants::openResistance),
-                             CPS::Math::singlePhaseParameterToThreePhase(
-                                 SwitchConstants::closedResistance),
-                             true);
+  load1Switch->setParameters(
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance),
+      true);
   load1Switch->connect({node5, node6});
 
   auto load2 = EMT::Ph3::Resistor::make("load2");
@@ -574,21 +620,27 @@ void simulateEMT(const SimulationParameters &simParams,
                        load2->attribute(AttributeNames::i));
 
   auto load2Switch = EMT::Ph3::Switch::make("load2_switch");
-  load2Switch->setParameters(CPS::Math::singlePhaseParameterToThreePhase(
-                                 SwitchConstants::openResistance),
-                             CPS::Math::singlePhaseParameterToThreePhase(
-                                 SwitchConstants::closedResistance),
-                             false);
+  load2Switch->setParameters(
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::openResistance),
+      CPS::Math::singlePhaseParameterToThreePhase(SwitchConstants::closedResistance),
+      false);
   load2Switch->connect({node5, node7});
 
-  // topology
+  // ---------------- Topology ----------------
   auto systemNodeList =
-      SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
+      SystemNodeList{node1, node1s, node1w, node2, node3, node4, node5, node6, node7};
+
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1, line2, circuitBreaker,
+      infeedSource,
+      infeedSwStrong, infeedZStrong,
+      infeedSwWeak,   infeedZWeak,
+      line1, line2,
+      circuitBreaker,
       loadBusFault,
-      load1, load1Switch, load2, load2Switch
+      load1, load1Switch,
+      load2, load2Switch
   };
+
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
@@ -596,12 +648,11 @@ void simulateEMT(const SimulationParameters &simParams,
   auto conv1 = createEMTConverter(logger, psParams, systemTopology, node2, 1, doStartupRamp);
   auto conv2 = createEMTConverter(logger, psParams, systemTopology, node3, 2, doStartupRamp);
 
-  // simulation
+  // ---------------- Simulation ----------------
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::EMT);
-  auto sim =
-      setupSimulation(simName, simParams, systemTopology, logger, Domain::EMT);
+  auto sim = setupSimulation(simName, simParams, systemTopology, logger, Domain::EMT);
 
-  // events
+  // ---------------- Events ----------------
   switch (psEvent) {
   case PowerSystemEventType::LoadStep: {
     auto disconnectLoad1 =
@@ -619,6 +670,15 @@ void simulateEMT(const SimulationParameters &simParams,
     auto faultOff = DPsim::SwitchEvent3Ph::make(tOff, loadBusFault, false);
     sim.addEvent(faultOn);
     sim.addEvent(faultOff);
+    break;
+  }
+  case PowerSystemEventType::InfeedSCRStep: {
+    // Open strong branch and close weak branch at eventTime
+    const double t = simParams.eventTime;
+    auto openStrong = DPsim::SwitchEvent3Ph::make(t, infeedSwStrong, false);
+    auto closeWeak  = DPsim::SwitchEvent3Ph::make(t, infeedSwWeak,   true);
+    sim.addEvent(openStrong);
+    sim.addEvent(closeWeak);
     break;
   }
   case PowerSystemEventType::InfeedFrequencyRamp: {
@@ -683,8 +743,8 @@ void simulateEMT(const SimulationParameters &simParams,
         rampDone = true;
         printedDone = true;
         std::cout << "[HOOK][EMT] t=" << t
-                  << " finished startup hold+ramp: "
-                  << "hold=" << holdT << "s, ramp=" << rampDur << "s\n";
+                  << " finished startup hold+ramp: hold=" << holdT
+                  << "s, ramp=" << rampDur << "s\n";
       }
     }
 
@@ -709,7 +769,7 @@ void simulateDP(const SimulationParameters &simParams,
   Logger::setLogDir("logs/" + simName);
   auto logger = DataLogger::make(simName);
 
-  // nodes
+  // ---------------- Nodes ----------------
   auto node1 = DP::SimNode::make("node1", PhaseType::Single);
   auto node2 = DP::SimNode::make("node2", PhaseType::Single);
   auto node3 = DP::SimNode::make("node3", PhaseType::Single);
@@ -718,17 +778,45 @@ void simulateDP(const SimulationParameters &simParams,
   auto node6 = DP::SimNode::make("node6", PhaseType::Single);
   auto node7 = DP::SimNode::make("node7", PhaseType::Single);
 
-  // components
+  auto node1s = DP::SimNode::make("node1_strong", PhaseType::Single);
+  auto node1w = DP::SimNode::make("node1_weak",   PhaseType::Single);
+
+  // ---------------- Components ----------------
   auto infeedSource = DP::Ph1::NetworkInjection::make("infeed_source");
   infeedSource->connect({node1});
-  auto infeedImpedance = DP::Ph1::PiLine::make("infeed_impedance");
-  infeedImpedance->setParameters(psParams.infeedResistance,
-                                 psParams.infeedInductance, 0);
-  infeedImpedance->connect({node1, node4});
+
+  const double kZ = std::max(1e-9, simParams.infeedImpedanceStepFactor);
+  const double Rstrong = psParams.infeedResistance;
+  const double Lstrong = psParams.infeedInductance;
+  const double Rweak   = psParams.infeedResistance * kZ;
+  const double Lweak   = psParams.infeedInductance * kZ;
+
+  auto infeedSwStrong = DP::Ph1::Switch::make("infeed_sw_strong");
+  infeedSwStrong->setParameters(SwitchConstants::openResistance,
+                                SwitchConstants::closedResistance,
+                                true); // initially CLOSED
+  infeedSwStrong->connect({node1, node1s});
+
+  auto infeedZStrong = DP::Ph1::PiLine::make("infeed_impedance_strong");
+  infeedZStrong->setParameters(Rstrong, Lstrong, 0.0);
+  infeedZStrong->connect({node1s, node4});
+
+  auto infeedSwWeak = DP::Ph1::Switch::make("infeed_sw_weak");
+  infeedSwWeak->setParameters(SwitchConstants::openResistance,
+                              SwitchConstants::closedResistance,
+                              false); // initially OPEN
+  infeedSwWeak->connect({node1, node1w});
+
+  auto infeedZWeak = DP::Ph1::PiLine::make("infeed_impedance_weak");
+  infeedZWeak->setParameters(Rweak, Lweak, 0.0);
+  infeedZWeak->connect({node1w, node4});
+
   logger->logAttribute(VariableNames::vInfeed,
                        node4->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iInfeed,
-                       infeedImpedance->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::iInfeedStrong,
+                       infeedZStrong->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::iInfeedWeak,
+                       infeedZWeak->attribute(AttributeNames::i));
   logger->logAttribute(VariableNames::fInfeed,
                        infeedSource->attribute(AttributeNames::f));
 
@@ -762,7 +850,7 @@ void simulateDP(const SimulationParameters &simParams,
   logger->logAttribute(VariableNames::iFault,
                        loadBusFault->attribute(AttributeNames::i));
 
-  auto load1 = DP::Ph1::Resistor::make("load");
+  auto load1 = DP::Ph1::Resistor::make("load1");
   load1->setParameters(psParams.loadResistance1);
   load1->connect({node6, DP::SimNode::GND});
   logger->logAttribute(VariableNames::iLoad1,
@@ -784,14 +872,21 @@ void simulateDP(const SimulationParameters &simParams,
                              SwitchConstants::closedResistance, false);
   load2Switch->connect({node5, node7});
 
-  // topology
+  // ---------------- Topology ----------------
   auto systemNodeList =
-      SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
+      SystemNodeList{node1, node1s, node1w, node2, node3, node4, node5, node6, node7};
+
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1, line2, circuitBreaker,
-      loadBusFault, 
-      load1, load1Switch, load2, load2Switch
+      infeedSource,
+      infeedSwStrong, infeedZStrong,
+      infeedSwWeak,   infeedZWeak,
+      line1, line2,
+      circuitBreaker,
+      loadBusFault,
+      load1, load1Switch,
+      load2, load2Switch
   };
+
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
@@ -799,12 +894,11 @@ void simulateDP(const SimulationParameters &simParams,
   auto conv1 = createDPConverter(logger, psParams, systemTopology, node2, 1, doStartupRamp);
   auto conv2 = createDPConverter(logger, psParams, systemTopology, node3, 2, doStartupRamp);
 
-  // simulation
+  // ---------------- Simulation ----------------
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::DP);
-  auto sim =
-      setupSimulation(simName, simParams, systemTopology, logger, Domain::DP);
+  auto sim = setupSimulation(simName, simParams, systemTopology, logger, Domain::DP);
 
-  // events
+  // ---------------- Events ----------------
   switch (psEvent) {
   case PowerSystemEventType::LoadStep: {
     auto disconnectLoad1 =
@@ -824,6 +918,14 @@ void simulateDP(const SimulationParameters &simParams,
     sim.addEvent(faultOff);
     break;
   }
+  case PowerSystemEventType::InfeedSCRStep: {
+    const double t = simParams.eventTime;
+    auto openStrong = DPsim::SwitchEvent::make(t, infeedSwStrong, false);
+    auto closeWeak  = DPsim::SwitchEvent::make(t, infeedSwWeak,   true);
+    sim.addEvent(openStrong);
+    sim.addEvent(closeWeak);
+    break;
+  }
   case PowerSystemEventType::InfeedFrequencyRamp: {
     infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
                                 simParams.rocof, simParams.eventTime,
@@ -832,8 +934,7 @@ void simulateDP(const SimulationParameters &simParams,
   }
   case PowerSystemEventType::InfeedFrequencyStep: {
     infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
-                                simParams.frequencyStepDelta /
-                                    simParams.timeStep,
+                                simParams.frequencyStepDelta / simParams.timeStep,
                                 simParams.eventTime, simParams.timeStep, false);
     break;
   }
@@ -884,8 +985,7 @@ void simulateDP(const SimulationParameters &simParams,
         conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom, conv2.pFinal, conv2.qFinal);
         rampDone = true;
         printedDone = true;
-        std::cout << "[HOOK][DP] t=" << t
-                  << " finished startup hold+ramp\n";
+        std::cout << "[HOOK][DP] t=" << t << " finished startup hold+ramp\n";
       }
     }
 
@@ -910,7 +1010,7 @@ void simulateSP(const SimulationParameters &simParams,
   Logger::setLogDir("logs/" + simName);
   auto logger = DataLogger::make(simName);
 
-  // nodes
+  // ---------------- Nodes ----------------
   auto node1 = SP::SimNode::make("node1", PhaseType::Single);
   auto node2 = SP::SimNode::make("node2", PhaseType::Single);
   auto node3 = SP::SimNode::make("node3", PhaseType::Single);
@@ -919,17 +1019,45 @@ void simulateSP(const SimulationParameters &simParams,
   auto node6 = SP::SimNode::make("node6", PhaseType::Single);
   auto node7 = SP::SimNode::make("node7", PhaseType::Single);
 
-  // components
+  auto node1s = SP::SimNode::make("node1_strong", PhaseType::Single);
+  auto node1w = SP::SimNode::make("node1_weak",   PhaseType::Single);
+
+  // ---------------- Components ----------------
   auto infeedSource = SP::Ph1::NetworkInjection::make("infeed_source");
   infeedSource->connect({node1});
-  auto infeedImpedance = SP::Ph1::PiLine::make("infeed_impedance");
-  infeedImpedance->setParameters(psParams.infeedResistance,
-                                 psParams.infeedInductance, 0);
-  infeedImpedance->connect({node1, node4});
+
+  const double kZ = std::max(1e-9, simParams.infeedImpedanceStepFactor);
+  const double Rstrong = psParams.infeedResistance;
+  const double Lstrong = psParams.infeedInductance;
+  const double Rweak   = psParams.infeedResistance * kZ;
+  const double Lweak   = psParams.infeedInductance * kZ;
+
+  auto infeedSwStrong = SP::Ph1::Switch::make("infeed_sw_strong");
+  infeedSwStrong->setParameters(SwitchConstants::openResistance,
+                                SwitchConstants::closedResistance,
+                                true);
+  infeedSwStrong->connect({node1, node1s});
+
+  auto infeedZStrong = SP::Ph1::PiLine::make("infeed_impedance_strong");
+  infeedZStrong->setParameters(Rstrong, Lstrong, 0.0);
+  infeedZStrong->connect({node1s, node4});
+
+  auto infeedSwWeak = SP::Ph1::Switch::make("infeed_sw_weak");
+  infeedSwWeak->setParameters(SwitchConstants::openResistance,
+                              SwitchConstants::closedResistance,
+                              false);
+  infeedSwWeak->connect({node1, node1w});
+
+  auto infeedZWeak = SP::Ph1::PiLine::make("infeed_impedance_weak");
+  infeedZWeak->setParameters(Rweak, Lweak, 0.0);
+  infeedZWeak->connect({node1w, node4});
+
   logger->logAttribute(VariableNames::vInfeed,
                        node4->attribute(AttributeNames::v));
-  logger->logAttribute(VariableNames::iInfeed,
-                       infeedImpedance->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::iInfeedStrong,
+                       infeedZStrong->attribute(AttributeNames::i));
+  logger->logAttribute(VariableNames::iInfeedWeak,
+                       infeedZWeak->attribute(AttributeNames::i));
   logger->logAttribute(VariableNames::fInfeed,
                        infeedSource->attribute(AttributeNames::f));
 
@@ -963,7 +1091,7 @@ void simulateSP(const SimulationParameters &simParams,
   logger->logAttribute(VariableNames::iFault,
                        loadBusFault->attribute(AttributeNames::i));
 
-  auto load1 = SP::Ph1::Resistor::make("load");
+  auto load1 = SP::Ph1::Resistor::make("load1");
   load1->setParameters(psParams.loadResistance1);
   load1->connect({node6, SP::SimNode::GND});
   logger->logAttribute(VariableNames::iLoad1,
@@ -985,14 +1113,21 @@ void simulateSP(const SimulationParameters &simParams,
                              SwitchConstants::closedResistance, false);
   load2Switch->connect({node5, node7});
 
-  // topology
+  // ---------------- Topology ----------------
   auto systemNodeList =
-      SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
+      SystemNodeList{node1, node1s, node1w, node2, node3, node4, node5, node6, node7};
+
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance, line1, line2, circuitBreaker,
+      infeedSource,
+      infeedSwStrong, infeedZStrong,
+      infeedSwWeak,   infeedZWeak,
+      line1, line2,
+      circuitBreaker,
       loadBusFault,
-      load1, load1Switch, load2, load2Switch
+      load1, load1Switch,
+      load2, load2Switch
   };
+
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
@@ -1000,12 +1135,11 @@ void simulateSP(const SimulationParameters &simParams,
   auto conv1 = createSPConverter(logger, psParams, systemTopology, node2, 1, doStartupRamp);
   auto conv2 = createSPConverter(logger, psParams, systemTopology, node3, 2, doStartupRamp);
 
-  // simulation
+  // ---------------- Simulation ----------------
   systemTopology.initWithPowerflow(systemTopologyPF, Domain::SP);
-  auto sim =
-      setupSimulation(simName, simParams, systemTopology, logger, Domain::SP);
+  auto sim = setupSimulation(simName, simParams, systemTopology, logger, Domain::SP);
 
-  // events
+  // ---------------- Events ----------------
   switch (psEvent) {
   case PowerSystemEventType::LoadStep: {
     auto disconnectLoad1 =
@@ -1025,6 +1159,14 @@ void simulateSP(const SimulationParameters &simParams,
     sim.addEvent(faultOff);
     break;
   }
+  case PowerSystemEventType::InfeedSCRStep: {
+    const double t = simParams.eventTime;
+    auto openStrong = DPsim::SwitchEvent::make(t, infeedSwStrong, false);
+    auto closeWeak  = DPsim::SwitchEvent::make(t, infeedSwWeak,   true);
+    sim.addEvent(openStrong);
+    sim.addEvent(closeWeak);
+    break;
+  }
   case PowerSystemEventType::InfeedFrequencyRamp: {
     infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
                                 simParams.rocof, simParams.eventTime,
@@ -1033,8 +1175,7 @@ void simulateSP(const SimulationParameters &simParams,
   }
   case PowerSystemEventType::InfeedFrequencyStep: {
     infeedSource->setParameters(Complex(psParams.voltageLineToLine, 0), 0.0,
-                                simParams.frequencyStepDelta /
-                                    simParams.timeStep,
+                                simParams.frequencyStepDelta / simParams.timeStep,
                                 simParams.eventTime, simParams.timeStep, false);
     break;
   }
@@ -1085,8 +1226,7 @@ void simulateSP(const SimulationParameters &simParams,
         conv2.conv->setParameters(conv2.sysOmega, conv2.sysVoltNom, conv2.pFinal, conv2.qFinal);
         rampDone = true;
         printedDone = true;
-        std::cout << "[HOOK][SP] t=" << t
-                  << " finished startup hold+ramp\n";
+        std::cout << "[HOOK][SP] t=" << t << " finished startup hold+ramp\n";
       }
     }
 
@@ -1103,7 +1243,7 @@ void simulateSP(const SimulationParameters &simParams,
   });
 }
 
-// --------- PF calculation---------
+// --------- PF calculation (updated to include SCR-step branches + fault branch) ---------
 
 SystemTopology calculatePF(const SimulationParameters &simParams,
                            const PowerSystemParameters &psParams) {
@@ -1111,7 +1251,7 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   Logger::setLogDir("logs/" + simName);
   auto logger = DataLogger::make(simName);
 
-  // nodes
+  // ---------------- Nodes (SP PF) ----------------
   auto node1 = SP::SimNode::make("node1", PhaseType::Single);
   auto node2 = SP::SimNode::make("node2", PhaseType::Single);
   auto node3 = SP::SimNode::make("node3", PhaseType::Single);
@@ -1120,7 +1260,11 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   auto node6 = SP::SimNode::make("node6", PhaseType::Single);
   auto node7 = SP::SimNode::make("node7", PhaseType::Single);
 
-  // components
+  // extra nodes for SCR-step branches
+  auto node1s = SP::SimNode::make("node1_strong", PhaseType::Single);
+  auto node1w = SP::SimNode::make("node1_weak",   PhaseType::Single);
+
+  // ---------------- Components ----------------
   auto infeedSource =
       SP::Ph1::NetworkInjection::make("infeed_source", Logger::Level::debug);
   infeedSource->setParameters(psParams.voltageLineToLine);
@@ -1128,12 +1272,37 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   infeedSource->modifyPowerFlowBusType(PowerflowBusType::VD);
   infeedSource->connect({node1});
 
-  auto infeedImpedance =
-      SP::Ph1::PiLine::make("infeed_impedance", Logger::Level::debug);
-  infeedImpedance->setParameters(psParams.infeedResistance,
-                                 psParams.infeedInductance, 0);
-  infeedImpedance->setBaseVoltage(psParams.voltageLineToLine);
-  infeedImpedance->connect({node1, node4});
+  const double kZ = std::max(1e-9, simParams.infeedImpedanceStepFactor);
+  const double Rstrong = psParams.infeedResistance;
+  const double Lstrong = psParams.infeedInductance;
+  const double Rweak   = psParams.infeedResistance * kZ;
+  const double Lweak   = psParams.infeedInductance * kZ;
+
+  // In PF we approximate "switches" as purely resistive PiLines.
+  // Start in STRONG configuration: strong-switch closed, weak-switch open.
+  auto infeedSwStrongPF =
+      SP::Ph1::PiLine::make("infeed_sw_strong", Logger::Level::debug);
+  infeedSwStrongPF->setParameters(SwitchConstants::closedResistance, 0.0);
+  infeedSwStrongPF->setBaseVoltage(psParams.voltageLineToLine);
+  infeedSwStrongPF->connect({node1, node1s});
+
+  auto infeedZStrongPF =
+      SP::Ph1::PiLine::make("infeed_impedance_strong", Logger::Level::debug);
+  infeedZStrongPF->setParameters(Rstrong, Lstrong, 0.0);
+  infeedZStrongPF->setBaseVoltage(psParams.voltageLineToLine);
+  infeedZStrongPF->connect({node1s, node4});
+
+  auto infeedSwWeakPF =
+      SP::Ph1::PiLine::make("infeed_sw_weak", Logger::Level::debug);
+  infeedSwWeakPF->setParameters(SwitchConstants::openResistance, 0.0);
+  infeedSwWeakPF->setBaseVoltage(psParams.voltageLineToLine);
+  infeedSwWeakPF->connect({node1, node1w});
+
+  auto infeedZWeakPF =
+      SP::Ph1::PiLine::make("infeed_impedance_weak", Logger::Level::debug);
+  infeedZWeakPF->setParameters(Rweak, Lweak, 0.0);
+  infeedZWeakPF->setBaseVoltage(psParams.voltageLineToLine);
+  infeedZWeakPF->connect({node1w, node4});
 
   auto line1 = SP::Ph1::PiLine::make("line1", Logger::Level::debug);
   line1->setParameters(psParams.line1Resistance, psParams.line1Inductance,
@@ -1149,36 +1318,36 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
 
   auto circuitBreaker =
       SP::Ph1::PiLine::make("circuit_breaker", Logger::Level::debug);
-  circuitBreaker->setParameters(SwitchConstants::closedResistance, 0);
+  circuitBreaker->setParameters(SwitchConstants::closedResistance, 0.0);
   circuitBreaker->setBaseVoltage(psParams.voltageLineToLine);
   circuitBreaker->connect({node4, node5});
 
   // include fault branch in PF as "open" (very large shunt resistance)
   auto loadBusFaultPF =
       SP::Ph1::PiLine::make("load_bus_fault", Logger::Level::debug);
-  loadBusFaultPF->setParameters(SwitchConstants::openResistance, 0);
+  loadBusFaultPF->setParameters(SwitchConstants::openResistance, 0.0);
   loadBusFaultPF->setBaseVoltage(psParams.voltageLineToLine);
   loadBusFaultPF->connect({node5, SP::SimNode::GND});
 
-  auto load1 = SP::Ph1::PiLine::make("load", Logger::Level::debug);
-  load1->setParameters(psParams.loadResistance1, 0);
+  auto load1 = SP::Ph1::PiLine::make("load1", Logger::Level::debug);
+  load1->setParameters(psParams.loadResistance1, 0.0);
   load1->setBaseVoltage(psParams.voltageLineToLine);
   load1->connect({node6, SP::SimNode::GND});
 
   auto load1Switch =
       SP::Ph1::PiLine::make("load1_switch", Logger::Level::debug);
-  load1Switch->setParameters(SwitchConstants::closedResistance, 0);
+  load1Switch->setParameters(SwitchConstants::closedResistance, 0.0);
   load1Switch->setBaseVoltage(psParams.voltageLineToLine);
   load1Switch->connect({node5, node6});
 
   auto load2 = SP::Ph1::PiLine::make("load2", Logger::Level::debug);
-  load2->setParameters(psParams.loadResistance2, 0);
+  load2->setParameters(psParams.loadResistance2, 0.0);
   load2->setBaseVoltage(psParams.voltageLineToLine);
   load2->connect({node7, SP::SimNode::GND});
 
   auto load2Switch =
       SP::Ph1::PiLine::make("load2_switch", Logger::Level::debug);
-  load2Switch->setParameters(SwitchConstants::openResistance, 0);
+  load2Switch->setParameters(SwitchConstants::openResistance, 0.0);
   load2Switch->setBaseVoltage(psParams.voltageLineToLine);
   load2Switch->connect({node5, node7});
 
@@ -1194,26 +1363,31 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
   converter2->modifyPowerFlowBusType(PowerflowBusType::PQ);
   converter2->connect({node3});
 
-  // topology
+  // ---------------- Topology ----------------
   auto systemNodeList =
-      SystemNodeList{node1, node2, node3, node4, node5, node6, node7};
+      SystemNodeList{node1, node1s, node1w, node2, node3, node4, node5, node6, node7};
+
   auto componentList = SystemComponentList{
-      infeedSource, infeedImpedance,
-      converter1, line1, converter2, line2,
+      infeedSource,
+      infeedSwStrongPF, infeedZStrongPF,
+      infeedSwWeakPF,   infeedZWeakPF,
+      converter1, line1,
+      converter2, line2,
       circuitBreaker,
-      loadBusFaultPF, // NEW
-      load1, load1Switch, load2, load2Switch
+      loadBusFaultPF,
+      load1, load1Switch,
+      load2, load2Switch
   };
+
   auto systemTopology =
       SystemTopology(psParams.frequency, systemNodeList, componentList);
 
-  // logging
-  logger->logAttribute(VariableNames::vInfeed,
-                       node1->attribute(AttributeNames::v));
+  // logging (optional)
+  logger->logAttribute(VariableNames::vInfeed, node1->attribute(AttributeNames::v));
   logger->logAttribute("vConverter1", node2->attribute(AttributeNames::v));
-  logger->logAttribute("vLoadBus", node5->attribute(AttributeNames::v)); // (more direct than node4)
+  logger->logAttribute("vLoadBus", node5->attribute(AttributeNames::v));
 
-  // simulation
+  // ---------------- Simulation ----------------
   Simulation sim(simName, Logger::Level::debug);
   sim.setSystem(systemTopology);
   sim.setTimeStep(simParams.finalTime);
@@ -1233,13 +1407,17 @@ SystemTopology calculatePF(const SimulationParameters &simParams,
 int main() {
   HVDCWise::SimulationParameters simParams;
   HVDCWise::PowerSystemInputParameters psInputParams;
+
   HVDCWise::PowerSystemParameters psParams =
       HVDCWise::calculatePowerSystemParameters(psInputParams);
 
-  auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
+  // Choose one:
+  // auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
   // auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
+  auto psEvent = HVDCWise::PowerSystemEventType::InfeedSCRStep;
 
   auto systemTopologyPF = HVDCWise::calculatePF(simParams, psParams);
+
   HVDCWise::simulateEMT(simParams, psParams, systemTopologyPF, psEvent);
   HVDCWise::simulateDP(simParams, psParams, systemTopologyPF, psEvent);
   HVDCWise::simulateSP(simParams, psParams, systemTopologyPF, psEvent);
