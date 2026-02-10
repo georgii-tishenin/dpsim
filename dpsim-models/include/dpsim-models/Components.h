@@ -11,6 +11,7 @@
 #include <dpsim-models/Config.h>
 
 #include <dpsim-models/SP/SP_Ph1_AvVoltageSourceInverterDQ.h>
+#include <dpsim-models/SP/SP_Ph1_VSIVoltageControlDQ.h>
 #include <dpsim-models/SP/SP_Ph1_Load.h>
 #include <dpsim-models/SP/SP_Ph1_NetworkInjection.h>
 #include <dpsim-models/SP/SP_Ph1_PQNode.h>
@@ -40,6 +41,7 @@
 #include <dpsim-models/SP/SP_Ph3_VoltageSource.h>
 
 #include <dpsim-models/DP/DP_Ph1_AvVoltageSourceInverterDQ.h>
+#include <dpsim-models/DP/DP_Ph1_VSIVoltageControlDQ.h>
 #include <dpsim-models/DP/DP_Ph1_Capacitor.h>
 #include <dpsim-models/DP/DP_Ph1_CurrentSource.h>
 #include <dpsim-models/DP/DP_Ph1_Inductor.h>
@@ -90,6 +92,7 @@
 #include <dpsim-models/EMT/EMT_Ph1_VoltageSourceRamp.h>
 
 #include <dpsim-models/EMT/EMT_Ph3_AvVoltSourceInverterStateSpace.h>
+#include <dpsim-models/EMT/EMT_Ph3_VSIVoltageControlDQ.h>
 #include <dpsim-models/EMT/EMT_Ph3_AvVoltageSourceInverterDQ.h>
 #include <dpsim-models/EMT/EMT_Ph3_Capacitor.h>
 #include <dpsim-models/EMT/EMT_Ph3_ControlledVoltageSource.h>
@@ -136,3 +139,6 @@
 #include <dpsim-models/Signal/SineWaveGenerator.h>
 #include <dpsim-models/Signal/TurbineGovernor.h>
 #include <dpsim-models/Signal/TurbineGovernorType1.h>
+#include <dpsim-models/Signal/VCO.h>
+#include <dpsim-models/Signal/Droop.h>
+#include <dpsim-models/Signal/VoltageControllerVSI.h>

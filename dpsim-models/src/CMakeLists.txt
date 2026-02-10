@@ -46,6 +46,7 @@ list(APPEND MODELS_SOURCES
 	DP/DP_Ph1_SynchronGenerator6bOrderVBR.cpp
 	DP/DP_Ph1_Inverter.cpp
 	DP/DP_Ph1_AvVoltageSourceInverterDQ.cpp
+	DP/DP_Ph1_VSIVoltageControlDQ.cpp
 	DP/DP_Ph1_NetworkInjection.cpp
 	DP/DP_Ph1_varResSwitch.cpp
 	DP/DP_Ph1_DPDQInterface.cpp
@@ -78,6 +79,7 @@ list(APPEND MODELS_SOURCES
 	EMT/EMT_Ph3_Inductor.cpp
 	EMT/EMT_Ph3_Capacitor.cpp
 	EMT/EMT_Ph3_AvVoltageSourceInverterDQ.cpp
+	EMT/EMT_Ph3_VSIVoltageControlDQ.cpp
 	EMT/EMT_Ph3_AvVoltSourceInverterStateSpace.cpp
 	EMT/EMT_Ph3_Resistor.cpp
 	EMT/EMT_Ph3_SeriesResistor.cpp
@@ -113,6 +115,7 @@ list(APPEND MODELS_SOURCES
 	SP/SP_Ph1_Inductor.cpp
 	SP/SP_Ph1_Resistor.cpp
 	SP/SP_Ph1_AvVoltageSourceInverterDQ.cpp
+	SP/SP_Ph1_VSIVoltageControlDQ.cpp
 	SP/SP_Ph1_RXLine.cpp
 	SP/SP_Ph1_VoltageSourceInverter.cpp
 	SP/SP_Ph1_PiLine.cpp
@@ -154,6 +157,9 @@ list(APPEND MODELS_SOURCES
 	Signal/FrequencyRampGenerator.cpp
 	Signal/CosineFMGenerator.cpp
 	Signal/DCGenerator.cpp
+	Signal/VCO.cpp
+	Signal/Droop.cpp
+	Signal/VoltageControllerVSI.cpp
 )
 
 if(WITH_CIM)
