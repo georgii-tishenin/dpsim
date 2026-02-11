@@ -152,108 +152,113 @@ void DP::Ph1::VSIVoltageControlDQ::setInitialStateValues(Real phi_dInit, Real ph
 
 void DP::Ph1::VSIVoltageControlDQ::initializeFromNodesAndTerminals(Real frequency) {
 	// terminal powers in consumer system -> convert to generator system
-	Real activePower = terminal(0)->singlePower().real();;
+	Real activePower   = terminal(0)->singlePower().real();
 	Real reactivePower = terminal(0)->singlePower().imag();
 
-	// set initial interface quantities
+	// PCC phasor voltage (network synchronous frame)
 	(**mIntfVoltage)(0, 0) = initialSingleVoltage(0);
-	(**mIntfCurrent)(0, 0) = -std::conj(Complex(activePower, reactivePower) / (**mIntfVoltage)(0,0));
+
+	// PCC current from S = V * conj(I)  -> I = conj(S / V)
+	// Minus sign because of sign convention (consumer -> generator)
+	(**mIntfCurrent)(0, 0) = -std::conj(Complex(activePower, reactivePower) / (**mIntfVoltage)(0, 0));
 
 	Complex filterInterfaceInitialVoltage;
 	Complex filterInterfaceInitialCurrent;
 
 	if (mWithConnectionTransformer) {
-		// calculate quantities of low voltage side of transformer (being the interface quantities of the filter)
-		filterInterfaceInitialVoltage = ((**mIntfVoltage)(0, 0) - Complex(mTransformerResistance, mTransformerInductance * **mOmegaN) * (**mIntfCurrent)(0, 0)) / Complex(mTransformerRatioAbs, mTransformerRatioPhase);
-		filterInterfaceInitialCurrent = (**mIntfCurrent)(0, 0) * Complex(mTransformerRatioAbs, mTransformerRatioPhase);
+		// LV side (filter interface)
+		filterInterfaceInitialVoltage =
+			((**mIntfVoltage)(0, 0) - Complex(mTransformerResistance, mTransformerInductance * **mOmegaN) * (**mIntfCurrent)(0, 0)) /
+			Complex(mTransformerRatioAbs, mTransformerRatioPhase);
+
+		filterInterfaceInitialCurrent =
+			(**mIntfCurrent)(0, 0) * Complex(mTransformerRatioAbs, mTransformerRatioPhase);
 
 		// connect transformer
 		mVirtualNodes[3]->setInitialVoltage(filterInterfaceInitialVoltage);
 		mConnectionTransformer->connect({ mTerminals[0]->node(), mVirtualNodes[3] });
 	} else {
-		// if no transformer used, filter interface equal to inverter interface
 		filterInterfaceInitialVoltage = (**mIntfVoltage)(0, 0);
 		filterInterfaceInitialCurrent = (**mIntfCurrent)(0, 0);
 	}
 
-	// derive initialization quantities of filter
-	Complex vcInit = filterInterfaceInitialVoltage - filterInterfaceInitialCurrent * mRc;
+	// Internal steady-state phasors from PCC quantities + filter parameters
+	Complex vcInit  = filterInterfaceInitialVoltage - filterInterfaceInitialCurrent * mRc;
 	Complex icfInit = vcInit * Complex(0., 2. * PI * frequency * mCf);
-	Complex vfInit = vcInit - (filterInterfaceInitialCurrent - icfInit) * Complex(0., 2. * PI * frequency * mLf);
-	Complex vsInit = vfInit - (filterInterfaceInitialCurrent - icfInit) * Complex(mRf, 0);
+
+	// Series-branch (inverter-side) current through Rf/Lf = I_interface - I_cap
+	Complex iSeriesInit = (filterInterfaceInitialCurrent - icfInit);
+
+	Complex vfInit = vcInit - iSeriesInit * Complex(0., 2. * PI * frequency * mLf);
+	Complex vsInit = vfInit - iSeriesInit * Complex(mRf, 0.);
+
+	// Set initial internal node voltages (phasors, DP domain)
 	mVirtualNodes[0]->setInitialVoltage(vsInit);
 	mVirtualNodes[1]->setInitialVoltage(vfInit);
 	mVirtualNodes[2]->setInitialVoltage(vcInit);
 
-	// Set parameters electrical subcomponents
-	(**mVsref)(0,0) = mVirtualNodes[0]->initialSingleVoltage();
-	mSubCtrledVoltageSource->setParameters((**mVsref)(0,0));
+	// Set initial controlled source reference
+	(**mVsref)(0, 0) = mVirtualNodes[0]->initialSingleVoltage();
+	mSubCtrledVoltageSource->setParameters((**mVsref)(0, 0));
 
 	// Connect electrical subcomponents
 	mSubCtrledVoltageSource->connect({ SimNode::GND, mVirtualNodes[0] });
 	mSubResistorF->connect({ mVirtualNodes[0], mVirtualNodes[1] });
 	mSubInductorF->connect({ mVirtualNodes[1], mVirtualNodes[2] });
 	mSubCapacitorF->connect({ mVirtualNodes[2], SimNode::GND });
+
 	if (mWithConnectionTransformer)
-		mSubResistorC->connect({ mVirtualNodes[2],  mVirtualNodes[3]});
+		mSubResistorC->connect({ mVirtualNodes[2],  mVirtualNodes[3] });
 	else
-		mSubResistorC->connect({ mVirtualNodes[2],  mTerminals[0]->node()});
+		mSubResistorC->connect({ mVirtualNodes[2],  mTerminals[0]->node() });
 
 	// Initialize electrical subcomponents
-	for (auto subcomp: mSubComponents) {
+	for (auto subcomp : mSubComponents) {
 		subcomp->initialize(mFrequencies);
 		subcomp->initializeFromNodesAndTerminals(frequency);
 	}
 
-	if(mWithConnectionTransformer)
-	{
-		// Initialize control subcomponents
-		Complex vcdq, ircdq;
-		vcdq = Math::rotatingFrame2to1(mVirtualNodes[3]->initialSingleVoltage(), std::arg(mVirtualNodes[3]->initialSingleVoltage()), 0);
-		ircdq = Math::rotatingFrame2to1(-1. * (**mSubResistorC->mIntfCurrent)(0, 0), std::arg(mVirtualNodes[3]->initialSingleVoltage()), 0);
+	// ----------------------------
+	// Control init (consistent with runtime sensing)
+	// ----------------------------
+	// Align initial dq-frame to capacitor voltage (like EMT)
+	Real theta0 = std::arg(vcInit);
 
-		**mVcd = vcdq.real();
-		**mVcq = vcdq.imag();
-		**mIrcd = ircdq.real();
-		**mIrcq = ircdq.imag();
+	// Initialize BOTH frames equal at t=0:
+	//  - network frame angle
+	//  - control/VCO angle
+	mThetaN = theta0;
+	mVCO->setInitialValues(**mOmegaN, theta0, theta0);
 
-		// VCO input
-		mVCO->setInitialValues(**mVcq, std::arg(mVirtualNodes[3]->initialSingleVoltage()), std::arg(mVirtualNodes[3]->initialSingleVoltage()));
-	}
-	else{
-		// Initialize control subcomponents
-		Complex vcdq, ircdq;
-		vcdq = Math::rotatingFrame2to1(mVirtualNodes[2]->initialSingleVoltage(), std::arg(mVirtualNodes[2]->initialSingleVoltage()), 0);
-		ircdq = Math::rotatingFrame2to1(-1. * (**mSubResistorC->mIntfCurrent)(0, 0), std::arg(mVirtualNodes[2]->initialSingleVoltage()), 0);
+	// Controller "measurements" in dq at init:
+	// transform from network frame (mThetaN) -> control frame (theta0)
+	Complex vcdq  = Math::rotatingFrame2to1(vcInit,          theta0, mThetaN);
+	Complex ircdq = Math::rotatingFrame2to1(-1.0*iSeriesInit, theta0, mThetaN);
 
-		**mVcd = vcdq.real();
-		**mVcq = vcdq.imag();
-		**mIrcd = ircdq.real();
-		**mIrcq = ircdq.imag();
+	**mVcd  = vcdq.real();
+	**mVcq  = vcdq.imag();
+	**mIrcd = ircdq.real();
+	**mIrcq = ircdq.imag();
 
-		// VCO input
-		mVCO->setInitialValues(**mVcq, std::arg(mVirtualNodes[2]->initialSingleVoltage()), std::arg(mVirtualNodes[2]->initialSingleVoltage()));
-	}
-
-	SPDLOG_LOGGER_INFO(mSLog, 
+	SPDLOG_LOGGER_INFO(mSLog,
 		"\n--- Initialization from powerflow ---"
-		"\nInterface voltage across: {:s}"
-		"\nInterface current: {:s}"
+		"\nInterface voltage (PCC): {:s}"
+		"\nInterface current (PCC): {:s}"
 		"\nTerminal 0 initial voltage: {:s}"
-		"\nTerminal 0 connected to {:s} = sim node {:d}"
-		"\nVirtual node 0 initial voltage: {:s}"
-		"\nVirtual node 1 initial voltage: {:s}"
-		"\nVirtual node 2 initial voltage: {:s}",
+		"\nVirtual node 0 (Vs) init: {:s}"
+		"\nVirtual node 1 (Vf) init: {:s}"
+		"\nVirtual node 2 (Vc) init: {:s}"
+		"\nInit angles: theta0(Vc) = {}, mThetaN = {}",
 		Logger::phasorToString((**mIntfVoltage)(0, 0)),
 		Logger::phasorToString((**mIntfCurrent)(0, 0)),
 		Logger::phasorToString(initialSingleVoltage(0)),
-		mTerminals[0]->node()->name(), mTerminals[0]->node()->matrixNodeIndex(),
 		Logger::phasorToString(mVirtualNodes[0]->initialSingleVoltage()),
 		Logger::phasorToString(mVirtualNodes[1]->initialSingleVoltage()),
-		Logger::phasorToString(mVirtualNodes[2]->initialSingleVoltage()));
-		if (mWithConnectionTransformer)
-			SPDLOG_LOGGER_INFO(mSLog, "\nVirtual node 3 initial voltage: {:s}", Logger::phasorToString(mVirtualNodes[3]->initialSingleVoltage()));
-		SPDLOG_LOGGER_INFO(mSLog, "\n--- Initialization from powerflow finished ---");
+		Logger::phasorToString(mVirtualNodes[2]->initialSingleVoltage()),
+		theta0, mThetaN);
+	if (mWithConnectionTransformer)
+		SPDLOG_LOGGER_INFO(mSLog, "\nVirtual node 3 init: {:s}", Logger::phasorToString(mVirtualNodes[3]->initialSingleVoltage()));
+	SPDLOG_LOGGER_INFO(mSLog, "\n--- Initialization from powerflow finished ---");
 }
 
 void DP::Ph1::VSIVoltageControlDQ::mnaParentInitialize(Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
@@ -291,33 +296,46 @@ void DP::Ph1::VSIVoltageControlDQ::addControlStepDependencies(AttributeBase::Lis
 }
 
 void DP::Ph1::VSIVoltageControlDQ::controlStep(Real time, Int timeStepCount) {
-	// Transformation interface forward
-	Complex vcdq, ircdq;
 
-	if(mWithConnectionTransformer)
-	{
-		vcdq = Math::rotatingFrame2to1(mVirtualNodes[3]->singleVoltage(), (**mVCO->mOutputPrev)(0,0), mThetaN);
-		ircdq = Math::rotatingFrame2to1(-1. * (**mSubResistorC->mIntfCurrent)(0, 0), (**mVCO->mOutputPrev)(0,0), mThetaN);
-	}
-	else{
-		vcdq = Math::rotatingFrame2to1(mVirtualNodes[2]->singleVoltage(), (**mVCO->mOutputPrev)(0,0), mThetaN);
-		ircdq = Math::rotatingFrame2to1(-1. * (**mSubResistorC->mIntfCurrent)(0, 0), (**mVCO->mOutputPrev)(0,0), mThetaN);
-	
-	}
+	// 1) Advance VCO first -> control angle at current step
+	mVCO->signalStep(time, timeStepCount);
+	Real theta_ctrl = (**mVCO->mOutputCurr)(0, 0);
 
-	**mVcd = vcdq.real();
-	**mVcq = vcdq.imag();
+	// 2) Measure in network frame (phasors), then rotate into control dq frame
+	//    Sensing points consistent with EMT:
+	//      - capacitor voltage: node 2
+	//      - series branch current (inverter-side): -ResistorF current
+	Complex vc      = mVirtualNodes[2]->singleVoltage();
+	Complex iSeries = -1.0 * (**mSubResistorF->mIntfCurrent)(0, 0);
+
+	// network frame angle = mThetaN, control frame angle = theta_ctrl
+	Complex vcdq  = Math::rotatingFrame2to1(vc,      theta_ctrl, mThetaN);
+	Complex ircdq = Math::rotatingFrame2to1(iSeries, theta_ctrl, mThetaN);
+
+	**mVcd  = vcdq.real();
+	**mVcq  = vcdq.imag();
 	**mIrcd = ircdq.real();
 	**mIrcq = ircdq.imag();
 
-	// add step of subcomponents
-	mVCO->signalStep(time, timeStepCount);
+	// Optional: keep PCC P/Q logging consistent (PCC phasors are in network frame already)
+	// Note: sign convention matches your EMT version (negated)
+	Complex Vpcc = (**mIntfVoltage)(0, 0);
+	Complex Ipcc = (**mIntfCurrent)(0, 0);
+	Complex Spcc = Vpcc * std::conj(-Ipcc);
+	**mElecActivePower  = Spcc.real();
+	**mElecPassivePower = Spcc.imag();
+
+	// 3) Step voltage controller using measured dq values
 	mVoltageControllerVSI->signalStep(time, timeStepCount);
 
-	// Transformation interface backward
-	(**mVsref)(0,0) = Math::rotatingFrame2to1(Complex(mVoltageControllerVSI->attributeTyped<Matrix>("output_curr")->get()(0, 0), mVoltageControllerVSI->attributeTyped<Matrix>("output_curr")->get()(1, 0)), mThetaN, (**mVCO->mOutputPrev)(0,0));
+	// 4) Synthesize Vsref:
+	// controller output is dq in control frame -> rotate back into network frame
+	const Matrix& u = mVoltageControllerVSI->mOutputCurr->get();
+	Complex vs_dq(u(0, 0), u(1, 0));
 
-	// Update nominal system angle
+	(**mVsref)(0, 0) = Math::rotatingFrame2to1(vs_dq, mThetaN, theta_ctrl);
+
+	// 5) Advance network synchronous frame angle at nominal frequency
 	mThetaN = mThetaN + mTimeStep * **mOmegaN;
 }
 

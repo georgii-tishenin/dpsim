@@ -95,15 +95,11 @@ namespace Ph1 {
 		const Attribute<Real>::Ptr mElecPassivePower;
 		// Control outputs
 
-		const Attribute<MatrixComp>::Ptr mIsref;
-
-		///current d-axis in local reference frame
-		const Attribute<Real>::Ptr mIsd;
-		///current q-axis in local reference frame
-		const Attribute<Real>::Ptr mIsq;
+		const Attribute<MatrixComp>::Ptr mVsref;
+		const Attribute<MatrixComp>::Ptr mVs;
 
 		// VCO
-		const Attribute<Real>::Ptr mVCOOutput;
+		const Attribute<Matrix>::Ptr mVCOOutput;
 
 		// input, state and output vector for logging
 		const Attribute<Matrix>::Ptr mVoltagectrlInputs;
@@ -147,8 +143,6 @@ namespace Ph1 {
 		void mnaParentAddPreStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes) override;
 		/// Add MNA post step dependencies
 		void mnaParentAddPostStepDependencies(AttributeBase::List &prevStepDependencies, AttributeBase::List &attributeDependencies, AttributeBase::List &modifiedAttributes, Attribute<Matrix>::Ptr &leftVector) override;
-		///
-		void mnaCompApplyRightSideVectorStamp(Matrix& rightVector) override;
 
 		// #### Control section ####
 		/// Control pre step operations
