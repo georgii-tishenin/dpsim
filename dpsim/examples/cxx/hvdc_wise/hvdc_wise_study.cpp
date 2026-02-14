@@ -123,6 +123,19 @@ enum class PowerSystemEventType {
   InfeedVoltageAngleStep
 };
 
+// Put this near your other structs (e.g. above PowerSystemInputParameters)
+struct TurbineGovernorParameters {
+  double T3   = 0.00;
+  double T4   = 0.00;
+  double T5   = 0.20;
+  double Tc   = 0.05;
+  double Ts   = 0.05;
+  double R    = 0.02;
+  double Tmin = 0.0;
+  double Tmax = 2.0;
+  double OmRef = 1.0;
+};
+
 struct PowerSystemInputParameters {
   double frequency = 50;
   double baseVoltageLineToLine = 110e3;
@@ -161,28 +174,23 @@ struct PowerSystemInputParameters {
   double converter2QinPerUnit = 0;
 
   // ---------------- Synchronous generator parameters (VBR 4th order) ----------------
-  // NOTE: these parameters are passed in per-unit as expected by DPsim's
-  // ReducedOrderSynchronGenerator::setOperationalParametersPerUnit().
-  // Nominal values are physical (VA, V_LL RMS, Hz).
   double genNominalPowerVA = baseThreePhasePower;
   double genNominalVoltageLL = baseVoltageLineToLine;
   double genNominalFreqHz = frequency;
 
-  // Inertia constant H [s]
   double genInertiaH = 5.0;
 
-  // Inductances in pu (stator-referred)
   double genLdPu = 1.8;
   double genLqPu = 1.7;
   double genL0Pu = 0.2;
 
-  // Transient inductances in pu
   double genLd_tPu = 0.3;
   double genLq_tPu = 0.55;
 
-  // Open-circuit transient time constants [s]
   double genTd0_t = 8.0;
   double genTq0_t = 0.4;
+
+  TurbineGovernorParameters gov;  
 };
 
 struct PowerSystemParameters {
@@ -217,6 +225,8 @@ struct PowerSystemParameters {
   double genTd0_t;
   double genTq0_t;
 
+  TurbineGovernorParameters gov;
+
   PowerSystemParameters(double freq, double voltLineToLine,
                         double voltLineToGround, double infeedRes,
                         double infeedInd, double line1Res, double line1Ind,
@@ -226,7 +236,8 @@ struct PowerSystemParameters {
                         double conv2Q, double gNomS, double gNomVLL,
                         double gNomF, double gH, double gLd, double gLq,
                         double gL0, double gLd_t, double gLq_t, double gTd0_t,
-                        double gTq0_t)
+                        double gTq0_t,
+                        const TurbineGovernorParameters& govParams) // <-- NEW
       : frequency(freq), voltageLineToLine(voltLineToLine),
         voltageLineToGround(voltLineToGround), infeedResistance(infeedRes),
         infeedInductance(infeedInd), line1Resistance(line1Res),
@@ -238,7 +249,8 @@ struct PowerSystemParameters {
         genNominalVoltageLL(gNomVLL), genNominalFreqHz(gNomF),
         genInertiaH(gH), genLdPu(gLd), genLqPu(gLq), genL0Pu(gL0),
         genLd_tPu(gLd_t), genLq_tPu(gLq_t), genTd0_t(gTd0_t),
-        genTq0_t(gTq0_t) {}
+        genTq0_t(gTq0_t),
+        gov(govParams) {}
 };
 
 PowerSystemParameters
@@ -289,7 +301,9 @@ calculatePowerSystemParameters(const PowerSystemInputParameters &inputParams) {
       inputParams.genNominalVoltageLL, inputParams.genNominalFreqHz,
       inputParams.genInertiaH, inputParams.genLdPu, inputParams.genLqPu,
       inputParams.genL0Pu, inputParams.genLd_tPu, inputParams.genLq_tPu,
-      inputParams.genTd0_t, inputParams.genTq0_t);
+      inputParams.genTd0_t, inputParams.genTq0_t,
+      inputParams.gov 
+  );
 }
 
 Simulation setupSimulation(const std::string &simName,
@@ -649,6 +663,15 @@ void simulateEMT(const SimulationParameters &simParams,
     const Complex V_slack = Complex(psParams.voltageLineToLine, 0.0);
     const Complex S_gen_init = -S_slack_term;
     infeedGen->setInitialValues(S_gen_init, S_gen_init.real(), V_slack);
+
+    double TmRef_pu = S_gen_init.real() / psParams.genNominalPowerVA;
+    TmRef_pu = std::abs(TmRef_pu);
+
+    // Attach governor to the machine (integrated model)
+    infeedGen->addGovernor(psParams.gov.T3, psParams.gov.T4, psParams.gov.T5,
+                           psParams.gov.Tc, psParams.gov.Ts, psParams.gov.R,
+                           psParams.gov.Tmin, psParams.gov.Tmax,
+                           psParams.gov.OmRef, TmRef_pu);
 
     infeedGen->connect({node1});
 
@@ -1026,6 +1049,15 @@ void simulateDP(const SimulationParameters &simParams,
     const Complex S_gen_init = -S_slack_term;
     infeedGen->setInitialValues(S_gen_init, S_gen_init.real(), V_slack);
 
+    double TmRef_pu = S_gen_init.real() / psParams.genNominalPowerVA;
+    TmRef_pu = std::abs(TmRef_pu);
+
+    // Attach governor to the machine (integrated model)
+    infeedGen->addGovernor(psParams.gov.T3, psParams.gov.T4, psParams.gov.T5,
+                           psParams.gov.Tc, psParams.gov.Ts, psParams.gov.R,
+                           psParams.gov.Tmin, psParams.gov.Tmax,
+                           psParams.gov.OmRef, TmRef_pu);
+
     infeedGen->connect({node1});
 
     logger->logAttribute(VariableNames::deltaInfeed,
@@ -1358,6 +1390,15 @@ void simulateSP(const SimulationParameters &simParams,
     const Complex V_slack = Complex(psParams.voltageLineToLine, 0.0);
     const Complex S_gen_init = -S_slack_term;
     infeedGen->setInitialValues(S_gen_init, S_gen_init.real(), V_slack);
+
+    double TmRef_pu = S_gen_init.real() / psParams.genNominalPowerVA;
+    TmRef_pu = std::abs(TmRef_pu);
+
+    // Attach governor to the machine (integrated model)
+    infeedGen->addGovernor(psParams.gov.T3, psParams.gov.T4, psParams.gov.T5,
+                           psParams.gov.Tc, psParams.gov.Ts, psParams.gov.R,
+                           psParams.gov.Tmin, psParams.gov.Tmax,
+                           psParams.gov.OmRef, TmRef_pu);
 
     infeedGen->connect({node1});
 
