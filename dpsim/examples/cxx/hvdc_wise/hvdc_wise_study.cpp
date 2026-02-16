@@ -73,12 +73,12 @@ enum class InfeedSourceModel {
 };
 
 struct SimulationParameters {
-  double timeStep = 1e-4;
-  double eventTime = 3.8;
-  double finalTime = 4.16;
+  double timeStep = 0.5e-4;
+  double eventTime = 3.0;
+  double finalTime = 3.5;
 
   // Select infeed model
-  InfeedSourceModel infeedModel = InfeedSourceModel::SynchronousGeneratorVBR4;
+  InfeedSourceModel infeedModel = InfeedSourceModel::NetworkInjection;
 
   // Startup ramp of converter P/Q references (to avoid numerical issues at t=0)
   bool enableStartupRampPQ = true;
@@ -157,7 +157,7 @@ struct PowerSystemInputParameters {
 
   // line2 parameters
   double line2LengthInKm = 20 * lineLengthCoefficient;
-  double line2ResistancePerKm = 0.2 * lineResistanceCoefficient;
+  double line2ResistancePerKm = 0.1 * lineResistanceCoefficient;
   double line2ReactancePerKm = 0.4;
   double lin2CapacitancePerKm = 1e-8;
 
@@ -167,11 +167,11 @@ struct PowerSystemInputParameters {
 
   // converter1 parameters
   double converter1PinPerUnit = 0.1;
-  double converter1QinPerUnit = 0;
+  double converter1QinPerUnit = 0.0;
 
   // converter2 parameters
   double converter2PinPerUnit = 0.05;
-  double converter2QinPerUnit = 0;
+  double converter2QinPerUnit = 0.0;
 
   // ---------------- Synchronous generator parameters (VBR 4th order) ----------------
   double genNominalPowerVA = baseThreePhasePower;
@@ -1887,7 +1887,7 @@ int main() {
 
   // Choose one:
   // auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
-  auto psEvent = HVDCWise::PowerSystemEventType::Converter1PrefStep;
+  auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
   // auto psEvent = HVDCWise::PowerSystemEventType::InfeedSCRStep;
   // auto psEvent = HVDCWise::PowerSystemEventType::InfeedVoltageAngleStep;
   // auto psEvent = HVDCWise::PowerSystemEventType::InfeedFrequencyRamp;
