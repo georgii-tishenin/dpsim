@@ -146,8 +146,8 @@ struct PowerSystemInputParameters {
   double infeedReactanceInPerUnit = 0.1;
 
   // coefficients for line parameters
-  double lineLengthCoefficient = 1;     // 3, 5;
-  double lineResistanceCoefficient = 1; // 0.1;
+  double lineLengthCoefficient = 1.0;     // 3, 5;
+  double lineResistanceCoefficient = 1.0; // 0.1;
 
   // line1 parameters
   double line1LengthInKm = 80 * lineLengthCoefficient;
@@ -384,7 +384,7 @@ EMTConverterHandle createEMTConverter(const std::shared_ptr<DataLogger> &logger,
     break;
   case 3:
     converterP_final = psParams.converter1P;
-    converterQ_final = psParams.converter1Q;
+    converterQ_final = 0.0;
     break;
   default:
     throw std::invalid_argument("Unsupported converter number: " +
@@ -460,7 +460,7 @@ DPConverterHandle createDPConverter(const std::shared_ptr<DataLogger> &logger,
     break;
   case 3:
     converterP_final = psParams.converter1P;
-    converterQ_final = psParams.converter1Q;
+    converterQ_final = 0.0;
     break;
   default:
     throw std::invalid_argument("Unsupported converter number: " +
@@ -536,7 +536,7 @@ SPConverterHandle createSPConverter(const std::shared_ptr<DataLogger> &logger,
     break;
   case 3:
     converterP_final = psParams.converter1P;
-    converterQ_final = psParams.converter1Q;
+    converterQ_final = 0.0;
     break;
   default:
     throw std::invalid_argument("Unsupported converter number: " +
@@ -1878,24 +1878,90 @@ int main() {
   HVDCWise::SimulationParameters simParams;
   HVDCWise::PowerSystemInputParameters psInputParams;
 
-  // Choose infeed model here:
-  // simParams.infeedModel = HVDCWise::InfeedSourceModel::NetworkInjection;
+  // # STUDY 1 #
+
+  // // Scenario 1:
+  // simParams.finalTime = 3.5;
+  // psInputParams.converter1PinPerUnit = 0.3;
+  // psInputParams.converter1QinPerUnit = 0.1;
+  // psInputParams.converter2PinPerUnit = 0.2;
+  // psInputParams.converter2QinPerUnit = -0.1;
+  // auto psEvent = HVDCWise::PowerSystemEventType::InfeedFrequencyRamp;
+
+  // Scenario 2:
+  // simParams.finalTime = 3.1;
+  // psInputParams.lineResistanceCoefficient = 0.5;
+  // psInputParams.converter1PinPerUnit = 0.2;
+  // psInputParams.converter1QinPerUnit = 0.1;
+  // psInputParams.converter2PinPerUnit = 0.2;
+  // psInputParams.converter2QinPerUnit = 0.1;
+  // auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
+
+  // Scenario 3:
+  // simParams.finalTime = 3.2; 
   // simParams.infeedModel = HVDCWise::InfeedSourceModel::SynchronousGeneratorVBR4;
+  // psInputParams.converter1PinPerUnit = 0.2;
+  // psInputParams.converter1QinPerUnit = 0.1;
+  // psInputParams.converter2PinPerUnit = 0.2;
+  // psInputParams.converter2QinPerUnit = 0.1;
+  // auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
+
+  // Scenario 4:
+  // simParams.finalTime = 3.4; // SP 3.33
+  // psInputParams.infeedReactanceInPerUnit = 1.0;
+  // psInputParams.converter1PinPerUnit = 0.2;
+  // psInputParams.converter1QinPerUnit = 0.0;
+  // psInputParams.converter2PinPerUnit = -0.2;
+  // psInputParams.converter2QinPerUnit = 0.0;
+  // auto psEvent = HVDCWise::PowerSystemEventType::Converter1PrefStep;
+
+  // Scenario 5:
+  // simParams.finalTime = 3.5; // SP - 3.044
+  // simParams.infeedModel = HVDCWise::InfeedSourceModel::SynchronousGeneratorVBR4;
+  // psInputParams.converter1PinPerUnit = 0.9;
+  // psInputParams.converter1QinPerUnit = 0.1;
+  // psInputParams.converter2PinPerUnit = -0.45;
+  // psInputParams.converter2QinPerUnit = 0.1;
+  // auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
+
+   // Scenario 6:
+   // set lineLength coefficient to 5, scale up PLL kI and kP by 2.02
+  // simParams.timeStep = 0.5e-4;
+  // simParams.finalTime = 3.5; 
+  // psInputParams.converter1PinPerUnit = 0.1;
+  // psInputParams.converter1QinPerUnit = 0.1;
+  // psInputParams.converter2PinPerUnit = -0.1;
+  // psInputParams.converter2QinPerUnit = 0.0;
+  // auto psEvent = HVDCWise::PowerSystemEventType::InfeedVoltageAngleStep;
+
+  // # STUDY 2 #
+
+  // Scenario 1:
+  // simParams.finalTime = 3.1;
+  // simParams.timeStep = 0.5e-4; // EMT: 0.5e-4, DP/SP: 1e-3
+  // psInputParams.converter1PinPerUnit = 0.2;
+  // psInputParams.converter1QinPerUnit = 0.1;
+  // psInputParams.converter2PinPerUnit = 0.2;
+  // psInputParams.converter2QinPerUnit = 0.1;
+  // auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
+
+  // Scenario 2:
+  simParams.finalTime = 3.2;
+  simParams.timeStep = 1e-3; // EMT: 0.5e-4, DP/SP: 1e-3
+  simParams.infeedModel = HVDCWise::InfeedSourceModel::SynchronousGeneratorVBR4;
+  psInputParams.converter1PinPerUnit = 0.2;
+  psInputParams.converter1QinPerUnit = 0.1;
+  psInputParams.converter2PinPerUnit = 0.2;
+  psInputParams.converter2QinPerUnit = 0.1;
+  auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
+
 
   HVDCWise::PowerSystemParameters psParams =
       HVDCWise::calculatePowerSystemParameters(psInputParams);
 
-  // Choose one:
-  // auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
-  auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
-  // auto psEvent = HVDCWise::PowerSystemEventType::InfeedSCRStep;
-  // auto psEvent = HVDCWise::PowerSystemEventType::InfeedVoltageAngleStep;
-  // auto psEvent = HVDCWise::PowerSystemEventType::InfeedFrequencyRamp;
-  // auto psEvent = HVDCWise::PowerSystemEventType::InfeedFrequencyStep;
-
   auto pf = HVDCWise::calculatePF(simParams, psParams);
 
-  HVDCWise::simulateEMT(simParams, psParams, pf, psEvent);
+  // HVDCWise::simulateEMT(simParams, psParams, pf, psEvent);
   HVDCWise::simulateDP(simParams, psParams, pf, psEvent);
   HVDCWise::simulateSP(simParams, psParams, pf, psEvent);
 
