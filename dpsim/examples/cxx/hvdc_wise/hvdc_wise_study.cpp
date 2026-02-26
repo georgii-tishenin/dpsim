@@ -1888,9 +1888,8 @@ int main() {
   // psInputParams.converter2QinPerUnit = -0.1;
   // auto psEvent = HVDCWise::PowerSystemEventType::InfeedFrequencyRamp;
 
-  // Scenario 2:
+  // // Scenario 2:
   // simParams.finalTime = 3.1;
-  // psInputParams.lineResistanceCoefficient = 0.5;
   // psInputParams.converter1PinPerUnit = 0.2;
   // psInputParams.converter1QinPerUnit = 0.1;
   // psInputParams.converter2PinPerUnit = 0.2;
@@ -1936,9 +1935,9 @@ int main() {
 
   // # STUDY 2 #
 
-  // Scenario 1:
+  // // Scenario 1:
   // simParams.finalTime = 3.1;
-  // simParams.timeStep = 0.5e-4; // EMT: 0.5e-4, DP/SP: 1e-3
+  // simParams.timeStep = 1e-3; // EMT: 0.5e-4, DP/SP: 1e-3
   // psInputParams.converter1PinPerUnit = 0.2;
   // psInputParams.converter1QinPerUnit = 0.1;
   // psInputParams.converter2PinPerUnit = 0.2;
@@ -1946,14 +1945,24 @@ int main() {
   // auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
 
   // Scenario 2:
-  simParams.finalTime = 3.2;
-  simParams.timeStep = 1e-3; // EMT: 0.5e-4, DP/SP: 1e-3
-  simParams.infeedModel = HVDCWise::InfeedSourceModel::SynchronousGeneratorVBR4;
+  // simParams.finalTime = 3.2;
+  // simParams.timeStep = 1e-3; // EMT: 0.5e-4, DP/SP: 1e-3
+  // simParams.infeedModel = HVDCWise::InfeedSourceModel::SynchronousGeneratorVBR4;
+  // psInputParams.converter1PinPerUnit = 0.2;
+  // psInputParams.converter1QinPerUnit = 0.1;
+  // psInputParams.converter2PinPerUnit = 0.2;
+  // psInputParams.converter2QinPerUnit = 0.1;
+  // auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
+
+  // OSMSES paper
+  // Scenario 1:
+  simParams.finalTime = 3.1;
+  simParams.timeStep = 10e-6;
   psInputParams.converter1PinPerUnit = 0.2;
   psInputParams.converter1QinPerUnit = 0.1;
   psInputParams.converter2PinPerUnit = 0.2;
   psInputParams.converter2QinPerUnit = 0.1;
-  auto psEvent = HVDCWise::PowerSystemEventType::LoadBusFault;
+  auto psEvent = HVDCWise::PowerSystemEventType::LoadStep;
 
 
   HVDCWise::PowerSystemParameters psParams =
@@ -1961,9 +1970,9 @@ int main() {
 
   auto pf = HVDCWise::calculatePF(simParams, psParams);
 
-  // HVDCWise::simulateEMT(simParams, psParams, pf, psEvent);
+  HVDCWise::simulateEMT(simParams, psParams, pf, psEvent);
   HVDCWise::simulateDP(simParams, psParams, pf, psEvent);
-  HVDCWise::simulateSP(simParams, psParams, pf, psEvent);
+  // HVDCWise::simulateSP(simParams, psParams, pf, psEvent);
 
   return 0;
 }
