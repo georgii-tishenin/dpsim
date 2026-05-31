@@ -174,7 +174,7 @@ SystemTopology profileTopology(CommandLineArgs &args,
   auto n2 = SimNode::make("n2");
 
   // Components
-  auto vs = ProfileVoltageSource::make("v_s", "data.bin");
+  auto vs = ProfileVoltageSource::make("v_s", "v_s", "data.bin");
   auto rs = Resistor::make("r_s");
   rs->setParameters(1);
 

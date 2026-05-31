@@ -189,6 +189,8 @@ endif()
 
 if(WITH_VILLAS)
 	list(APPEND MODELS_SOURCES DP/DP_Ph1_ProfileVoltageSource.cpp)
+	list(APPEND MODELS_INCLUDE_DIRS ${VILLASNODE_INCLUDE_DIRS})
+	list(APPEND MODELS_LIBRARIES ${VILLASNODE_LIBRARIES})
 endif()
 
 target_link_libraries(dpsim-models PUBLIC ${MODELS_LIBRARIES})

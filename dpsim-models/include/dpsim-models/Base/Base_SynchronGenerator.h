@@ -37,7 +37,7 @@ public:
                    Real Tsr, Real Tsm, Real Tm_init, Real PmRef);
   /// Add voltage regulator and exciter
   void addExciter(Real Ta, Real Ka, Real Te, Real Ke, Real Tf, Real Kf,
-                  Real Tr);
+                  Real Tr, Real maxVr = 1.0, Real minVr = -0.9);
 
 protected:
   ///

@@ -8,6 +8,7 @@
 	// 	"context": ".."
 	// },
 	"remoteUser": "dpsim",
+	"workspaceFolder": "/dpsim",
 	"runArgs": [
 		"--privileged",
 		"--security-opt=seccomp=unconfined"

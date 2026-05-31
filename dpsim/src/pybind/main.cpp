@@ -361,16 +361,16 @@ PYBIND11_MODULE(dpsimpy, m) {
              std::shared_ptr<CPS::SimPowerComp<CPS::Complex>>,
              CPS::TopologicalPowerComp>(m, "SimPowerCompComplex")
       .def("connect", &CPS::SimPowerComp<CPS::Complex>::connect)
-      .def("set_intf_current", &CPS::SimPowerComp<CPS::Complex>::setIntfCurrent)
-      .def("set_intf_voltage", &CPS::SimPowerComp<CPS::Complex>::setIntfVoltage)
+      .def("set_intf_current", py::overload_cast<CPS::MatrixComp>(&CPS::SimPowerComp<CPS::Complex>::setIntfCurrent))
+      .def("set_intf_voltage", py::overload_cast<CPS::MatrixComp>(&CPS::SimPowerComp<CPS::Complex>::setIntfVoltage))
       .def("get_terminal", &CPS::SimPowerComp<CPS::Complex>::terminal,
            "index"_a);
   py::class_<CPS::SimPowerComp<CPS::Real>,
              std::shared_ptr<CPS::SimPowerComp<CPS::Real>>,
              CPS::TopologicalPowerComp>(m, "SimPowerCompReal")
       .def("connect", &CPS::SimPowerComp<CPS::Real>::connect)
-      .def("set_intf_current", &CPS::SimPowerComp<CPS::Real>::setIntfCurrent)
-      .def("set_intf_voltage", &CPS::SimPowerComp<CPS::Real>::setIntfVoltage)
+      .def("set_intf_current", py::overload_cast<CPS::Matrix>(&CPS::SimPowerComp<CPS::Real>::setIntfCurrent))
+      .def("set_intf_voltage", py::overload_cast<CPS::Matrix>(&CPS::SimPowerComp<CPS::Real>::setIntfVoltage))
       .def("get_terminal", &CPS::SimPowerComp<CPS::Real>::terminal, "index"_a);
   py::class_<CPS::TopologicalNode, std::shared_ptr<CPS::TopologicalNode>,
              CPS::IdentifiedObject>(m, "TopologicalNode")

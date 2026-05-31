@@ -51,7 +51,7 @@ void runEMT(Real resistance) {
 
   sim.run();
 }
-
+/*
 void runDP() {
   Real timeStep = 1e-4;
   Real finalTime = 1e-3;
@@ -117,11 +117,71 @@ void runDP() {
 
   sim.run();
 }
+*/
 
+ void synGenVBR() {
+
+  Real timeStep = 1e-3;
+  Real finalTime = 30;
+
+    String simName = "TEST_VBR_SynGen";
+  Logger::setLogDir("logs/" + simName);
+
+  Real gen_power = 10e3;
+
+	auto BUS_a_EMT = SimNode<Real>::make("BUS_a", PhaseType::ABC);
+  
+  Matrix param = Matrix::Zero(3, 3);
+  param << 1., 0, 0, 0, 1., 0, 0, 0, 1.;
+
+  auto r1 = EMT::Ph3::Resistor::make("r1");
+  r1->setParameters(100 * param);
+
+ auto GEN_EMT =
+   CPS::EMT::Ph3::SynchronGeneratorVBR::make("GEN_EMT", Logger::Level::debug);
+ 	 GEN_EMT->setBaseAndOperationalPerUnitParameters(
+   gen_power/*nomPower*/, 10.5e3/*nomVoltage*/, 50/*nomFreq*/,
+   2/*poleNum*/, 1300/*nomFieldCurr*/, 0.002/*Rs*/,
+   2.4/*Ld*/, 1.33 /*Lq*/, 0.31/*Ld_t*/, 1.2/*Lq_t*/,
+   0.24/*Ld_s*/, 0.35/*Lq_s*/, 0.135/*Ll*/, 1.45/*Td0_t*/,
+   0.000001/*Tq0_t*/, 0.022/*Td0_s*/, 0.0095/*Tq0_s*/,
+   5/*H*/);
+
+   // Topology
+
+     GEN_EMT->connect({BUS_a_EMT});
+     r1->connect({ BUS_a_EMT, EMT::SimNode::GND });
+
+
+     	auto systemEMT = SystemTopology(50,
+			SystemNodeList{BUS_a_EMT},
+			SystemComponentList{GEN_EMT, r1});
+
+
+        auto logger = DataLogger::make(simName);
+	logger->logAttribute("BUS_a_EMT", BUS_a_EMT->attribute("v"));
+
+
+  Simulation sim(simName);
+  sim.setSystem(systemEMT);
+  sim.setTimeStep(timeStep);
+  sim.setFinalTime(finalTime);
+  sim.setDomain(Domain::EMT);
+  sim.doEigenvalueExtraction(false);
+  sim.addLogger(logger);
+	sim.doSystemMatrixRecomputation(true);
+
+  
+  sim.run();
+
+
+ }
 int main(int argc, char *argv[]) {
-  runEMT(100);
-  runEMT(1.1e-3);
-  runDP();
+  //runEMT(100);
+  //runEMT(1.1e-3);
+  //runDP();
+
+  synGenVBR();
 
   return 0;
 }

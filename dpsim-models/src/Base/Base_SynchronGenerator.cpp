@@ -386,9 +386,9 @@ Real Base::SynchronGenerator::calcHfromJ(Real J, Real omegaNominal,
 }
 
 void Base::SynchronGenerator::addExciter(Real Ta, Real Ka, Real Te, Real Ke,
-                                         Real Tf, Real Kf, Real Tr) {
+                                         Real Tf, Real Kf, Real Tr, Real maxVr, Real minVr) {
   mExciter = Signal::Exciter::make("Exciter", CPS::Logger::Level::info);
-  mExciter->setParameters(Ta, Ka, Te, Ke, Tf, Kf, Tr);
+  mExciter->setParameters(Ta, Ka, Te, Ke, Tf, Kf, Tr, maxVr, minVr);
   mHasExciter = true;
 }
 

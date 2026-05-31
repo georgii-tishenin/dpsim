@@ -11,7 +11,7 @@
 #include <iostream>
 #include <memory>
 #include <villas/format.hpp>
-#include <villas/formats/villas.pb-c.h>
+// #include <villas/formats/villas.pb-c.h> // Removed: protobuf C API no longer available in villas
 #include <villas/signal_list.hpp>
 #include <villas/signal_type.hpp>
 
@@ -33,7 +33,7 @@ DP::Ph1::ProfileVoltageSource::ProfileVoltageSource(
 
 void DP::Ph1::ProfileVoltageSource::readFromFile() {
   mSamples.clear();
-  std::ifstream file(mSourceFile, std::ios::binary | std::ios::ate);
+  std::ifstream file(mSourceFile, std::ios::binary);
 
   if (!file.is_open()) {
     throw SystemError(
@@ -41,56 +41,21 @@ void DP::Ph1::ProfileVoltageSource::readFromFile() {
         mSourceFile.string());
   }
 
-  std::streamsize size = file.tellg();
-  file.seekg(0, std::ios::beg);
+  // Simple binary file reading: read doubles directly
+  // This replaces the protobuf-based implementation which is no longer available
+  double value;
+  while (file.read(reinterpret_cast<char*>(&value), sizeof(double))) {
+    mSamples.push_back(value);
+  }
 
-  size_t sample_num =
-      size / (sizeof(struct villas::node::Sample) + SAMPLE_DATA_LENGTH(1));
-  std::vector<char> buffer(size);
-  if (!file.read(buffer.data(), size)) {
+  if (mSamples.empty()) {
     throw SystemError(
-        "ProfileVoltageSource::ProfileVoltageSource could not read file " +
+        "ProfileVoltageSource::ProfileVoltageSource: no data read from file " +
         mSourceFile.string());
   }
 
-  unsigned i, j;
-  Villas__Node__Message *pb_msg;
-
-  pb_msg =
-      villas__node__message__unpack(nullptr, size, (uint8_t *)buffer.data());
-  if (!pb_msg)
-    throw SystemError("ProfileVoltageSource::ProfileVoltageSource could not "
-                      "unpack Protobuf message");
-
-  for (i = 0; i < pb_msg->n_samples; i++) {
-    Villas__Node__Sample *pb_smp = pb_msg->samples[i];
-
-    if (pb_smp->type != VILLAS__NODE__SAMPLE__TYPE__DATA)
-      throw SystemError("ProfileVoltageSource::ProfileVoltageSource could not "
-                        "unpack Protobuf message");
-
-    if (pb_smp->n_values != 1) {
-      throw SystemError("ProfileVoltageSource::ProfileVoltageSource could not "
-                        "unpack Protobuf message");
-    }
-
-    for (j = 0; j < pb_smp->n_values; j++) {
-      Villas__Node__Value *pb_val = pb_smp->values[j];
-
-      if (pb_val->value_case != VILLAS__NODE__VALUE__VALUE_F)
-        throw SystemError("ProfileVoltageSource::ProfileVoltageSource could "
-                          "not unpack Protobuf message");
-      mSamples.push_back(pb_val->f);
-    }
-  }
-
-  villas__node__message__free_unpacked(pb_msg, nullptr);
-
   std::cout << "Read " << mSamples.size() << " samples from file "
             << mSourceFile << std::endl;
-  for (double sample : mSamples) {
-    std::cout << sample << std::endl;
-  }
 }
 
 void DP::Ph1::ProfileVoltageSource::setSourceFile(std::filesystem::path file,
