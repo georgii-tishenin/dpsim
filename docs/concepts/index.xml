@@ -1,4 +1,72 @@
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>DPsim – Concepts</title><link>https://sogno-platform.github.io/dpsim/docs/concepts/</link><description>Recent content in Concepts on DPsim</description><generator>Hugo -- gohugo.io</generator><atom:link href="https://sogno-platform.github.io/dpsim/docs/concepts/index.xml" rel="self" type="application/rss+xml"/><item><title>Docs: State-Space Extraction</title><link>https://sogno-platform.github.io/dpsim/docs/concepts/state-space-extraction-theory/</link><pubDate>Thu, 28 May 2026 00:00:00 +0000</pubDate><guid>https://sogno-platform.github.io/dpsim/docs/concepts/state-space-extraction-theory/</guid><description>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>DPsim – Concepts</title><link>https://sogno-platform.github.io/dpsim/docs/concepts/</link><description>Recent content in Concepts on DPsim</description><generator>Hugo -- gohugo.io</generator><atom:link href="https://sogno-platform.github.io/dpsim/docs/concepts/index.xml" rel="self" type="application/rss+xml"/><item><title>Docs: State-Space Nodal</title><link>https://sogno-platform.github.io/dpsim/docs/concepts/state-space-nodal/</link><pubDate>Tue, 23 Jun 2026 00:00:00 +0000</pubDate><guid>https://sogno-platform.github.io/dpsim/docs/concepts/state-space-nodal/</guid><description>
+&lt;p>The state-space nodal (SSN) method represents a component by its own continuous
+state-space model and couples it to the network through the nodal admittance
+matrix. A component is described by&lt;/p>
+&lt;div class="math">$$\frac{d\mathbf{x}}{dt} = \mathbf{A}\mathbf{x} + \mathbf{B}\mathbf{u},
+\qquad
+\mathbf{y} = \mathbf{C}\mathbf{x} + \mathbf{D}\mathbf{u},$$&lt;/div>&lt;p>where $\mathbf{x}$ is the internal state, and the input $\mathbf{u}$ and output
+$\mathbf{y}$ are the terminal quantities exchanged with the network (a voltage and
+the corresponding current). Trapezoidal discretisation of $(\mathbf{A}, \mathbf{B})$
+yields a discrete model $(\mathbf{A}_d, \mathbf{B}_d)$ and a Norton equivalent: a
+constant conductance $\mathbf{W}$ stamped into the system matrix plus a history
+current source recomputed each step from the previous state and input. Because the
+component is solved simultaneously with the network in the same nodal system, SSN
+is numerically robust without the parasitic snubbers that delayed
+current-injection schemes require.&lt;/p>
+&lt;p>This builds directly on &lt;a href="https://sogno-platform.github.io/dpsim/docs/concepts/nodal-analysis/">Nodal Analysis&lt;/a> and is
+the companion of
+&lt;a href="https://sogno-platform.github.io/dpsim/docs/concepts/state-space-extraction-theory/">State-Space Extraction&lt;/a>, which
+recovers a state-space model from an MNA simulation rather than starting from one.&lt;/p>
+&lt;h1 id="shift-to-the-dynamic-phasor-envelope">Shift to the Dynamic-Phasor Envelope&lt;/h1>
+&lt;p>In the &lt;a href="https://sogno-platform.github.io/dpsim/docs/concepts/dyn-phasors/">Dynamic Phasors&lt;/a> (shifted-frequency)
+domain a physical quantity is written as a slowly varying complex envelope on a
+carrier $\omega_s$,&lt;/p>
+&lt;div class="math">$$x(t) = \operatorname{Re}\{\, X(t)\, e^{j \omega_s t} \,\},$$&lt;/div>&lt;p>so that differentiation maps to
+$\frac{dx}{dt} \rightarrow \frac{dX}{dt} + j \omega_s X$. The physical
+state-space model therefore becomes, for the envelope,&lt;/p>
+&lt;div class="math">$$\frac{d\mathbf{X}}{dt} = (\mathbf{A} - j \omega_s \mathbf{I})\,\mathbf{X}
++ \mathbf{B}\,\mathbf{U}.$$&lt;/div>&lt;p>DPsim does not solve the dynamic-phasor system as a complex matrix: every
+complex admittance $g = g_r + j g_i$ is stamped as a real $2 \times 2$ block
+$\left[\begin{smallmatrix} g_r &amp;amp; -g_i \ g_i &amp;amp; g_r \end{smallmatrix}\right]$, with the real
+and imaginary node parts living in separate halves of a real-valued system. The
+DP-SSN model matches this by carrying the envelope in real/imaginary-split form
+$[\mathbf{X}_r; \mathbf{X}_i]$ and writing the carrier shift explicitly as a real
+augmented model,&lt;/p>
+&lt;div class="math">$$\mathbf{A}_\text{aug} =
+\begin{bmatrix} \mathbf{A} &amp; \omega_s \mathbf{I} \\ -\omega_s \mathbf{I} &amp; \mathbf{A} \end{bmatrix},
+\qquad
+\mathbf{B}_\text{aug} = \begin{bmatrix} \mathbf{B} &amp; \mathbf{0} \\ \mathbf{0} &amp; \mathbf{B} \end{bmatrix}.$$&lt;/div>&lt;p>The same real trapezoidal discretisation used by the EMT SSN models then applies
+unchanged, the Norton conductance comes out as a real block that stamps directly
+into the augmented network, and the interface reads and writes the real and
+imaginary node halves directly with no complex assembly. The $\pm \omega_s$
+coupling block is algebraically exact; placing a rotating-frame term inside the
+real state matrix follows the established SSN practice for rotating-machine
+models.&lt;/p>
+&lt;h1 id="components">Components&lt;/h1>
+&lt;p>The single-phase dynamic-phasor SSN models are:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>Full_Serial_RLC&lt;/code>, a series resistor-inductor-capacitor one-port with a
+hand-derived state-space model, used as the reference component.&lt;/li>
+&lt;li>&lt;code>GenericTwoTerminalVTypeSSN&lt;/code> and &lt;code>GenericTwoTerminalITypeSSN&lt;/code>, which accept a
+user-supplied $(\mathbf{A}, \mathbf{B}, \mathbf{C}, \mathbf{D})$ and build the
+V-type (voltage input, current output) or I-type (current input, voltage
+output) stamping accordingly.&lt;/li>
+&lt;/ul>
+&lt;p>All three reproduce the classical dynamic-phasor stamping of the same circuit,
+and the reconstructed time-domain waveform matches the EMT and EMT-SSN results
+within discretisation error.&lt;/p>
+&lt;h1 id="validation-and-examples">Validation and Examples&lt;/h1>
+&lt;p>Two notebooks accompany the models, both on a single-carrier series RLC one-port.
+&lt;code>examples/Notebooks/Circuits/DP_generalizedSSN_RLC.ipynb&lt;/code> validates the DP-SSN
+models against the classical dynamic-phasor stamping and the EMT and EMT-SSN
+waveforms. &lt;code>examples/Notebooks/Circuits/DP_SSN_RLC_accuracy.ipynb&lt;/code> studies the
+time-step and frequency-dependent accuracy against a small-step EMT reference.&lt;/p>
+&lt;h1 id="further-reading">Further Reading&lt;/h1>
+&lt;ul>
+&lt;li>C. Dufour, J. Mahseredjian, and J. Bélanger, &lt;em>A Combined State-Space Nodal Method for the Simulation of Power System Transients&lt;/em>, &lt;em>IEEE Transactions on Power Delivery&lt;/em>, vol. 26, no. 2, pp. 928–935, 2011. &lt;a href="https://doi.org/10.1109/TPWRD.2010.2090364">https://doi.org/10.1109/TPWRD.2010.2090364&lt;/a>&lt;/li>
+&lt;li>C. Dufour and D. S. Nasrallah, &lt;em>State-space-nodal rotating machine models with improved numerical stability&lt;/em>, &lt;em>IECON 2016 – 42nd Annual Conference of the IEEE Industrial Electronics Society&lt;/em>, 2016. &lt;a href="https://doi.org/10.1109/IECON.2016.7793690">https://doi.org/10.1109/IECON.2016.7793690&lt;/a>&lt;/li>
+&lt;li>A. A. Kida, A. C. S. Lima, F. A. Moreira, J. R. Martí, and J. Tarazona, &lt;em>Inaccuracies due to the frequency warping in simulation of electrical systems using combined state–space nodal analysis&lt;/em>, &lt;em>Electric Power Systems Research&lt;/em>, vol. 223, art. 109657, 2023. &lt;a href="https://doi.org/10.1016/j.epsr.2023.109657">https://doi.org/10.1016/j.epsr.2023.109657&lt;/a>&lt;/li>
+&lt;/ul></description></item><item><title>Docs: State-Space Extraction</title><link>https://sogno-platform.github.io/dpsim/docs/concepts/state-space-extraction-theory/</link><pubDate>Thu, 28 May 2026 00:00:00 +0000</pubDate><guid>https://sogno-platform.github.io/dpsim/docs/concepts/state-space-extraction-theory/</guid><description>
 &lt;p>Discrete-time state-space model is extracted from the EMT MNA simulation model. The extracted model is assembled in the form:&lt;/p>
 &lt;div class="math">$$\mathbf{x}[k+1]
 =
@@ -127,6 +195,10 @@ Futhermore, the solution vector $\vec{x}$ will represent $\vec{V}$ either by pol
 &lt;li>with current mismatch function and rectangular coordinates&lt;/li>
 &lt;/ul>
 &lt;p>To solve the problem using NR, we need to formulate $\textbf{J} (\vec{x})$ and $\vec{f} (\vec{x})$ for each powerflow problem formulation.&lt;/p>
+&lt;p>Of these four, DPsim currently implements the &lt;strong>power mismatch function with polar
+coordinates&lt;/strong>, detailed below. It is the formulation used by both the dense
+(&lt;code>PFSolverPowerPolar&lt;/code>) and sparse (&lt;code>PFSolverPowerPolarSparse&lt;/code>) solvers; the other three
+are not implemented.&lt;/p>
 &lt;h2 id="powerflow-problem-with-power-mismatch-function-and-polar-coordinates">Powerflow Problem with Power Mismatch Function and Polar Coordinates&lt;/h2>
 &lt;h3 id="formulation-of-mismatch-function">Formulation of Mismatch Function&lt;/h3>
 &lt;p>The injected power at a node $k$ is given by:&lt;/p>
@@ -179,7 +251,13 @@ J_{jk}^{PV} &amp;= \frac{\partial P_{j} (\vec{x} ) } {\partial \vert V_{k} \vert
 J_{jj}^{PV} &amp;= \frac{\partial P_{j}(\vec{x})}{\partial \vert V_{j} \vert } = \frac{P_{j} (\vec{x} )}{\vert V_{j} \vert} + G_{jj} \vert V_{j} \vert \\
 J_{jk}^{QV} &amp;= \frac{\partial Q_{j} (\vec{x} ) } {\partial \vert V_{k} \vert } = \vert V_{j} \vert \left ( G_{jk} sin(\theta_{j} - \theta_{k}) + B_{jk} cos(\theta_{j} - \theta_{k}) \right ) \\
 J_{jj}^{QV} &amp;= \frac{\partial Q_{j}(\vec{x})}{\partial \vert V_{j} \vert } = \frac{Q_{j} (\vec{x} )}{\vert V_{j} \vert} - B_{jj} \vert V_{j} \vert \\
-\end{align}$$&lt;/div>&lt;p>The linear system of equations that is solved in every Newton iteration can be written in matrix form as follows:&lt;/p>
+\end{align}$$&lt;/div>&lt;p>The formulas above use the voltage magnitude $\vert V_k \vert$ as the unknown. The DPsim
+implementation instead uses the &lt;em>relative&lt;/em> voltage increment $\Delta \vert V_k \vert / \vert V_k \vert$,
+which scales every voltage-magnitude column ($J^{PV}$, $J^{QV}$) by $\vert V_k \vert$. For
+example $J_{jj}^{PV}$ becomes $P_j(\vec{x}) + G_{jj} \vert V_j \vert^2$. This is paired with
+the multiplicative voltage update $\vert V_k \vert \leftarrow \vert V_k \vert (1 + \Delta \vert V_k \vert / \vert V_k \vert)$,
+so the solution is identical; only the scaling of the voltage columns differs.&lt;/p>
+&lt;p>The linear system of equations that is solved in every Newton iteration can be written in matrix form as follows:&lt;/p>
 &lt;div class="math">$$\begin{align}
 -\left [ \begin{array}{cccccc}
 \frac{\partial \Delta P_{2} }{\partial \theta_{2}} &amp; \cdots &amp; \frac{\partial \Delta P_{2} }{\partial \theta_{N}} &amp;
@@ -214,4 +292,43 @@ J_{jj}^{QV} &amp;= \frac{\partial Q_{j}(\vec{x})}{\partial \vert V_{j} \vert } =
 &lt;li>Evaluate the Jacobian matrix $\textbf{J}^{(i)}$ and compute $\Delta \vec{x}^{(i)}$.&lt;/li>
 &lt;li>Compute the update solution vector $\vec{x}^{(i+1)}$. Return to step 3.&lt;/li>
 &lt;li>Stop.&lt;/li>
-&lt;/ol></description></item></channel></rss>
+&lt;/ol>
+&lt;h2 id="convergence-and-step-control">Convergence and Step Control&lt;/h2>
+&lt;p>The iteration is governed by two parameters:&lt;/p>
+&lt;ul>
+&lt;li>&lt;strong>Tolerance&lt;/strong> (default $10^{-8}$): the run is converged once every entry of the
+mismatch vector satisfies $\vert f_{i}(\vec{x}) \vert &amp;lt;$ tolerance (an infinity-norm
+test over all $\Delta P$ and $\Delta Q$ components).&lt;/li>
+&lt;li>&lt;strong>Maximum iterations&lt;/strong> (default $20$): an upper bound on the number of Newton steps
+per power flow solve.&lt;/li>
+&lt;/ul>
+&lt;p>To improve robustness far from the solution, the full Newton step is &lt;strong>scaled by a
+single factor&lt;/strong> $\alpha \in (0, 1]$ rather than damped component-wise. The factor is the
+largest value that keeps the per-step changes within fixed bounds:&lt;/p>
+&lt;div class="math">$$\alpha = \min \left( 1,\ \frac{\Delta\theta_{max}}{\max_k \vert \Delta\theta_k \vert},\ \frac{\Delta V_{max}}{\max_k \vert \Delta V_k / V_k \vert} \right)$$&lt;/div>&lt;p>with $\Delta\theta_{max} = 0.2\ \text{rad}$ and $\Delta V_{max} = 0.1\ \text{pu}$. Because
+the whole step is scaled by one factor, the Newton search direction is preserved, so
+$\alpha = 1$ near the solution and quadratic convergence is retained; $\alpha &amp;lt; 1$ only
+bounds large early steps. Voltage magnitudes are updated multiplicatively
+($V_k \leftarrow V_k (1 + \alpha, \Delta V_k / V_k)$), consistent with the relative
+voltage increment used in the Jacobian.&lt;/p>
+&lt;h1 id="solver-implementations">Solver Implementations&lt;/h1>
+&lt;p>DPsim ships two implementations of the Newton-Raphson power flow solver with power
+mismatch and polar coordinates. Both produce identical results (to round-off); they
+differ only in how the Jacobian is stored and factorized:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>PFSolverPowerPolar&lt;/code> (dense): assembles a dense Jacobian and computes a fresh
+factorization every Newton iteration. This is the default.&lt;/li>
+&lt;li>&lt;code>PFSolverPowerPolarSparse&lt;/code> (sparse): assembles the Jacobian into a sparse matrix
+whose sparsity pattern is fixed (derived once from the network admittance matrix).
+The symbolic factorization (ordering) is analyzed once and reused; only the numeric
+values are recomputed each Newton iteration. The first iteration of every power flow
+solve does a full factorization with pivoting, and subsequent iterations refactorize
+while reusing that ordering (via KLU when available). This scales better on large,
+sparse grids.&lt;/li>
+&lt;/ul>
+&lt;p>The dense solver is used by default. To opt in to the sparse solver:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-python" data-lang="python">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#000">sim&lt;/span>&lt;span style="color:#ce5c00;font-weight:bold">.&lt;/span>&lt;span style="color:#000">set_pf_solver_use_sparse&lt;/span>&lt;span style="color:#000;font-weight:bold">(&lt;/span>&lt;span style="color:#204a87;font-weight:bold">True&lt;/span>&lt;span style="color:#000;font-weight:bold">)&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>The flag is ignored and the dense solver is used if DPsim was built without a sparse
+linear solver. The benchmark notebook
+&lt;code>examples/Notebooks/Grids/PF_Sparse_vs_Dense.ipynb&lt;/code> runs a range of network sizes both
+ways, verifies the converged voltages match, and compares run time.&lt;/p></description></item></channel></rss>
