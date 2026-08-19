@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <dpsim-models/EMT/EMT_Ph3_TwoTerminalVTypeVariableSSNComp.h>
+#include <dpsim-models/Solver/MNAIterativeCompInterface.h>
 
 namespace CPS {
 namespace EMT {
@@ -31,12 +32,15 @@ namespace Ph3 {
 /// provided by non-negative breakpoint vectors for flux and current.
 class PiecewiseLinearInductor final
     : public TwoTerminalVTypeVariableSSNComp,
+      public MNAIterativeCompInterface,
       public SharedFactory<PiecewiseLinearInductor> {
 private:
   std::vector<Real> mFluxBreakpoints;
   std::vector<Real> mCurrentBreakpoints;
 
   std::pair<Real, Real> slopeAndOffsetFromFlux(Real flux) const;
+
+  Bool updateComponentParameters(const Matrix &state);
 
 protected:
   Bool updateComponentParameters() override final;
@@ -54,6 +58,11 @@ public:
 
   void setParameters(const std::vector<Real> &fluxBreakpoints,
                      const std::vector<Real> &currentBreakpoints);
+
+  void mnaInitializeIteration(Real time, Int timeStepCount) override final;
+  MNAIterationUpdate
+  mnaUpdateIteration(const Matrix &leftVector) override final;
+  void mnaFinalizeIteration() override final;
 };
 
 } // namespace Ph3

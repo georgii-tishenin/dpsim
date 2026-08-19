@@ -83,6 +83,18 @@ void EMT::VTypeVariableSSNComp::setParameters(const Matrix &A, const Matrix &B,
   mdE = Matrix::Zero(mE.rows(), 1);
 }
 
+Matrix
+EMT::VTypeVariableSSNComp::calculateNextState(const Matrix &newInput) const {
+  return mdA * (**mX) + mdB * (newInput + (**inputAttribute())) + mdE;
+}
+
+void EMT::VTypeVariableSSNComp::refreshNortonEquivalent() {
+  recomputeDiscreteModel();
+  mYHist = calculateHistoryVector();
+  (**mRightVector).setZero();
+  mnaCompApplyRightSideVectorStamp(**mRightVector);
+}
+
 void EMT::VTypeVariableSSNComp::updateStateSpaceModel() {
   mParameterChanged = updateComponentParameters();
 

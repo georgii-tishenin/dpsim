@@ -108,30 +108,81 @@ void MnaSolverDirect<VarType>::stampVariableSystemMatrix() {
 template <typename VarType>
 void MnaSolverDirect<VarType>::solveWithSystemMatrixRecomputation(
     Real time, Int timeStepCount) {
-  // Reset source vector
-  mRightSideVector.setZero();
+  const auto assembleRightSideVector = [this]() {
+    mRightSideVector.setZero();
+    for (auto stamp : mRightVectorStamps)
+      mRightSideVector += *stamp;
+  };
 
-  // Add together the right side vector (computed by the components'
-  // pre-step tasks)
-  for (auto stamp : mRightVectorStamps)
-    mRightSideVector += *stamp;
+  const auto solveAndUpdateNodes = [this]() {
+    auto start = std::chrono::steady_clock::now();
+    **mLeftSideVector =
+        mDirectLinearSolverVariableSystemMatrix->solve(mRightSideVector);
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<Real> diff = end - start;
+    mSolveTimes.push_back(diff.count());
+
+    for (UInt nodeIdx = 0; nodeIdx < mNumNetNodes; ++nodeIdx)
+      mNodes[nodeIdx]->mnaUpdateVoltage(**mLeftSideVector);
+  };
+
+  for (auto &comp : mIterativeComps)
+    comp->mnaInitializeIteration(time, timeStepCount);
+
+  assembleRightSideVector();
 
   // Get switch and variable comp status and update system matrix and lu factorization accordingly
   mVariableComponentChanged = hasVariableComponentChanged();
   if (mVariableComponentChanged)
     recomputeSystemMatrix(time);
 
-  // Calculate new solution vector
-  auto start = std::chrono::steady_clock::now();
-  **mLeftSideVector =
-      mDirectLinearSolverVariableSystemMatrix->solve(mRightSideVector);
-  auto end = std::chrono::steady_clock::now();
-  std::chrono::duration<Real> diff = end - start;
-  mSolveTimes.push_back(diff.count());
+  solveAndUpdateNodes();
 
-  // TODO split into separate task? (dependent on x, updating all v attributes)
-  for (UInt nodeIdx = 0; nodeIdx < mNumNetNodes; ++nodeIdx)
-    mNodes[nodeIdx]->mnaUpdateVoltage(**mLeftSideVector);
+  UInt iteration = 0;
+  while (!mIterativeComps.empty()) {
+    Bool requiresIteration = false;
+    Bool systemMatrixChanged = false;
+    Bool rightSideVectorChanged = false;
+
+    for (auto &comp : mIterativeComps) {
+      const auto update = comp->mnaUpdateIteration(**mLeftSideVector);
+      requiresIteration |= update.requiresIteration;
+      systemMatrixChanged |= update.systemMatrixChanged;
+      rightSideVectorChanged |= update.rightSideVectorChanged;
+    }
+
+    if (!requiresIteration)
+      break;
+
+    if (!systemMatrixChanged && !rightSideVectorChanged)
+      throw CPS::SystemError(
+          "An MNA component requested another iteration without updating "
+          "its system-matrix or right-vector stamp.");
+
+    if (++iteration > mMaxIterations)
+      throw CPS::SystemError(
+          "MNA iterative solution did not converge within 20 iterations.");
+
+    if (systemMatrixChanged) {
+      recomputeSystemMatrix(time);
+      mVariableComponentChanged = true;
+    }
+
+    if (rightSideVectorChanged || systemMatrixChanged)
+      assembleRightSideVector();
+
+    solveAndUpdateNodes();
+  }
+
+  for (auto &comp : mIterativeComps)
+    comp->mnaFinalizeIteration();
+
+  if (iteration > 0) {
+    SPDLOG_LOGGER_INFO(mSLog,
+                       "MNA solution converged after {} additional "
+                       "iteration(s) at time {}.",
+                       iteration, time);
+  }
 
   // Components' states will be updated by the post-step tasks
 }

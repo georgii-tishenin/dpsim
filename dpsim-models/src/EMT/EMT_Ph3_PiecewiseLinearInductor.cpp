@@ -83,11 +83,16 @@ EMT::Ph3::PiecewiseLinearInductor::slopeAndOffsetFromFlux(Real flux) const {
 }
 
 Bool EMT::Ph3::PiecewiseLinearInductor::updateComponentParameters() {
+  return updateComponentParameters(**mX);
+}
+
+Bool EMT::Ph3::PiecewiseLinearInductor::updateComponentParameters(
+    const Matrix &state) {
   Matrix newC = Matrix::Zero(3, 3);
   Matrix newF = Matrix::Zero(3, 1);
 
   for (Int phase = 0; phase < 3; ++phase) {
-    const Real flux = (**mX)(phase, 0);
+    const Real flux = state(phase, 0);
     const auto [slope, offset] = slopeAndOffsetFromFlux(flux);
 
     newC(phase, phase) = slope;
@@ -103,3 +108,20 @@ Bool EMT::Ph3::PiecewiseLinearInductor::updateComponentParameters() {
 
   return changed;
 }
+
+void EMT::Ph3::PiecewiseLinearInductor::mnaInitializeIteration(Real, Int) {}
+
+MNAIterationUpdate EMT::Ph3::PiecewiseLinearInductor::mnaUpdateIteration(
+    const Matrix &leftVector) {
+  const Matrix newInput = interfaceVoltageFromLeftVector(leftVector);
+  const Matrix trialState = calculateNextState(newInput);
+
+  const Bool changed = updateComponentParameters(trialState);
+  if (!changed)
+    return {};
+
+  refreshNortonEquivalent();
+  return {true, true, true};
+}
+
+void EMT::Ph3::PiecewiseLinearInductor::mnaFinalizeIteration() {}

@@ -85,6 +85,8 @@ protected:
   Bool mVariableComponentChanged = false;
   /// Tracks active MNA system-matrix changes from the last solve step.
   Bool mSystemMatrixChanged = false;
+  /// Maximum number of additional MNA solutions within one time step.
+  static constexpr UInt mMaxIterations = 20;
 
   using MnaSolver<VarType>::mSwitches;
   using MnaSolver<VarType>::mMNAIntfSwitches;
@@ -106,6 +108,7 @@ protected:
   using MnaSolver<VarType>::hasVariableComponentChanged;
   using MnaSolver<VarType>::mNumRecomputations;
   using MnaSolver<VarType>::mSyncGen;
+  using MnaSolver<VarType>::mIterativeComps;
   using MnaSolver<VarType>::mFactorizeTimes;
   using MnaSolver<VarType>::mSolveTimes;
   using MnaSolver<VarType>::mRecomputationTimes;

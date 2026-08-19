@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <dpsim-models/EMT/EMT_Ph3_TwoTerminalVTypeVariableSSNComp.h>
+#include <dpsim-models/Solver/MNAIterativeCompInterface.h>
 
 namespace CPS {
 namespace EMT {
@@ -39,11 +40,14 @@ namespace Ph3 {
 ///
 ///   y = (u - v_c) / R_c
 class SSN_GFL final : public TwoTerminalVTypeVariableSSNComp,
+                      public MNAIterativeCompInterface,
                       public SharedFactory<SSN_GFL> {
 private:
   static constexpr Int mStateSize = 14;
   static constexpr Int mInputSize = 3;
   static constexpr Int mOutputSize = 3;
+  static constexpr Real mIterationRelativeTolerance = 1e-9;
+  static constexpr Real mIterationAbsoluteTolerance = 1e-9;
 
   enum StateIndex : Int {
     ThetaPLL = 0,
@@ -91,6 +95,9 @@ private:
   const Attribute<Real>::Ptr mQInst;
   const Attribute<Real>::Ptr mOmegaPLL;
 
+  Matrix mIterationState;
+  Matrix mIterationInput;
+
   Matrix getParkTransformMatrix(Real theta) const;
   Matrix getInverseParkTransformMatrix(Real theta) const;
 
@@ -109,6 +116,11 @@ private:
   void buildStateSpaceModel(const Matrix &x, const Matrix &u, Matrix &A,
                             Matrix &B, Matrix &C, Matrix &D, Matrix &E,
                             Matrix &F) const;
+
+  Bool updateComponentParameters(const Matrix &state, const Matrix &input);
+
+  Bool iterationValueConverged(const Matrix &value,
+                               const Matrix &previousValue) const;
 
 protected:
   Bool updateComponentParameters() override final;
@@ -138,6 +150,11 @@ public:
                      Real kpCurrCtrl, Real kiCurrCtrl);
 
   void initializeFromNodesAndTerminals(Real frequency) override final;
+
+  void mnaInitializeIteration(Real time, Int timeStepCount) override final;
+  MNAIterationUpdate
+  mnaUpdateIteration(const Matrix &leftVector) override final;
+  void mnaFinalizeIteration() override final;
 
   Matrix getState() const;
   Matrix getStateDerivative() const;

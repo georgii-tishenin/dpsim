@@ -51,20 +51,28 @@ void EMT::Ph3::TwoTerminalVTypeVariableSSNComp::
 
 void EMT::Ph3::TwoTerminalVTypeVariableSSNComp::mnaCompUpdateVoltage(
     const Matrix &leftVector) {
+  **mIntfVoltage = interfaceVoltageFromLeftVector(leftVector);
+}
+
+Matrix
+EMT::Ph3::TwoTerminalVTypeVariableSSNComp::interfaceVoltageFromLeftVector(
+    const Matrix &leftVector) {
   // Interface voltage convention: v = v_terminal1 - v_terminal0
-  **mIntfVoltage = Matrix::Zero(3, 1);
+  Matrix interfaceVoltage = Matrix::Zero(3, 1);
 
   if (terminalNotGrounded(1)) {
     for (Int phase = 0; phase < 3; ++phase) {
-      (**mIntfVoltage)(phase, 0) =
+      interfaceVoltage(phase, 0) =
           Math::realFromVectorElement(leftVector, matrixNodeIndex(1, phase));
     }
   }
 
   if (terminalNotGrounded(0)) {
     for (Int phase = 0; phase < 3; ++phase) {
-      (**mIntfVoltage)(phase, 0) -=
+      interfaceVoltage(phase, 0) -=
           Math::realFromVectorElement(leftVector, matrixNodeIndex(0, phase));
     }
   }
+
+  return interfaceVoltage;
 }

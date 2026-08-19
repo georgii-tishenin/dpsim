@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Institute for Automation of Complex Power Systems, EONERC, RWTH Aachen University
 // SPDX-License-Identifier: MPL-2.0
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -461,10 +462,15 @@ void EMT::Ph3::SSN_GFL::buildStateSpaceModel(const Matrix &x, const Matrix &u,
 }
 
 Bool EMT::Ph3::SSN_GFL::updateComponentParameters() {
+  return updateComponentParameters(**mX, **mIntfVoltage);
+}
+
+Bool EMT::Ph3::SSN_GFL::updateComponentParameters(const Matrix &state,
+                                                  const Matrix &input) {
   Matrix eVector;
   Matrix fVector;
 
-  buildStateSpaceModel(**mX, **mIntfVoltage, mA, mB, mC, mD, eVector, fVector);
+  buildStateSpaceModel(state, input, mA, mB, mC, mD, eVector, fVector);
 
   setStateOffset(eVector);
   setOutputOffset(fVector);
@@ -473,6 +479,39 @@ Bool EMT::Ph3::SSN_GFL::updateComponentParameters() {
   // model time varying. The SSN equivalent is therefore rebuilt every step.
   return true;
 }
+
+Bool EMT::Ph3::SSN_GFL::iterationValueConverged(
+    const Matrix &value, const Matrix &previousValue) const {
+  const Real scale = std::max(value.norm(), previousValue.norm());
+  return (value - previousValue).norm() <=
+         mIterationAbsoluteTolerance + mIterationRelativeTolerance * scale;
+}
+
+void EMT::Ph3::SSN_GFL::mnaInitializeIteration(Real, Int) {
+  mIterationState = **mX;
+  mIterationInput = **mIntfVoltage;
+}
+
+MNAIterationUpdate
+EMT::Ph3::SSN_GFL::mnaUpdateIteration(const Matrix &leftVector) {
+  const Matrix newInput = interfaceVoltageFromLeftVector(leftVector);
+  const Matrix trialState = calculateNextState(newInput);
+
+  const Bool converged = iterationValueConverged(trialState, mIterationState) &&
+                         iterationValueConverged(newInput, mIterationInput);
+  if (converged)
+    return {};
+
+  mIterationState = trialState;
+  mIterationInput = newInput;
+
+  updateComponentParameters(mIterationState, mIterationInput);
+  refreshNortonEquivalent();
+
+  return {true, true, true};
+}
+
+void EMT::Ph3::SSN_GFL::mnaFinalizeIteration() {}
 
 void EMT::Ph3::SSN_GFL::updateLogAttributes(const Matrix &u) const {
   const Matrix &x = **mX;

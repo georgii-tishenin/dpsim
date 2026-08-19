@@ -24,6 +24,10 @@ protected:
 
   MatrixComp buildInitialInputFromNodes(Real frequency) override final;
 
+  /// Calculate the interface voltage represented by an MNA solution without
+  /// modifying the component attributes.
+  Matrix interfaceVoltageFromLeftVector(const Matrix &leftVector);
+
 public:
   void
   mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override final;

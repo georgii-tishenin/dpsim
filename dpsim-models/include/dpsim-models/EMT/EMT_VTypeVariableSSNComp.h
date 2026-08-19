@@ -57,6 +57,13 @@ protected:
   void setParameters(const Matrix &A, const Matrix &B, const Matrix &C,
                      const Matrix &D, const Matrix &E, const Matrix &F);
 
+  /// Calculate the tentative next state without changing the committed state.
+  Matrix calculateNextState(const Matrix &newInput) const;
+
+  /// Rebuild the local Norton equivalent and this component's right-vector
+  /// stamp after an iterative model update.
+  void refreshNortonEquivalent();
+
   /// Update the current stepwise-linearized component model.
   /// Returns true if the MNA conductance stamp changed.
   virtual Bool updateComponentParameters() = 0;

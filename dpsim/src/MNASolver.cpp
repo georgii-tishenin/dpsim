@@ -492,6 +492,12 @@ template <typename VarType> void MnaSolver<VarType>::identifyTopologyObjects() {
       mSyncGen.push_back(genComp);
     }
 
+    auto iterativeComp =
+        std::dynamic_pointer_cast<CPS::MNAIterativeCompInterface>(comp);
+    if (iterativeComp) {
+      mIterativeComps.push_back(iterativeComp);
+    }
+
     auto swComp = std::dynamic_pointer_cast<CPS::MNASwitchInterface>(comp);
     if (swComp) {
       mSwitches.push_back(swComp);
