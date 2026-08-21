@@ -4,6 +4,7 @@
 #pragma once
 
 #include <dpsim-models/DP/DP_Ph1_MixedVTypeVariableSSNComp.h>
+#include <dpsim-models/Solver/MNAIterativeCompInterface.h>
 
 namespace CPS {
 namespace DP {
@@ -12,8 +13,12 @@ namespace Ph1 {
 /// Averaged grid-following VSI SSN port of EMT::Ph3::AvVoltSourceInverterStateSpace: 8 real control states plus 2 complex envelope states (Vc, If).
 class AvVoltSourceInverterStateSpace final
     : public MixedVTypeVariableSSNComp,
+      public MNAIterativeCompInterface,
       public SharedFactory<AvVoltSourceInverterStateSpace> {
 private:
+  static constexpr Real mIterationRelativeTolerance = 1e-9;
+  static constexpr Real mIterationAbsoluteTolerance = 1e-9;
+
   enum StateIndex : Int {
     Psi = 0,
     PhiPLL = 1,
@@ -54,10 +59,21 @@ private:
   const Attribute<Real>::Ptr mQInst;
   const Attribute<Real>::Ptr mOmegaPLL;
 
+  Bool mIterativeSolutionEnabled = false;
+  Matrix mIterationState;
+  Matrix mIterationInput;
+  const Attribute<Int>::Ptr mIterationCount;
+  const Attribute<Real>::Ptr mIterationStateResidual;
+  const Attribute<Real>::Ptr mIterationInputResidual;
+
   /// Builds the affine real model (A,B,C,D,E,F) around (x,u): RHS + analytic Jacobian, E = f(x,u) - A*x - B*u.
   void buildStateSpaceModel(const Matrix &x, const Matrix &u, Matrix &A,
                             Matrix &B, Matrix &C, Matrix &D, Matrix &E,
                             Matrix &F) const;
+
+  Bool updateComponentParameters(const Matrix &state, const Matrix &input);
+  Real iterationResidual(const Matrix &value,
+                         const Matrix &previousValue) const;
 
 protected:
   Bool updateComponentParameters() override final;
@@ -77,7 +93,20 @@ public:
                      Real qRef, Real kpPowerCtrl, Real kiPowerCtrl,
                      Real kpCurrCtrl, Real kiCurrCtrl);
 
+  /// Enable repeated MNA solutions within each time step. Disabled by
+  /// default to preserve the existing execution behavior.
+  void setIterativeSolution(Bool enabled) {
+    mIterativeSolutionEnabled = enabled;
+  }
+
+  Bool iterativeSolutionEnabled() const { return mIterativeSolutionEnabled; }
+
   void initializeFromNodesAndTerminals(Real frequency) override;
+
+  void mnaInitializeIteration(Real time, Int timeStepCount) override final;
+  MNAIterationUpdate
+  mnaUpdateIteration(const Matrix &leftVector) override final;
+  void mnaFinalizeIteration() override final;
 };
 
 } // namespace Ph1

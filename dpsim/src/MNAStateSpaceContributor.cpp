@@ -622,6 +622,7 @@ public:
 
   void stamp(Matrix &AdLocal, Matrix &BdMna, Matrix &CdMna, UInt stateOffset,
              UInt mnaVectorSize) const override {
+    mComponent->markStateSpaceExtractionStamp();
     const UInt localStateCount = getStateCount();
 
     const Matrix &discreteA = mComponent->getDiscreteA();

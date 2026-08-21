@@ -15,8 +15,16 @@ namespace Ph1 {
 /// real + complex-envelope state, packed as one real vector.
 class MixedVTypeVariableSSNComp : public MNASimPowerComp<Complex>,
                                   public MNAVariableCompInterface {
+public:
+  enum class NortonAdmittanceMode { ComplexScalar, FullRealMatrix };
+
 private:
   Bool mParameterChanged;
+  NortonAdmittanceMode mNortonAdmittanceMode =
+      NortonAdmittanceMode::ComplexScalar;
+  UInt mDiscreteModelRevision = 0;
+  UInt mMnaStampRevision = 0;
+  UInt mExtractionStampRevision = 0;
 
 protected:
   static constexpr Int mInitializationMaxIterations = 10;
@@ -34,6 +42,9 @@ protected:
 
   /// Complex Norton admittance / history current stamped into the network.
   Complex mW;
+  /// Full packed-real [Re,Im] Norton admittance before the optional reduction
+  /// to a complex scalar.
+  Matrix mWReal;
   Complex mYHist;
 
   /// Packed real state: [realStates..., Re(cplxState0), Im(cplxState0), ...].
@@ -48,6 +59,9 @@ protected:
 
   static Matrix packComplex(const Complex &c);
   static Complex unpackComplex(const Matrix &v);
+
+  /// Read v_terminal1 - v_terminal0 from the current MNA solution.
+  Complex interfaceVoltageFromLeftVector(const Matrix &leftVector);
 
   Attribute<MatrixComp>::Ptr inputAttribute() const;
   Attribute<MatrixComp>::Ptr outputAttribute() const;
@@ -69,6 +83,13 @@ protected:
   virtual void updateState(const Complex &uOld, const Complex &uNew);
   virtual void recomputeDiscreteModel();
 
+  /// Calculate the tentative next state without changing the committed state.
+  Matrix calculateNextState(const Complex &newInput) const;
+
+  /// Rebuild the Norton equivalent and this component's right-vector stamp
+  /// after an iterative model update.
+  void refreshNortonEquivalent();
+
   /// Update derived attributes used for logging/inspection; called once per
   /// step after the state update. Empty by default, override in derived
   /// components (mirrors EMT::SSNComp::updateLogAttributes).
@@ -83,6 +104,26 @@ public:
   const Matrix &getDiscreteA() const;
   const Matrix &getDiscreteB() const;
   const Matrix &getC() const;
+  const Matrix &getD() const;
+  const Matrix &getFullNortonAdmittance() const;
+  Matrix getComplexScalarNortonAdmittanceMatrix() const;
+  Matrix getNortonAdmittanceStructureDefect() const;
+
+  void setNortonAdmittanceMode(NortonAdmittanceMode mode) {
+    mNortonAdmittanceMode = mode;
+  }
+  NortonAdmittanceMode nortonAdmittanceMode() const {
+    return mNortonAdmittanceMode;
+  }
+
+  UInt getDiscreteModelRevision() const { return mDiscreteModelRevision; }
+  UInt getMnaStampRevision() const { return mMnaStampRevision; }
+  UInt getExtractionStampRevision() const {
+    return mExtractionStampRevision;
+  }
+  void markStateSpaceExtractionStamp() {
+    mExtractionStampRevision = mDiscreteModelRevision;
+  }
 
   Bool hasParameterChanged() override final;
 

@@ -13,7 +13,8 @@ DP::Ph1::MixedVTypeVariableSSNComp::MixedVTypeVariableSSNComp(
     : MNASimPowerComp<Complex>(uid, name, true, true, logLevel),
       mParameterChanged(false), mRealStateCount(realStateCount),
       mComplexStateCount(complexStateCount), mTimeStep(0.0), mW(0.0, 0.0),
-      mYHist(0.0, 0.0), mX(mAttributes->create<Matrix>("x")) {
+      mWReal(Matrix::Zero(2, 2)), mYHist(0.0, 0.0),
+      mX(mAttributes->create<Matrix>("x")) {
   mPhaseType = PhaseType::Single;
   setTerminalNumber(2);
 
@@ -41,6 +42,25 @@ const Matrix &DP::Ph1::MixedVTypeVariableSSNComp::getDiscreteB() const {
 
 const Matrix &DP::Ph1::MixedVTypeVariableSSNComp::getC() const { return mC; }
 
+const Matrix &DP::Ph1::MixedVTypeVariableSSNComp::getD() const { return mD; }
+
+const Matrix &
+DP::Ph1::MixedVTypeVariableSSNComp::getFullNortonAdmittance() const {
+  return mWReal;
+}
+
+Matrix DP::Ph1::MixedVTypeVariableSSNComp::
+    getComplexScalarNortonAdmittanceMatrix() const {
+  Matrix result(2, 2);
+  result << mW.real(), -mW.imag(), mW.imag(), mW.real();
+  return result;
+}
+
+Matrix DP::Ph1::MixedVTypeVariableSSNComp::
+    getNortonAdmittanceStructureDefect() const {
+  return mWReal - getComplexScalarNortonAdmittanceMatrix();
+}
+
 Matrix DP::Ph1::MixedVTypeVariableSSNComp::packComplex(const Complex &c) {
   Matrix v(2, 1);
   v(0, 0) = c.real();
@@ -50,6 +70,18 @@ Matrix DP::Ph1::MixedVTypeVariableSSNComp::packComplex(const Complex &c) {
 
 Complex DP::Ph1::MixedVTypeVariableSSNComp::unpackComplex(const Matrix &v) {
   return Complex(v(0, 0), v(1, 0));
+}
+
+Complex DP::Ph1::MixedVTypeVariableSSNComp::interfaceVoltageFromLeftVector(
+    const Matrix &leftVector) {
+  Complex voltage(0.0, 0.0);
+  if (terminalNotGrounded(1))
+    voltage += Math::complexFromVectorElement(leftVector, matrixNodeIndex(1),
+                                              mNumFreqs, 0);
+  if (terminalNotGrounded(0))
+    voltage -= Math::complexFromVectorElement(leftVector, matrixNodeIndex(0),
+                                              mNumFreqs, 0);
+  return voltage;
 }
 
 Attribute<MatrixComp>::Ptr
@@ -113,6 +145,7 @@ void DP::Ph1::MixedVTypeVariableSSNComp::setParameters(
   mdA = Matrix::Zero(n, n);
   mdB = Matrix::Zero(n, 2);
   mdE = Matrix::Zero(n, 1);
+  mWReal = Matrix::Zero(2, 2);
 
   mW = Complex(0.0, 0.0);
   mYHist = Complex(0.0, 0.0);
@@ -160,8 +193,24 @@ void DP::Ph1::MixedVTypeVariableSSNComp::recomputeDiscreteModel() {
 
   // Fold the 2x2 real u->y block into a complex admittance; requires it to
   // have the [[a,-b],[b,a]] complex-multiplication structure.
-  const Matrix wReal = mC * mdB + mD;
-  mW = Complex(wReal(0, 0), wReal(1, 0));
+  mWReal = mC * mdB + mD;
+  mW = Complex(mWReal(0, 0), mWReal(1, 0));
+  ++mDiscreteModelRevision;
+}
+
+Matrix DP::Ph1::MixedVTypeVariableSSNComp::calculateNextState(
+    const Complex &newInput) const {
+  return mdA * (**mX) +
+         mdB * (packComplex(newInput) +
+                packComplex((**inputAttribute())(0, 0))) +
+         mdE;
+}
+
+void DP::Ph1::MixedVTypeVariableSSNComp::refreshNortonEquivalent() {
+  recomputeDiscreteModel();
+  mYHist = unpackComplex(calculateHistoryVectorReal());
+  (**mRightVector).setZero();
+  mnaCompApplyRightSideVectorStamp(**mRightVector);
 }
 
 void DP::Ph1::MixedVTypeVariableSSNComp::updateStateSpaceModel() {
@@ -285,6 +334,38 @@ void DP::Ph1::MixedVTypeVariableSSNComp::mnaCompAddPostStepDependencies(
 
 void DP::Ph1::MixedVTypeVariableSSNComp::mnaCompApplySystemMatrixStamp(
     SparseMatrixRow &systemMatrix) {
+  mMnaStampRevision = mDiscreteModelRevision;
+
+  if (mNortonAdmittanceMode == NortonAdmittanceMode::FullRealMatrix) {
+    if (mNumFreqs != 1)
+      throw std::logic_error(
+          "Full real Norton stamping currently supports one DP frequency.");
+
+    const Eigen::Index complexOffset = systemMatrix.rows() / 2;
+    const auto stampBlock = [&](UInt rowNode, UInt columnNode, Real sign) {
+      for (Eigen::Index row = 0; row < 2; ++row) {
+        for (Eigen::Index column = 0; column < 2; ++column) {
+          const Eigen::Index matrixRow =
+              rowNode + (row == 0 ? 0 : complexOffset);
+          const Eigen::Index matrixColumn =
+              columnNode + (column == 0 ? 0 : complexOffset);
+          systemMatrix.coeffRef(matrixRow, matrixColumn) +=
+              sign * mWReal(row, column);
+        }
+      }
+    };
+
+    if (terminalNotGrounded(0))
+      stampBlock(matrixNodeIndex(0), matrixNodeIndex(0), 1.0);
+    if (terminalNotGrounded(1))
+      stampBlock(matrixNodeIndex(1), matrixNodeIndex(1), 1.0);
+    if (terminalNotGrounded(0) && terminalNotGrounded(1)) {
+      stampBlock(matrixNodeIndex(0), matrixNodeIndex(1), -1.0);
+      stampBlock(matrixNodeIndex(1), matrixNodeIndex(0), -1.0);
+    }
+    return;
+  }
+
   for (UInt freq = 0; freq < mNumFreqs; freq++) {
     MNAStampUtils::stampAdmittance(
         mW, systemMatrix, matrixNodeIndex(0), matrixNodeIndex(1),
@@ -318,7 +399,12 @@ void DP::Ph1::MixedVTypeVariableSSNComp::mnaCompUpdateVoltage(
 }
 
 void DP::Ph1::MixedVTypeVariableSSNComp::mnaCompUpdateCurrent(const Matrix &) {
-  (**mIntfCurrent)(0, 0) = mW * (**mIntfVoltage)(0, 0) + mYHist;
+  if (mNortonAdmittanceMode == NortonAdmittanceMode::FullRealMatrix) {
+    (**mIntfCurrent)(0, 0) =
+        unpackComplex(mWReal * packComplex((**mIntfVoltage)(0, 0))) + mYHist;
+  } else {
+    (**mIntfCurrent)(0, 0) = mW * (**mIntfVoltage)(0, 0) + mYHist;
+  }
 }
 
 void DP::Ph1::MixedVTypeVariableSSNComp::mnaCompPostStep(

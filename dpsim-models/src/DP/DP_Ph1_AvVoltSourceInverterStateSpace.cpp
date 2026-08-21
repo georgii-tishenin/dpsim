@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Institute for Automation of Complex Power Systems, EONERC, RWTH Aachen University
 // SPDX-License-Identifier: MPL-2.0
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -20,7 +21,12 @@ DP::Ph1::AvVoltSourceInverterStateSpace::AvVoltSourceInverterStateSpace(
       mIrcQ(mAttributes->create<Real>("irc_q")),
       mPInst(mAttributes->create<Real>("p_inst")),
       mQInst(mAttributes->create<Real>("q_inst")),
-      mOmegaPLL(mAttributes->create<Real>("omega_pll")) {
+      mOmegaPLL(mAttributes->create<Real>("omega_pll")),
+      mIterationCount(mAttributes->create<Int>("iteration_count")),
+      mIterationStateResidual(
+          mAttributes->create<Real>("iteration_state_residual")),
+      mIterationInputResidual(
+          mAttributes->create<Real>("iteration_input_residual")) {
   **mVcD = 0.0;
   **mVcQ = 0.0;
   **mIrcD = 0.0;
@@ -28,6 +34,9 @@ DP::Ph1::AvVoltSourceInverterStateSpace::AvVoltSourceInverterStateSpace(
   **mPInst = 0.0;
   **mQInst = 0.0;
   **mOmegaPLL = 0.0;
+  **mIterationCount = 0;
+  **mIterationStateResidual = 0.0;
+  **mIterationInputResidual = 0.0;
 }
 
 void DP::Ph1::AvVoltSourceInverterStateSpace::setParameters(
@@ -333,18 +342,78 @@ void DP::Ph1::AvVoltSourceInverterStateSpace::buildStateSpaceModel(
 }
 
 Bool DP::Ph1::AvVoltSourceInverterStateSpace::updateComponentParameters() {
+  return updateComponentParameters(
+      **mX, packComplex((**inputAttribute())(0, 0)));
+}
+
+Bool DP::Ph1::AvVoltSourceInverterStateSpace::updateComponentParameters(
+    const Matrix &state, const Matrix &input) {
   Matrix E;
   Matrix F;
 
   // Relinearized every step (mirrors EMT); change-check intentionally skipped.
-  buildStateSpaceModel(**mX, packComplex((**inputAttribute())(0, 0)), mA, mB,
-                       mC, mD, E, F);
+  buildStateSpaceModel(state, input, mA, mB, mC, mD, E, F);
 
   setStateOffset(E);
   setOutputOffset(F);
 
   return true;
 }
+
+Real DP::Ph1::AvVoltSourceInverterStateSpace::iterationResidual(
+    const Matrix &value, const Matrix &previousValue) const {
+  Real residual = 0.0;
+  for (Eigen::Index index = 0; index < value.rows(); ++index) {
+    const Real scale =
+        mIterationAbsoluteTolerance +
+        mIterationRelativeTolerance *
+            std::max(std::abs(value(index, 0)),
+                     std::abs(previousValue(index, 0)));
+    residual = std::max(
+        residual,
+        std::abs(value(index, 0) - previousValue(index, 0)) / scale);
+  }
+  return residual;
+}
+
+void DP::Ph1::AvVoltSourceInverterStateSpace::mnaInitializeIteration(Real,
+                                                                     Int) {
+  **mIterationCount = 0;
+  **mIterationStateResidual = 0.0;
+  **mIterationInputResidual = 0.0;
+  if (!mIterativeSolutionEnabled)
+    return;
+
+  mIterationState = **mX;
+  mIterationInput = packComplex((**inputAttribute())(0, 0));
+}
+
+MNAIterationUpdate
+DP::Ph1::AvVoltSourceInverterStateSpace::mnaUpdateIteration(
+    const Matrix &leftVector) {
+  if (!mIterativeSolutionEnabled)
+    return {};
+
+  const Complex newInputComplex = interfaceVoltageFromLeftVector(leftVector);
+  const Matrix newInput = packComplex(newInputComplex);
+  const Matrix trialState = calculateNextState(newInputComplex);
+
+  **mIterationStateResidual =
+      iterationResidual(trialState, mIterationState);
+  **mIterationInputResidual = iterationResidual(newInput, mIterationInput);
+  if (**mIterationStateResidual <= 1.0 && **mIterationInputResidual <= 1.0)
+    return {};
+
+  mIterationState = trialState;
+  mIterationInput = newInput;
+  ++(**mIterationCount);
+
+  updateComponentParameters(mIterationState, mIterationInput);
+  refreshNortonEquivalent();
+  return {true, true, true};
+}
+
+void DP::Ph1::AvVoltSourceInverterStateSpace::mnaFinalizeIteration() {}
 
 void DP::Ph1::AvVoltSourceInverterStateSpace::updateLogAttributes(
     const Matrix &u) const {
