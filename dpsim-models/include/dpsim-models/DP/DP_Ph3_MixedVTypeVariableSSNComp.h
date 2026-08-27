@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include <dpsim-models/MNASimPowerComp.h>
 #include <dpsim-models/Solver/MNAInterface.h>
 #include <dpsim-models/Solver/MNAVariableCompInterface.h>
@@ -93,6 +95,8 @@ protected:
 
 public:
   UInt getStateCount() const;
+  /// Optional semantic names for the packed real states, in state order.
+  virtual std::vector<String> getLocalStateNames() const;
   const Matrix &getDiscreteA() const;
   const Matrix &getDiscreteB() const;
   const Matrix &getC() const;

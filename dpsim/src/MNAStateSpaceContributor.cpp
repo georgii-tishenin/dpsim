@@ -357,15 +357,25 @@ class EMTPh3TwoTerminalVTypeSSNStateSpaceContributor final
 public:
   EMTPh3TwoTerminalVTypeSSNStateSpaceContributor(
       std::shared_ptr<EMT::VTypeSSNComp> component, Bool isVariable)
-      : mComponent(std::move(component)), mIsVariable(isVariable) {}
+      : mComponent(std::move(component)), mIsVariable(isVariable),
+        mVariableComponent(
+            std::dynamic_pointer_cast<EMT::VTypeVariableSSNComp>(mComponent)) {
+    mUseAugmentedPhysicalState =
+        mVariableComponent &&
+        mVariableComponent->usesAugmentedPhysicalStateExtraction();
+  }
 
-  UInt getStateCount() const override { return mComponent->getStateCount(); }
+  UInt getStateCount() const override {
+    return mComponent->getStateCount() +
+           (mUseAugmentedPhysicalState ? 3u : 0u);
+  }
 
   Bool contributesToUpdatedMatrices() const override { return mIsVariable; }
 
   void stamp(Matrix &AdLocal, Matrix &BdMna, Matrix &CdMna, UInt stateOffset,
              UInt mnaVectorSize) const override {
-    const UInt localStateCount = getStateCount();
+    const UInt physicalStateCount = mComponent->getStateCount();
+    const UInt localStateCount = physicalStateCount;
 
     const Matrix &discreteA = mComponent->getDiscreteA();
     const Matrix &discreteB = mComponent->getDiscreteB();
@@ -374,7 +384,32 @@ public:
     const Matrix K =
         buildTwoTerminalInterfaceVoltageMapping(*mComponent, mnaVectorSize);
 
-    // History-coordinate state s = discreteA x + discreteB vIntf:
+    if (mUseAugmentedPhysicalState) {
+      // Physical-coordinate realization with state [x, uPrevious]:
+      //
+      //   xNext = Ad x + Bd uPrevious + Bd K xMnaNext
+      //   uPreviousNext = K xMnaNext
+      //   yHist = C Ad x + C Bd uPrevious
+      //
+      // Unlike the legacy compact history-coordinate realization below, this
+      // form does not identify history states constructed from different
+      // Ad/Bd matrices on consecutive steps.
+      AdLocal.block(stateOffset, stateOffset, physicalStateCount,
+                    physicalStateCount) += discreteA;
+      AdLocal.block(stateOffset, stateOffset + physicalStateCount,
+                    physicalStateCount, 3) += discreteB;
+      BdMna.block(stateOffset, 0, physicalStateCount, mnaVectorSize) +=
+          discreteB * K;
+      BdMna.block(stateOffset + physicalStateCount, 0, 3, mnaVectorSize) += K;
+      stampTwoTerminalCurrentInjectionMapping(
+          K, CdMna, stateOffset, outputC * discreteA);
+      stampTwoTerminalCurrentInjectionMapping(
+          K, CdMna, stateOffset + physicalStateCount, outputC * discreteB);
+      return;
+    }
+
+    // Legacy diagnostic history-coordinate state
+    // s = discreteA x + discreteB vIntf:
     //   s[k+1] = discreteA s[k] + (discreteA + I) discreteB vIntf[k+1]
     //   yHist[k] = C s[k]
     // Therefore: AdLocal = discreteA, BdMna = (discreteA + I) discreteB K,
@@ -394,17 +429,18 @@ public:
 
   void contributeMetadata(StateSpaceMetadata &metadata,
                           UInt stateOffset) const override {
-    const UInt localStateCount = getStateCount();
+    const UInt physicalStateCount = mComponent->getStateCount();
     const String componentName = mComponent->name();
 
     const auto localStateNames = mComponent->getLocalStateNames();
 
-    if (!localStateNames.empty() && localStateNames.size() != localStateCount) {
+    if (!localStateNames.empty() &&
+        localStateNames.size() != physicalStateCount) {
       throw std::runtime_error(
           "SSN component returned an invalid number of local state names.");
     }
 
-    for (UInt idx = 0; idx < localStateCount; ++idx) {
+    for (UInt idx = 0; idx < physicalStateCount; ++idx) {
       if (!localStateNames.empty()) {
         setStateName(metadata, stateOffset + idx,
                      componentName + "." + localStateNames[idx]);
@@ -418,7 +454,7 @@ public:
       }
 
       for (auto &idx : abcBlock.indices) {
-        if (idx >= localStateCount) {
+        if (idx >= physicalStateCount) {
           throw std::runtime_error(
               "SSN component returned an invalid abc state index.");
         }
@@ -429,11 +465,21 @@ public:
       metadata.abcStateBlocks.push_back(
           {abcBlock.indices, componentName + "." + abcBlock.name});
     }
+
+    if (mUseAugmentedPhysicalState) {
+      const UInt inputOffset = stateOffset + mComponent->getStateCount();
+      addThreePhaseAbcStateMetadata(metadata, inputOffset,
+                                    componentName + ".u_previous");
+      for (UInt phase = 0; phase < 3; ++phase)
+        metadata.auxiliaryStateIndices.push_back(inputOffset + phase);
+    }
   }
 
 private:
   std::shared_ptr<EMT::VTypeSSNComp> mComponent;
   Bool mIsVariable = false;
+  std::shared_ptr<EMT::VTypeVariableSSNComp> mVariableComponent;
+  Bool mUseAugmentedPhysicalState = false;
 };
 
 class EMTPh3TwoTerminalVTypeSplitSSNStateSpaceContributor final
@@ -787,8 +833,22 @@ public:
 
   void contributeMetadata(StateSpaceMetadata &metadata,
                           UInt stateOffset) const override {
-    addRealStateMetadata(metadata, stateOffset, getStateCount(),
-                         mComponent->name());
+    const auto localStateNames = mComponent->getLocalStateNames();
+    const UInt localStateCount = getStateCount();
+    if (localStateNames.empty()) {
+      addRealStateMetadata(metadata, stateOffset, localStateCount,
+                           mComponent->name());
+      return;
+    }
+    if (localStateNames.size() != localStateCount) {
+      throw std::runtime_error(
+          "DP Ph3 variable SSN component returned an invalid number of "
+          "local state names.");
+    }
+    for (UInt idx = 0; idx < localStateCount; ++idx) {
+      setStateName(metadata, stateOffset + idx,
+                   mComponent->name() + "." + localStateNames[idx]);
+    }
   }
 
 private:

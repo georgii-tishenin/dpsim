@@ -33,6 +33,11 @@ UInt DP::Ph3::MixedVTypeVariableSSNComp::getStateCount() const {
   return static_cast<UInt>(stateSize());
 }
 
+std::vector<String>
+DP::Ph3::MixedVTypeVariableSSNComp::getLocalStateNames() const {
+  return {};
+}
+
 const Matrix &DP::Ph3::MixedVTypeVariableSSNComp::getDiscreteA() const {
   return mdA;
 }

@@ -3,6 +3,7 @@
 
 #include <Eigen/Eigenvalues>
 #include <Eigen/LU>
+#include <Eigen/QR>
 
 #include <dpsim-models/MathUtils.h>
 #include <dpsim/StateSpaceModalAnalysis.h>
@@ -47,7 +48,7 @@ void StateSpaceModalAnalysis::update() {
     throw std::logic_error("StateSpaceModalAnalysis requires an initialized "
                            "MNAStateSpaceExtractor.");
 
-  const Matrix Ad = buildDiscreteStateMatrixInAnalysisFrame();
+  Matrix Ad = buildDiscreteStateMatrixInAnalysisFrame();
 
   if (Ad.rows() == 0) {
     mDiscreteEigenvalues.resize(0);
@@ -67,6 +68,18 @@ void StateSpaceModalAnalysis::update() {
         "StateSpaceModalAnalysis requires a square state matrix.");
 
   mStateNames = buildStateNamesInAnalysisFrame();
+  mAuxiliaryReductionResidual = 0.0;
+  mAuxiliaryReductionPoleError = 0.0;
+  if (mReduceAuxiliaryStates &&
+      !mExtractor.getMetadata().auxiliaryStateIndices.empty()) {
+    std::vector<UInt> physicalIndices;
+    Ad = reduceToReachablePhysicalStateMatrix(Ad, physicalIndices);
+    std::vector<String> physicalStateNames;
+    physicalStateNames.reserve(physicalIndices.size());
+    for (const UInt idx : physicalIndices)
+      physicalStateNames.push_back(mStateNames[idx]);
+    mStateNames = std::move(physicalStateNames);
+  }
 
   Eigen::EigenSolver<Matrix> eigenSolver(Ad, true);
 
@@ -95,6 +108,94 @@ void StateSpaceModalAnalysis::update() {
 
   mParticipationFactors = CPS::Math::elementwiseProduct(
       mRightEigenvectors, mLeftEigenvectors.transpose());
+}
+
+Matrix StateSpaceModalAnalysis::reduceToReachablePhysicalStateMatrix(
+    const Matrix &matrix, std::vector<UInt> &physicalIndices) {
+  const UInt fullStateCount = static_cast<UInt>(matrix.rows());
+  const auto &auxiliaryIndices =
+      mExtractor.getMetadata().auxiliaryStateIndices;
+  std::vector<Bool> isAuxiliary(fullStateCount, false);
+  for (const UInt idx : auxiliaryIndices) {
+    if (idx >= fullStateCount)
+      throw std::logic_error(
+          "Auxiliary state index lies outside the modal state matrix.");
+    if (isAuxiliary[idx])
+      throw std::logic_error("Duplicate auxiliary state index.");
+    isAuxiliary[idx] = true;
+  }
+
+  physicalIndices.clear();
+  physicalIndices.reserve(fullStateCount - auxiliaryIndices.size());
+  for (UInt idx = 0; idx < fullStateCount; ++idx) {
+    if (!isAuxiliary[idx])
+      physicalIndices.push_back(idx);
+  }
+  if (physicalIndices.empty())
+    throw std::logic_error(
+        "Auxiliary-state reduction requires at least one physical state.");
+
+  const UInt physicalStateCount = physicalIndices.size();
+  const UInt auxiliaryStateCount = auxiliaryIndices.size();
+  Matrix physicalAdvance(physicalStateCount, fullStateCount);
+  Matrix auxiliaryAdvance(auxiliaryStateCount, fullStateCount);
+  for (UInt row = 0; row < physicalStateCount; ++row)
+    physicalAdvance.row(row) = matrix.row(physicalIndices[row]);
+  for (UInt row = 0; row < auxiliaryStateCount; ++row)
+    auxiliaryAdvance.row(row) = matrix.row(auxiliaryIndices[row]);
+
+  Eigen::FullPivLU<Matrix> physicalAdvanceLu(physicalAdvance);
+  if (static_cast<UInt>(physicalAdvanceLu.rank()) != physicalStateCount) {
+    throw std::runtime_error(
+        "Cannot reduce auxiliary states because the retained physical "
+        "coordinates do not parameterize the reachable subspace.");
+  }
+
+  // A reached augmented state lies on u_aux = H x_physical. Solve
+  // A_aux = H A_physical, then express the invariant dynamics through the
+  // embedding E x_physical = [x_physical, H x_physical].
+  const Matrix graph =
+      physicalAdvance.transpose()
+          .colPivHouseholderQr()
+          .solve(auxiliaryAdvance.transpose())
+          .transpose();
+  Matrix embedding = Matrix::Zero(fullStateCount, physicalStateCount);
+  for (UInt col = 0; col < physicalStateCount; ++col)
+    embedding(physicalIndices[col], col) = 1.0;
+  for (UInt row = 0; row < auxiliaryStateCount; ++row)
+    embedding.row(auxiliaryIndices[row]) = graph.row(row);
+
+  const Matrix reduced = physicalAdvance * embedding;
+  mAuxiliaryReductionResidual =
+      (matrix * embedding - embedding * reduced).norm() /
+      std::max(matrix.norm(), std::numeric_limits<Real>::epsilon());
+  if (mAuxiliaryReductionResidual > 1e-8) {
+    throw std::runtime_error(
+        "Auxiliary-state reduction failed the invariant-subspace check.");
+  }
+
+  Eigen::EigenSolver<Matrix> augmentedSolver(matrix, false);
+  Eigen::EigenSolver<Matrix> reducedSolver(reduced, false);
+  if (augmentedSolver.info() != Eigen::Success ||
+      reducedSolver.info() != Eigen::Success) {
+    throw std::runtime_error(
+        "Auxiliary-state reduction pole-preservation check failed.");
+  }
+  const CPS::VectorComp augmentedPoles = augmentedSolver.eigenvalues();
+  const CPS::VectorComp reducedPoles = reducedSolver.eigenvalues();
+  for (Eigen::Index reducedIdx = 0; reducedIdx < reducedPoles.rows();
+       ++reducedIdx) {
+    Real nearest = std::numeric_limits<Real>::infinity();
+    for (Eigen::Index augmentedIdx = 0;
+         augmentedIdx < augmentedPoles.rows(); ++augmentedIdx) {
+      nearest = std::min(
+          nearest,
+          std::abs(reducedPoles(reducedIdx) - augmentedPoles(augmentedIdx)));
+    }
+    mAuxiliaryReductionPoleError =
+        std::max(mAuxiliaryReductionPoleError, nearest);
+  }
+  return reduced;
 }
 
 Matrix

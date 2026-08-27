@@ -39,6 +39,20 @@ DP::Ph3::AvVoltSourceInverterStateSpace::AvVoltSourceInverterStateSpace(
   **mIrcNq = 0.0;
 }
 
+std::vector<String>
+DP::Ph3::AvVoltSourceInverterStateSpace::getLocalStateNames() const {
+  std::vector<String> names = {
+      "vc_a_re", "vc_a_im", "vc_b_re", "vc_b_im", "vc_c_re",
+      "vc_c_im", "if_a_re", "if_a_im", "if_b_re", "if_b_im",
+      "if_c_re", "if_c_im", "psi", "phi_pll", "p_filtered",
+      "q_filtered", "phi_d", "phi_q", "gamma_d", "gamma_q"};
+  if (mEnableNegSeqControl) {
+    names.push_back("gamma_n_d");
+    names.push_back("gamma_n_q");
+  }
+  return names;
+}
+
 void DP::Ph3::AvVoltSourceInverterStateSpace::setParameters(
     Real lf, Real cf, Real rf, Real rc, Real omegaN, Real kpPLL, Real kiPLL,
     Real omegaCutoff, Real pRef, Real qRef, Real kpPowerCtrl, Real kiPowerCtrl,

@@ -171,6 +171,20 @@ void MNAStateSpaceExtractor::collectMetadata() {
       }
     }
   }
+
+  std::vector<Bool> isAuxiliary(mStateCount, false);
+  for (const UInt idx : mMetadata.auxiliaryStateIndices) {
+    if (idx >= mStateCount) {
+      throw std::runtime_error(
+          "MNAStateSpaceExtractor: auxiliary metadata index is outside the "
+          "extracted state vector.");
+    }
+    if (isAuxiliary[idx]) {
+      throw std::runtime_error(
+          "MNAStateSpaceExtractor: duplicate auxiliary metadata index.");
+    }
+    isAuxiliary[idx] = true;
+  }
 }
 
 void MNAStateSpaceExtractor::stampConstantMatrices() {

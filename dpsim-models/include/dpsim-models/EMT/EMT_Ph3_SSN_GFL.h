@@ -115,6 +115,17 @@ protected:
   void updateLogAttributes(const Matrix &u) const override final;
 
 public:
+  struct JacobianValidationResult {
+    Matrix analyticalA;
+    Matrix numericalA;
+    Matrix analyticalB;
+    Matrix numericalB;
+    Matrix analyticalC;
+    Matrix numericalC;
+    Matrix analyticalD;
+    Matrix numericalD;
+  };
+
   using SharedFactory<SSN_GFL>::make;
 
   SSN_GFL(String uid, String name, Logger::Level logLevel = Logger::Level::off);
@@ -143,6 +154,15 @@ public:
   Matrix getStateDerivative() const;
   Matrix getInterfaceVoltage() const;
   Matrix getInterfaceCurrent() const;
+
+  /// \brief Compare the implemented analytical Jacobians with central finite
+  /// differences of the nonlinear component equations at the current point.
+  ///
+  /// This diagnostic intentionally evaluates the same f(x,u) and g(x,u) used
+  /// to construct the affine SSN model. It does not exercise the surrounding
+  /// MNA interconnection or the state-space extractor.
+  JacobianValidationResult
+  validateAnalyticalJacobians(Real relativeStep = 1e-6) const;
 };
 
 } // namespace Ph3

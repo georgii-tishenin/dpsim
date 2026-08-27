@@ -26,6 +26,7 @@ private:
   Matrix mE;
   Matrix mdE;
   Matrix mF;
+  Bool mUseAugmentedPhysicalStateExtraction = true;
 
 protected:
   static constexpr Int mInitializationMaxIterations = 10;
@@ -63,6 +64,22 @@ protected:
 
 public:
   Bool hasParameterChanged() override final;
+
+  /// Opt into the diagnostic extraction coordinate [x, u_previous]. This
+  /// avoids identifying consecutive history states through discrete matrices
+  /// that change between EMT steps. Simulation equations are unaffected.
+  /// Use the explicit [x, u_previous] extraction coordinate.
+  ///
+  /// This is the production default because it remains well-defined when the
+  /// variable component's discrete matrices change between EMT steps. Passing
+  /// false retains the former compact history coordinate for diagnostics.
+  void useAugmentedPhysicalStateExtraction(Bool value = true) {
+    mUseAugmentedPhysicalStateExtraction = value;
+  }
+
+  Bool usesAugmentedPhysicalStateExtraction() const {
+    return mUseAugmentedPhysicalStateExtraction;
+  }
 
   void initializeFromNodesAndTerminals(Real frequency) override;
 };

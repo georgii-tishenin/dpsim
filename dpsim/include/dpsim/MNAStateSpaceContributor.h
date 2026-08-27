@@ -31,6 +31,13 @@ struct StateSpaceMetadata {
   ///
   /// Each block is transformed as one abc -> dq0 block in modal analysis.
   std::vector<StateSpaceAbcStateBlock> abcStateBlocks;
+
+  /// Extracted coordinates used only to embed an exact one-step recurrence.
+  ///
+  /// These coordinates are retained in the raw extracted matrix, but may be
+  /// eliminated on its reachable invariant manifold before physical modal
+  /// quantities such as participation factors are evaluated.
+  std::vector<UInt> auxiliaryStateIndices;
 };
 
 /// Live adapter that contributes one component's local state-space blocks to

@@ -52,6 +52,17 @@ public:
 
   void setPoleMapping(StateSpacePoleMapping mapping) { mPoleMapping = mapping; }
 
+  /// Eliminate metadata-registered auxiliary embedding coordinates on the
+  /// reachable invariant manifold before modal quantities are evaluated.
+  ///
+  /// The raw extracted matrix is not modified. This is intended for
+  /// nonminimal exact-step realizations whose auxiliary coordinates are not
+  /// independent physical states and must therefore not receive physical
+  /// participation factors.
+  void setReduceAuxiliaryStates(Bool reduce) {
+    mReduceAuxiliaryStates = reduce;
+  }
+
   /// Update modal quantities from the current extracted state matrix.
   void update();
 
@@ -99,8 +110,23 @@ public:
   /// In GlobalDQ0 frame, registered abc state blocks are labelled as dq0 states.
   const std::vector<String> &getStateNames() const { return mStateNames; }
 
+  /// Relative invariance residual ||A E - E A_r|| / ||A|| of the most recent
+  /// auxiliary-state reduction; zero when no reduction was requested.
+  Real getAuxiliaryReductionResidual() const {
+    return mAuxiliaryReductionResidual;
+  }
+
+  /// Maximum nearest-neighbour difference between each reduced pole and the
+  /// unreduced augmented spectrum in the most recent update.
+  Real getAuxiliaryReductionPoleError() const {
+    return mAuxiliaryReductionPoleError;
+  }
+
 private:
   Matrix buildDiscreteStateMatrixInAnalysisFrame() const;
+
+  Matrix reduceToReachablePhysicalStateMatrix(const Matrix &matrix,
+                                               std::vector<UInt> &physicalIndices);
 
   Matrix buildGlobalDq0Transformation(Real theta) const;
 
@@ -113,6 +139,12 @@ private:
   StateSpaceAnalysisFrame mAnalysisFrame = StateSpaceAnalysisFrame::Native;
 
   StateSpacePoleMapping mPoleMapping = StateSpacePoleMapping::Bilinear;
+
+  Bool mReduceAuxiliaryStates = false;
+
+  Real mAuxiliaryReductionResidual = 0.0;
+
+  Real mAuxiliaryReductionPoleError = 0.0;
 
   Real mGlobalOmega = 0.0;
 

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Institute for Automation of Complex Power Systems, EONERC, RWTH Aachen University
 // SPDX-License-Identifier: MPL-2.0
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -623,3 +624,67 @@ Matrix EMT::Ph3::SSN_GFL::getStateDerivative() const {
 Matrix EMT::Ph3::SSN_GFL::getInterfaceVoltage() const { return **mIntfVoltage; }
 
 Matrix EMT::Ph3::SSN_GFL::getInterfaceCurrent() const { return **mIntfCurrent; }
+
+EMT::Ph3::SSN_GFL::JacobianValidationResult
+EMT::Ph3::SSN_GFL::validateAnalyticalJacobians(Real relativeStep) const {
+  if (!Math::isFinite(relativeStep) || relativeStep <= 0.0)
+    throw std::invalid_argument(
+        "Jacobian finite-difference step must be positive and finite.");
+
+  const Matrix state = **mX;
+  const Matrix input = **mIntfVoltage;
+  JacobianValidationResult result;
+  calculateAnalyticalJacobians(state, input, result.analyticalA,
+                               result.analyticalB, result.analyticalC,
+                               result.analyticalD);
+
+  result.numericalA = Matrix::Zero(mStateSize, mStateSize);
+  result.numericalC = Matrix::Zero(mOutputSize, mStateSize);
+  for (Int column = 0; column < mStateSize; ++column) {
+    const Real step =
+        relativeStep * std::max(1.0, std::abs(state(column, 0)));
+    Matrix plus = state;
+    Matrix minus = state;
+    plus(column, 0) += step;
+    minus(column, 0) -= step;
+
+    Matrix derivativePlus;
+    Matrix derivativeMinus;
+    Matrix outputPlus;
+    Matrix outputMinus;
+    evaluateStateDerivative(plus, input, derivativePlus);
+    evaluateStateDerivative(minus, input, derivativeMinus);
+    evaluateOutput(plus, input, outputPlus);
+    evaluateOutput(minus, input, outputMinus);
+    result.numericalA.col(column) =
+        (derivativePlus - derivativeMinus) / (2.0 * step);
+    result.numericalC.col(column) =
+        (outputPlus - outputMinus) / (2.0 * step);
+  }
+
+  result.numericalB = Matrix::Zero(mStateSize, mInputSize);
+  result.numericalD = Matrix::Zero(mOutputSize, mInputSize);
+  for (Int column = 0; column < mInputSize; ++column) {
+    const Real step =
+        relativeStep * std::max(1.0, std::abs(input(column, 0)));
+    Matrix plus = input;
+    Matrix minus = input;
+    plus(column, 0) += step;
+    minus(column, 0) -= step;
+
+    Matrix derivativePlus;
+    Matrix derivativeMinus;
+    Matrix outputPlus;
+    Matrix outputMinus;
+    evaluateStateDerivative(state, plus, derivativePlus);
+    evaluateStateDerivative(state, minus, derivativeMinus);
+    evaluateOutput(state, plus, outputPlus);
+    evaluateOutput(state, minus, outputMinus);
+    result.numericalB.col(column) =
+        (derivativePlus - derivativeMinus) / (2.0 * step);
+    result.numericalD.col(column) =
+        (outputPlus - outputMinus) / (2.0 * step);
+  }
+
+  return result;
+}

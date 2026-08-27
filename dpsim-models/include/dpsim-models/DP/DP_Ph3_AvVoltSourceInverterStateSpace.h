@@ -158,6 +158,7 @@ public:
                      Real kpCurrCtrl, Real kiCurrCtrl, Real iRefNd = 0.0,
                      Real iRefNq = 0.0);
 
+  std::vector<String> getLocalStateNames() const override final;
   void initializeFromNodesAndTerminals(Real frequency) override;
 };
 

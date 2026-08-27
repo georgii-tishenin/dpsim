@@ -213,6 +213,8 @@ PYBIND11_MODULE(dpsimpy, m) {
            &DPsim::StateSpaceModalAnalysis::setGlobalDq0Frame, "omega"_a,
            "theta0"_a = 0.0)
       .def("set_pole_mapping", &DPsim::StateSpaceModalAnalysis::setPoleMapping)
+      .def("set_reduce_auxiliary_states",
+           &DPsim::StateSpaceModalAnalysis::setReduceAuxiliaryStates)
       .def("update", &DPsim::StateSpaceModalAnalysis::update)
       .def("get_discrete_eigenvalues",
            &DPsim::StateSpaceModalAnalysis::getDiscreteEigenvalues,
@@ -230,7 +232,11 @@ PYBIND11_MODULE(dpsimpy, m) {
            &DPsim::StateSpaceModalAnalysis::getParticipationFactors,
            py::return_value_policy::reference_internal)
       .def("get_state_names", &DPsim::StateSpaceModalAnalysis::getStateNames,
-           py::return_value_policy::reference_internal);
+           py::return_value_policy::reference_internal)
+      .def("get_auxiliary_reduction_residual",
+           &DPsim::StateSpaceModalAnalysis::getAuxiliaryReductionResidual)
+      .def("get_auxiliary_reduction_pole_error",
+           &DPsim::StateSpaceModalAnalysis::getAuxiliaryReductionPoleError);
 
   py::class_<DPsim::Simulation>(m, "Simulation")
       .def(py::init<std::string, CPS::Logger::Level>(), "name"_a,
