@@ -8,6 +8,9 @@
 
 #include <dpsim-models/EMT/EMT_Ph3_Transformer.h>
 
+#include <cmath>
+#include <stdexcept>
+
 using namespace CPS;
 
 EMT::Ph3::Transformer::Transformer(String uid, String name,
@@ -34,6 +37,12 @@ SimPowerComp<Real>::Ptr EMT::Ph3::Transformer::clone(String name) {
   copy->setParameters(mNominalVoltageEnd1, mNominalVoltageEnd2, mRatedPower,
                       std::abs(**mRatio), std::arg(**mRatio), mResistance,
                       mInductance);
+  if (mMagnetizingBranchEnabled) {
+    copy->setMagnetizingBranch(mCoreLossPerUnit,
+                               mMagnetizingReactivePowerPerUnit);
+  } else {
+    copy->setSnubbersEnabled(mSnubbersEnabled);
+  }
   return copy;
 }
 
@@ -55,6 +64,33 @@ void EMT::Ph3::Transformer::setParameters(Real nomVoltageEnd1,
                      std::abs(**mRatio), std::arg(**mRatio));
 
   mParametersSet = true;
+}
+
+void EMT::Ph3::Transformer::setSnubbersEnabled(Bool enabled) {
+  if (mSubCompCreated)
+    throw std::logic_error(
+        "Transformer snubber configuration must be set before initialization.");
+  mSnubbersEnabled = enabled;
+}
+
+void EMT::Ph3::Transformer::setMagnetizingBranch(
+    Real coreLossPerUnit, Real magnetizingReactivePowerPerUnit) {
+  if (mSubCompCreated)
+    throw std::logic_error(
+        "Transformer magnetizing branch must be set before initialization.");
+  if (!std::isfinite(coreLossPerUnit) ||
+      !std::isfinite(magnetizingReactivePowerPerUnit) ||
+      coreLossPerUnit < 0.0 || magnetizingReactivePowerPerUnit < 0.0 ||
+      (coreLossPerUnit == 0.0 && magnetizingReactivePowerPerUnit == 0.0)) {
+    throw std::invalid_argument(
+        "Transformer magnetizing powers must be finite, non-negative, and "
+        "not both zero.");
+  }
+
+  mCoreLossPerUnit = coreLossPerUnit;
+  mMagnetizingReactivePowerPerUnit = magnetizingReactivePowerPerUnit;
+  mMagnetizingBranchEnabled = true;
+  mSnubbersEnabled = false;
 }
 
 void EMT::Ph3::Transformer::createSubComponents() {
@@ -99,48 +135,59 @@ void EMT::Ph3::Transformer::createSubComponents() {
     mSubInductor->connect({node(0), mVirtualNodes[0]});
   }
 
-  // Create parallel sub components (three-phase power)
-  Real pSnub = P_SNUB_TRANSFORMER * mRatedPower;
+  if (mMagnetizingBranchEnabled) {
+    if (mCoreLossPerUnit > 0.0) {
+      mSubMagnetizingResistor = std::make_shared<EMT::Ph3::Resistor>(
+          **mName + "_mag_res", mLogLevel);
+      mSubMagnetizingResistor->connect({node(1), EMT::SimNode::GND});
+      addMNASubComponent(mSubMagnetizingResistor,
+                         MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT,
+                         MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT, true);
+    }
+    if (mMagnetizingReactivePowerPerUnit > 0.0) {
+      mSubMagnetizingInductor = std::make_shared<EMT::Ph3::Inductor>(
+          **mName + "_mag_ind", mLogLevel);
+      mSubMagnetizingInductor->connect({node(1), EMT::SimNode::GND});
+      addMNASubComponent(mSubMagnetizingInductor,
+                         MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT,
+                         MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT, true);
+    }
+  } else if (mSnubbersEnabled) {
+    // Create legacy numerical snubbers. Their values are finalized below once
+    // the nominal angular frequency is known.
+    Real pSnub = P_SNUB_TRANSFORMER * mRatedPower;
 
-  // A snubber conductance is added on the higher voltage side
-  Real snubberResistance1 = std::pow(std::abs(mNominalVoltageEnd1), 2) / pSnub;
-  mSnubberResistance1 =
-      Math::singlePhaseParameterToThreePhase(snubberResistance1);
-  mSubSnubResistor1 =
-      std::make_shared<EMT::Ph3::Resistor>(**mName + "_snub_res1", mLogLevel);
-  mSubSnubResistor1->setParameters(mSnubberResistance1);
-  mSubSnubResistor1->connect({node(0), EMT::SimNode::GND});
-  SPDLOG_LOGGER_INFO(
-      mSLog,
-      "Snubber Resistance 1 (connected to higher voltage side {}) = {} [Ohm]",
-      node(0)->name(), Logger::matrixToString(mSnubberResistance1));
-  addMNASubComponent(mSubSnubResistor1,
-                     MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT,
-                     MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT, true);
+    Real snubberResistance1 =
+        std::pow(std::abs(mNominalVoltageEnd1), 2) / pSnub;
+    mSnubberResistance1 =
+        Math::singlePhaseParameterToThreePhase(snubberResistance1);
+    mSubSnubResistor1 = std::make_shared<EMT::Ph3::Resistor>(
+        **mName + "_snub_res1", mLogLevel);
+    mSubSnubResistor1->setParameters(mSnubberResistance1);
+    mSubSnubResistor1->connect({node(0), EMT::SimNode::GND});
+    addMNASubComponent(mSubSnubResistor1,
+                       MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT,
+                       MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT, true);
 
-  // A snubber conductance is added on the lower voltage side
-  Real snubberResistance2 = std::pow(std::abs(mNominalVoltageEnd2), 2) / pSnub;
-  mSnubberResistance2 =
-      Math::singlePhaseParameterToThreePhase(snubberResistance2);
-  mSubSnubResistor2 =
-      std::make_shared<EMT::Ph3::Resistor>(**mName + "_snub_res2", mLogLevel);
-  mSubSnubResistor2->setParameters(mSnubberResistance2);
-  mSubSnubResistor2->connect({node(1), EMT::SimNode::GND});
-  SPDLOG_LOGGER_INFO(
-      mSLog,
-      "Snubber Resistance 2 (connected to lower voltage side {}) = {} [Ohm]",
-      node(1)->name(), Logger::matrixToString(mSnubberResistance2));
-  addMNASubComponent(mSubSnubResistor2,
-                     MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT,
-                     MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT, true);
+    Real snubberResistance2 =
+        std::pow(std::abs(mNominalVoltageEnd2), 2) / pSnub;
+    mSnubberResistance2 =
+        Math::singlePhaseParameterToThreePhase(snubberResistance2);
+    mSubSnubResistor2 = std::make_shared<EMT::Ph3::Resistor>(
+        **mName + "_snub_res2", mLogLevel);
+    mSubSnubResistor2->setParameters(mSnubberResistance2);
+    mSubSnubResistor2->connect({node(1), EMT::SimNode::GND});
+    addMNASubComponent(mSubSnubResistor2,
+                       MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT,
+                       MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT, true);
 
-  // LV-side snubber capacitor created here; its omega-dependent value is set in initializeParentFromNodesAndTerminals().
-  mSubSnubCapacitor2 =
-      std::make_shared<EMT::Ph3::Capacitor>(**mName + "_snub_cap2", mLogLevel);
-  mSubSnubCapacitor2->connect({node(1), EMT::SimNode::GND});
-  addMNASubComponent(mSubSnubCapacitor2,
-                     MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT,
-                     MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT, true);
+    mSubSnubCapacitor2 = std::make_shared<EMT::Ph3::Capacitor>(
+        **mName + "_snub_cap2", mLogLevel);
+    mSubSnubCapacitor2->connect({node(1), EMT::SimNode::GND});
+    addMNASubComponent(mSubSnubCapacitor2,
+                       MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT,
+                       MNA_SUBCOMP_TASK_ORDER::TASK_BEFORE_PARENT, true);
+  }
 }
 
 void EMT::Ph3::Transformer::initializeParentFromNodesAndTerminals(
@@ -150,6 +197,38 @@ void EMT::Ph3::Transformer::initializeParentFromNodesAndTerminals(
 
   // Static calculations from load flow data
   Real omega = 2. * PI * frequency;
+
+  if (mMagnetizingBranchEnabled) {
+    if (mRatedPower <= 0.0)
+      throw std::invalid_argument(
+          "Transformer rated power must be positive for a magnetizing branch.");
+
+    const Real voltageSquared =
+        std::pow(std::abs(mNominalVoltageEnd2), 2);
+    if (mSubMagnetizingResistor) {
+      const Real resistance =
+          voltageSquared / (mCoreLossPerUnit * mRatedPower);
+      mMagnetizingResistance =
+          Math::singlePhaseParameterToThreePhase(resistance);
+      mSubMagnetizingResistor->setParameters(mMagnetizingResistance);
+      SPDLOG_LOGGER_INFO(
+          mSLog,
+          "Magnetizing resistance (high-voltage side {}) = {} [Ohm]",
+          node(1)->name(), Logger::matrixToString(mMagnetizingResistance));
+    }
+    if (mSubMagnetizingInductor) {
+      const Real inductance =
+          voltageSquared /
+          (mMagnetizingReactivePowerPerUnit * mRatedPower * omega);
+      mMagnetizingInductance =
+          Math::singlePhaseParameterToThreePhase(inductance);
+      mSubMagnetizingInductor->setParameters(mMagnetizingInductance);
+      SPDLOG_LOGGER_INFO(
+          mSLog,
+          "Magnetizing inductance (high-voltage side {}) = {} [H]",
+          node(1)->name(), Logger::matrixToString(mMagnetizingInductance));
+    }
+  }
 
   Real qSnub = Q_SNUB_TRANSFORMER * mRatedPower;
 
@@ -162,15 +241,17 @@ void EMT::Ph3::Transformer::initializeParentFromNodesAndTerminals(
   // SPDLOG_LOGGER_INFO(mSLog, "Snubber Capacitance 1 (connected to higher voltage side {}) = \n{} [F] \n ", node(0)->name(), Logger::matrixToString(mSnubberCapacitance1));
   // mSubComponents.push_back(mSubSnubCapacitor1);
 
-  Real snubberCapacitance2 =
-      qSnub / std::pow(std::abs(mNominalVoltageEnd2), 2) / omega;
-  mSnubberCapacitance2 =
-      Math::singlePhaseParameterToThreePhase(snubberCapacitance2);
-  mSubSnubCapacitor2->setParameters(mSnubberCapacitance2);
-  SPDLOG_LOGGER_INFO(
-      mSLog,
-      "Snubber Capacitance 2 (connected to lower voltage side {}) = {} [F]",
-      node(1)->name(), Logger::matrixToString(mSnubberCapacitance2));
+  if (mSubSnubCapacitor2) {
+    Real snubberCapacitance2 =
+        qSnub / std::pow(std::abs(mNominalVoltageEnd2), 2) / omega;
+    mSnubberCapacitance2 =
+        Math::singlePhaseParameterToThreePhase(snubberCapacitance2);
+    mSubSnubCapacitor2->setParameters(mSnubberCapacitance2);
+    SPDLOG_LOGGER_INFO(
+        mSLog,
+        "Snubber Capacitance 2 (connected to lower voltage side {}) = {} [F]",
+        node(1)->name(), Logger::matrixToString(mSnubberCapacitance2));
+  }
   MatrixComp impedance = MatrixComp::Zero(3, 3);
   impedance << Complex(mResistance(0, 0), omega * mInductance(0, 0)),
       Complex(mResistance(0, 1), omega * mInductance(0, 1)),

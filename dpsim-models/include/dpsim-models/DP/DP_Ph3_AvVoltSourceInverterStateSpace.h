@@ -76,6 +76,7 @@ private:
   Real mKiPowerCtrl = 0.0;
   Real mKpCurrCtrl = 0.0;
   Real mKiCurrCtrl = 0.0;
+  Bool mEnableCurrentCrossCoupling = false;
 
   /// Negative-sequence d-axis current reference; zero (default) = negative-sequence suppression.
   Real mIRefNd = 0.0;
@@ -106,6 +107,8 @@ private:
     std::array<Complex, 7> posOwn{};
     Complex3 posVcRe{};
     Complex3 posVcIm{};
+    Complex3 posIfRe{};
+    Complex3 posIfIm{};
     Complex3 posURe{};
     Complex3 posUIm{};
     Complex negPsi{0.0, 0.0};
@@ -157,6 +160,11 @@ public:
                      Real qRef, Real kpPowerCtrl, Real kiPowerCtrl,
                      Real kpCurrCtrl, Real kiCurrCtrl, Real iRefNd = 0.0,
                      Real iRefNq = 0.0);
+
+  /// Enable nominal-frequency filter-inductor cross-coupling compensation.
+  void setEnableCurrentCrossCoupling(Bool enable) {
+    mEnableCurrentCrossCoupling = enable;
+  }
 
   std::vector<String> getLocalStateNames() const override final;
   void initializeFromNodesAndTerminals(Real frequency) override;

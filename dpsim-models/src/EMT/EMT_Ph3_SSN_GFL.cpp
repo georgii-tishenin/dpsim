@@ -192,11 +192,14 @@ void EMT::Ph3::SSN_GFL::evaluateStateDerivative(const Matrix &x,
 
   const Matrix vcDq = parkTransform * vcAbc;
   const Matrix iGridDq = parkTransform * iGridAbc;
+  const Matrix ifDq = parkTransform * ifAbc;
 
   const Real vcD = vcDq(0, 0);
   const Real vcQ = vcDq(1, 0);
   const Real iGridD = iGridDq(0, 0);
   const Real iGridQ = iGridDq(1, 0);
+  const Real ifD = ifDq(0, 0);
+  const Real ifQ = ifDq(1, 0);
 
   // The power-invariant Park transformation requires no additional 3/2
   // scaling. These equations intentionally match the reference GFL model.
@@ -236,9 +239,11 @@ void EMT::Ph3::SSN_GFL::evaluateStateDerivative(const Matrix &x,
   stateDerivative(GammaQ, 0) = currentErrorQ;
 
   const Real converterVoltageReferenceD =
-      mKpCurrCtrl * currentErrorD + mKiCurrCtrl * gammaD;
+      mKpCurrCtrl * currentErrorD + mKiCurrCtrl * gammaD +
+      (mEnableCurrentCrossCoupling ? -mOmegaN * mLf * ifQ : 0.0);
   const Real converterVoltageReferenceQ =
-      mKpCurrCtrl * currentErrorQ + mKiCurrCtrl * gammaQ;
+      mKpCurrCtrl * currentErrorQ + mKiCurrCtrl * gammaQ +
+      (mEnableCurrentCrossCoupling ? mOmegaN * mLf * ifD : 0.0);
 
   Matrix converterVoltageReferenceDq(2, 1);
   converterVoltageReferenceDq << converterVoltageReferenceD,
@@ -295,6 +300,7 @@ void EMT::Ph3::SSN_GFL::calculateAnalyticalJacobians(const Matrix &x,
   const Real gammaD = x(GammaD, 0);
   const Real gammaQ = x(GammaQ, 0);
   const Matrix vcAbc = x.block(VcA, 0, 3, 1);
+  const Matrix ifAbc = x.block(IfA, 0, 3, 1);
 
   const Matrix identity3 = Matrix::Identity(3, 3);
 
@@ -319,6 +325,8 @@ void EMT::Ph3::SSN_GFL::calculateAnalyticalJacobians(const Matrix &x,
   const Real vcQ = (tQ * vcAbc)(0, 0);
   const Real iGridD = (tD * iGridAbc)(0, 0);
   const Real iGridQ = (tQ * iGridAbc)(0, 0);
+  const Real ifD = (tD * ifAbc)(0, 0);
+  const Real ifQ = (tQ * ifAbc)(0, 0);
 
   const Matrix dVcDByVc = tD;
   const Matrix dVcQByVc = tQ;
@@ -331,6 +339,10 @@ void EMT::Ph3::SSN_GFL::calculateAnalyticalJacobians(const Matrix &x,
   const Real dVcQByTheta = (dTqTheta * vcAbc)(0, 0);
   const Real dIGridDByTheta = (dTdTheta * iGridAbc)(0, 0);
   const Real dIGridQByTheta = (dTqTheta * iGridAbc)(0, 0);
+  const Real dIfDByTheta = (dTdTheta * ifAbc)(0, 0);
+  const Real dIfQByTheta = (dTqTheta * ifAbc)(0, 0);
+  const Real crossCoupling =
+      mEnableCurrentCrossCoupling ? mOmegaN * mLf : 0.0;
 
   // Instantaneous active-power Jacobian.
   const Real dPByTheta = iGridD * dVcDByTheta + vcD * dIGridDByTheta +
@@ -353,16 +365,20 @@ void EMT::Ph3::SSN_GFL::calculateAnalyticalJacobians(const Matrix &x,
 
   const Real converterVoltageReferenceD = -mKpCurrCtrl * iGridD +
                                           mKiCurrCtrl * gammaD +
-                                          mKpCurrCtrl * currentReferenceD;
+                                          mKpCurrCtrl * currentReferenceD -
+                                          crossCoupling * ifQ;
   const Real converterVoltageReferenceQ = -mKpCurrCtrl * iGridQ +
                                           mKiCurrCtrl * gammaQ +
-                                          mKpCurrCtrl * currentReferenceQ;
+                                          mKpCurrCtrl * currentReferenceQ +
+                                          crossCoupling * ifD;
 
-  const Real dVoltageReferenceDByTheta = -mKpCurrCtrl * dIGridDByTheta;
+  const Real dVoltageReferenceDByTheta =
+      -mKpCurrCtrl * dIGridDByTheta - crossCoupling * dIfQByTheta;
   const Matrix dVoltageReferenceDByVc = -mKpCurrCtrl * dIGridDByVc;
   const Matrix dVoltageReferenceDByU = -mKpCurrCtrl * dIGridDByU;
 
-  const Real dVoltageReferenceQByTheta = -mKpCurrCtrl * dIGridQByTheta;
+  const Real dVoltageReferenceQByTheta =
+      -mKpCurrCtrl * dIGridQByTheta + crossCoupling * dIfDByTheta;
   const Matrix dVoltageReferenceQByVc = -mKpCurrCtrl * dIGridQByVc;
   const Matrix dVoltageReferenceQByU = -mKpCurrCtrl * dIGridQByU;
 
@@ -384,6 +400,8 @@ void EMT::Ph3::SSN_GFL::calculateAnalyticalJacobians(const Matrix &x,
 
   dConverterVoltageAbcByX.block(0, VcA, 3, 3) +=
       sD * dVoltageReferenceDByVc + sQ * dVoltageReferenceQByVc;
+  dConverterVoltageAbcByX.block(0, IfA, 3, 3) +=
+      sD * (-crossCoupling * tQ) + sQ * (crossCoupling * tD);
 
   dConverterVoltageAbcByU =
       sD * dVoltageReferenceDByU + sQ * dVoltageReferenceQByU;
@@ -551,6 +569,7 @@ void EMT::Ph3::SSN_GFL::initializeFromNodesAndTerminals(Real frequency) {
   const Matrix parkTransform = getParkTransformMatrix(theta0);
 
   const Matrix vcDq0 = parkTransform * vcAbc0;
+  const Matrix ifDq0 = parkTransform * ifAbc0;
   const Matrix injectionCurrentDq0 = parkTransform * injectionCurrentAbc0;
   const Matrix converterVoltageReferenceDq0 =
       parkTransform * converterVoltageReferenceAbc0;
@@ -559,6 +578,8 @@ void EMT::Ph3::SSN_GFL::initializeFromNodesAndTerminals(Real frequency) {
   const Real vcQ0 = vcDq0(1, 0);
   const Real iGridD0 = injectionCurrentDq0(0, 0);
   const Real iGridQ0 = injectionCurrentDq0(1, 0);
+  const Real crossCoupling =
+      mEnableCurrentCrossCoupling ? mOmegaN * mLf : 0.0;
 
   const Real pInitial = vcD0 * iGridD0 + vcQ0 * iGridQ0;
   const Real qInitial = -vcD0 * iGridQ0 + vcQ0 * iGridD0;
@@ -581,9 +602,11 @@ void EMT::Ph3::SSN_GFL::initializeFromNodesAndTerminals(Real frequency) {
                                  mKpPowerCtrl * mQRef;
 
   x0(GammaD, 0) = (converterVoltageReferenceDq0(0, 0) +
+                   crossCoupling * ifDq0(1, 0) +
                    mKpCurrCtrl * (iGridD0 - currentReferenceD)) /
                   mKiCurrCtrl;
-  x0(GammaQ, 0) = (converterVoltageReferenceDq0(1, 0) +
+  x0(GammaQ, 0) = (converterVoltageReferenceDq0(1, 0) -
+                   crossCoupling * ifDq0(0, 0) +
                    mKpCurrCtrl * (iGridQ0 - currentReferenceQ)) /
                   mKiCurrCtrl;
 

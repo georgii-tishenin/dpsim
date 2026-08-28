@@ -37,7 +37,7 @@ namespace Ph3 {
 ///
 /// and
 ///
-///   m = [v_c,abc, i_grid,abc]^T.
+///   m = [v_c,abc, i_grid,abc, i_f,abc]^T.
 ///
 /// A one-simulation-step delay is inserted between controller output and
 /// electrical plant input. The delayed converter voltage is treated as a
@@ -52,7 +52,7 @@ private:
   static constexpr Int mOutputSize = 3;
 
   static constexpr Int mControllerStateSize = 8;
-  static constexpr Int mControllerInputSize = 6;
+  static constexpr Int mControllerInputSize = 9;
   static constexpr Int mControllerOutputSize = 3;
 
   enum NetworkStateIndex : Int {
@@ -97,6 +97,7 @@ private:
   Real mKiPowerCtrl;
   Real mKpCurrCtrl;
   Real mKiCurrCtrl;
+  Bool mEnableCurrentCrossCoupling = false;
 
   // -------------------------------------------------------------------------
   // Logging attributes
@@ -170,6 +171,11 @@ public:
                      Real kpPLL, Real kiPLL, Real omegaCutoff, Real pRef,
                      Real qRef, Real kpPowerCtrl, Real kiPowerCtrl,
                      Real kpCurrCtrl, Real kiCurrCtrl);
+
+  /// Enable nominal-frequency filter-inductor cross-coupling compensation.
+  void setEnableCurrentCrossCoupling(Bool enable) {
+    mEnableCurrentCrossCoupling = enable;
+  }
 
   void initializeFromNodesAndTerminals(Real frequency) override final;
 

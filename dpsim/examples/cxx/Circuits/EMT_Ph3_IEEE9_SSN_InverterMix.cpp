@@ -22,6 +22,66 @@ SystemTopology buildTopology(CommandLineArgs &args,
 
   CPS::CIM::Examples::Grids::IEEE9::ScenarioConfig ieee9(args.sysFreq);
 
+  const auto optionBool = [&](const String &key, Bool defaultValue) {
+    return args.options.find(key) != args.options.end()
+               ? args.getOptionBool(key)
+               : defaultValue;
+  };
+  const auto optionReal = [&](const String &key, Real defaultValue) {
+    return args.options.find(key) != args.options.end()
+               ? args.getOptionReal(key)
+               : defaultValue;
+  };
+  const Bool useNetworkEquivalent =
+      optionBool("network_equivalent", false);
+  const Real networkEquivalentImpedanceScale =
+      optionReal("network_equivalent_impedance_scale", 1.0);
+  if (!(networkEquivalentImpedanceScale > 0.0))
+    throw std::invalid_argument(
+        "network_equivalent_impedance_scale must be positive.");
+  if (!useNetworkEquivalent && networkEquivalentImpedanceScale != 1.0)
+    throw std::invalid_argument(
+        "network_equivalent_impedance_scale requires network_equivalent.");
+  const Bool useMagnetizingBranches =
+      optionBool("transformer_magnetizing", false);
+  const String gflFormulation =
+      args.options.find("gfl_formulation") != args.options.end()
+          ? args.getOptionString("gfl_formulation")
+          : "legacy_variable";
+  const Bool enableGflCurrentCrossCoupling =
+      optionBool("gfl_current_cross_coupling", false);
+  const Bool enableDefaultLineConductance =
+      optionBool("line_default_conductance", true);
+  const Bool enableLine96Breaker = optionBool("line96_breaker", false);
+  const Bool compactLog = optionBool("compact_log", false);
+  // Representative no-load values, configurable for sensitivity studies.
+  const Real transformerCoreLossPu =
+      optionReal("transformer_p0_pu", 1.0e-3);
+  const Real transformerMagnetizingQPu =
+      optionReal("transformer_q0_pu", 1.0e-2);
+  const Real steadyLoadStepPowerPu =
+      optionReal("steady_load_step_p_pu", 0.0);
+  if (steadyLoadStepPowerPu < 0.0)
+    throw std::invalid_argument(
+        "steady_load_step_p_pu must be nonnegative.");
+  const Real load8ActivePower =
+      ieee9.load8.RealPower + steadyLoadStepPowerPu * 100.0e6;
+  const String outagedLine =
+      args.options.find("outaged_line") != args.options.end()
+          ? args.getOptionString("outaged_line")
+          : "none";
+  const std::vector<String> lineNames{
+      ieee9.line54.Name, ieee9.line64.Name, ieee9.line75.Name,
+      ieee9.line96.Name, ieee9.line78.Name, ieee9.line89.Name};
+  if (outagedLine != "none" &&
+      std::find(lineNames.begin(), lineNames.end(), outagedLine) ==
+          lineNames.end()) {
+    throw std::invalid_argument("Unknown outaged_line: " + outagedLine);
+  }
+  const auto lineInService = [&](const auto &line) {
+    return line->name() != outagedLine;
+  };
+
   // POWER FLOW FOR INITIALIZATION
   CPS::Logger::get(args.name)->info("Creating power flow initialization.");
 
@@ -46,10 +106,16 @@ SystemTopology buildTopology(CommandLineArgs &args,
                         ieee9.gen1.BusType);
   gen1PF->setBaseVoltage(ieee9.gen1.RatedVoltage);
 
+  const GfmParams gfmSeed;
+  const auto [gfm2PPcc, unusedGfm2QPcc] =
+      Math::pccPowerFromFilterPowerReference(
+          ieee9.gen2.InitialPower, ieee9.gen2.InitialPowerReactive,
+          gfmSeed.Rc, ieee9.gen2.InitialVoltage);
+  (void)unusedGfm2QPcc;
   auto gen2PF = SP::Ph1::SynchronGenerator::make(ieee9.gen2.Name,
                                                  CPS::Logger::Level::off);
   gen2PF->setParameters(ieee9.gen2.RatedPower, ieee9.gen2.RatedVoltage,
-                        ieee9.gen2.InitialPower, ieee9.gen2.InitialVoltage,
+                        gfm2PPcc, ieee9.gen2.InitialVoltage,
                         ieee9.gen2.BusType);
   gen2PF->setBaseVoltage(ieee9.gen2.RatedVoltage);
 
@@ -75,9 +141,33 @@ SystemTopology buildTopology(CommandLineArgs &args,
   load6PF->modifyPowerFlowBusType(PowerflowBusType::PQ);
 
   auto load8PF = SP::Ph1::Load::make(ieee9.load8.Name, CPS::Logger::Level::off);
-  load8PF->setParameters(ieee9.load8.RealPower, ieee9.load8.ReactivePower,
-                         ieee9.load8.BaseVoltage);
+  load8PF->setParameters(load8ActivePower, ieee9.load8.ReactivePower,
+                          ieee9.load8.BaseVoltage);
   load8PF->modifyPowerFlowBusType(PowerflowBusType::PQ);
+
+  // When the EMT transformers use physical magnetizing branches, include the
+  // same no-load powers in the power flow so the dynamic initialization uses
+  // the same operating point.
+  std::vector<std::shared_ptr<SP::Ph1::Load>> magnetizingLoadsPF;
+  if (useMagnetizingBranches) {
+    const auto makeMagnetizingLoad = [&](const String &name, Real ratedPower,
+                                         Real baseVoltage,
+                                         const SimNode<Complex>::Ptr &node) {
+      auto load = SP::Ph1::Load::make(name, CPS::Logger::Level::off);
+      load->setParameters(transformerCoreLossPu * ratedPower,
+                          transformerMagnetizingQPu * ratedPower,
+                          baseVoltage);
+      load->modifyPowerFlowBusType(PowerflowBusType::PQ);
+      load->connect({node});
+      magnetizingLoadsPF.push_back(load);
+    };
+    makeMagnetizingLoad("TR14_MAG_PF", ieee9.transf14.RatedPower,
+                        ieee9.transf14.VoltageHVSide, n4PF);
+    makeMagnetizingLoad("TR27_MAG_PF", ieee9.transf27.RatedPower,
+                        ieee9.transf27.VoltageHVSide, n7PF);
+    makeMagnetizingLoad("TR39_MAG_PF", ieee9.transf39.RatedPower,
+                        ieee9.transf39.VoltageHVSide, n9PF);
+  }
 
   // Transmission Lines
 
@@ -124,7 +214,8 @@ SystemTopology buildTopology(CommandLineArgs &args,
   transf14PF->setParameters(
       ieee9.transf14.VoltageLVSide, ieee9.transf14.VoltageHVSide,
       ieee9.transf14.Ratio, 0.0, // No phase shift (ratioPhase = 0.0)
-      ieee9.transf14.Resistance, ieee9.transf14.Inductance);
+      networkEquivalentImpedanceScale * ieee9.transf14.Resistance,
+      networkEquivalentImpedanceScale * ieee9.transf14.Inductance);
   transf14PF->setBaseVoltage(ieee9.transf14.VoltageHVSide);
 
   auto transf27PF =
@@ -152,24 +243,38 @@ SystemTopology buildTopology(CommandLineArgs &args,
   load6PF->connect({n6PF});
   load8PF->connect({n8PF});
 
-  line54PF->connect({n5PF, n4PF});
-  line64PF->connect({n6PF, n4PF});
-  line75PF->connect({n7PF, n5PF});
-  line96PF->connect({n9PF, n6PF});
-  line78PF->connect({n7PF, n8PF});
-  line89PF->connect({n8PF, n9PF});
+  if (lineInService(line54PF))
+    line54PF->connect({n5PF, n4PF});
+  if (lineInService(line64PF))
+    line64PF->connect({n6PF, n4PF});
+  if (lineInService(line75PF))
+    line75PF->connect({n7PF, n5PF});
+  if (lineInService(line96PF))
+    line96PF->connect({n9PF, n6PF});
+  if (lineInService(line78PF))
+    line78PF->connect({n7PF, n8PF});
+  if (lineInService(line89PF))
+    line89PF->connect({n8PF, n9PF});
 
   transf14PF->connect({n1PF, n4PF});
   transf27PF->connect({n2PF, n7PF});
   transf39PF->connect({n3PF, n9PF});
 
   // Create system topology
+  SystemComponentList componentsPF{gen1PF,     gen2PF,     gfl3PF,
+                                   load5PF,    load6PF,    load8PF,
+                                   transf14PF, transf27PF, transf39PF};
+  for (const auto &line :
+       {line54PF, line64PF, line75PF, line96PF, line78PF, line89PF}) {
+    if (lineInService(line))
+      componentsPF.push_back(line);
+  }
+  componentsPF.insert(componentsPF.end(), magnetizingLoadsPF.begin(),
+                      magnetizingLoadsPF.end());
   auto systemPF = SystemTopology(
       ieee9.nomFreq,
       SystemNodeList{n1PF, n2PF, n3PF, n4PF, n5PF, n6PF, n7PF, n8PF, n9PF},
-      SystemComponentList{gen1PF, gen2PF, gfl3PF, load5PF, load6PF, load8PF,
-                          line54PF, line64PF, line75PF, line96PF, line78PF,
-                          line89PF, transf14PF, transf27PF, transf39PF});
+      componentsPF);
 
   // Logger
   auto loggerPF = DataLogger::make(simNamePF, CPS::Logger::Level::off);
@@ -211,6 +316,7 @@ SystemTopology buildTopology(CommandLineArgs &args,
   // console-enabled logger so the seeds survive the setLogDir churn.
   Complex v2PF = n2PF->singleVoltage();
   Complex v3PF = n3PF->singleVoltage();
+  const Complex gen2PowerPF = gen2PF->getApparentPower();
   auto seedLog = CPS::Logger::get(simNamePF + "_seed", CPS::Logger::Level::info,
                                   CPS::Logger::Level::info);
   seedLog->info(
@@ -221,6 +327,8 @@ SystemTopology buildTopology(CommandLineArgs &args,
       "PF seed n3 (BUS3): |V| = {:.4f} kV ({:.4f} pu), angle = {:.4f} deg",
       std::abs(v3PF) / 1e3, std::abs(v3PF) / ieee9.gen3.RatedVoltage,
       std::arg(v3PF) * 180.0 / PI);
+  seedLog->info("PF seed GEN2: P = {:.4f} MW, Q = {:.4f} Mvar",
+                gen2PowerPF.real() / 1e6, gen2PowerPF.imag() / 1e6);
 
   // DYNAMIC SIMULATION - EMT
   CPS::Logger::get(args.name)->info("Dynamic simulation initialization.");
@@ -237,58 +345,61 @@ SystemTopology buildTopology(CommandLineArgs &args,
   auto n7EMT = SimNode<Real>::make("BUS7", PhaseType::ABC);
   auto n8EMT = SimNode<Real>::make("BUS8", PhaseType::ABC);
   auto n9EMT = SimNode<Real>::make("BUS9", PhaseType::ABC);
+  auto n96BreakerEMT =
+      SimNode<Real>::make("LINE96_BREAKER_NODE", PhaseType::ABC);
 
-  // Generators
-  auto gen1EMT = EMT::Ph3::SynchronGenerator4OrderVBR::make(
-      ieee9.gen1.Name, CPS::Logger::Level::off);
+  std::shared_ptr<SimPowerComp<Real>> gen1EMT;
+  if (useNetworkEquivalent) {
+    auto source = EMT::Ph3::NetworkInjection::make(
+        ieee9.gen1.Name, CPS::Logger::Level::off);
+    source->setParameters(
+        Math::singlePhaseVariableToThreePhase(n1PF->singleVoltage()),
+        ieee9.nomFreq);
+    gen1EMT = source;
+  } else {
+    auto generator = EMT::Ph3::SynchronGenerator4OrderVBR::make(
+        ieee9.gen1.Name, CPS::Logger::Level::off);
 
-  gen1EMT->setOperationalParametersPerUnit(
-      ieee9.gen1.RatedPower,   // nomPower [VA]
-      ieee9.gen1.RatedVoltage, // nomVolt [V]
-      ieee9.nomFreq,           // nomFreq [Hz]
-      ieee9.gen1.H, ieee9.gen1.Xd, ieee9.gen1.Xq, ieee9.gen1.Xa,
-      ieee9.gen1.XdPrime, ieee9.gen1.XqPrime, ieee9.gen1.TdoPrime,
-      ieee9.gen1.TqoPrime);
+    generator->setOperationalParametersPerUnit(
+        ieee9.gen1.RatedPower, ieee9.gen1.RatedVoltage, ieee9.nomFreq,
+        ieee9.gen1.H, ieee9.gen1.Xd, ieee9.gen1.Xq, ieee9.gen1.Xa,
+        ieee9.gen1.XdPrime, ieee9.gen1.XqPrime, ieee9.gen1.TdoPrime,
+        ieee9.gen1.TqoPrime);
 
-  auto exciter1Params = std::make_shared<Signal::ExciterDC1SimpParameters>();
-  exciter1Params->Ta = ieee9.exc1.TA;
-  exciter1Params->Ka = ieee9.exc1.KA;
-  exciter1Params->Tef = ieee9.exc1.TE;
-  exciter1Params->Kef = ieee9.exc1.KE;
-  exciter1Params->Tf = ieee9.exc1.TF;
-  exciter1Params->Kf = ieee9.exc1.KF;
-  exciter1Params->Tr = 0.01;
-  exciter1Params->MaxVa = ieee9.exc1.VRmax;
-  exciter1Params->MinVa = ieee9.exc1.VRmin;
-  exciter1Params->Bef = std::log(ieee9.exc1.S_EX2 / ieee9.exc1.S_EX1) /
-                        (ieee9.exc1.EX2 - ieee9.exc1.EX1);
-  exciter1Params->Aef =
-      ieee9.exc1.S_EX1 / std::exp(exciter1Params->Bef * ieee9.exc1.EX1);
-  auto exciter1 =
-      Signal::ExciterDC1Simp::make("Gen1_Exciter", CPS::Logger::Level::off);
-  exciter1->setParameters(exciter1Params);
-  gen1EMT->addExciter(exciter1);
+    auto exciter1Params = std::make_shared<Signal::ExciterDC1SimpParameters>();
+    exciter1Params->Ta = ieee9.exc1.TA;
+    exciter1Params->Ka = ieee9.exc1.KA;
+    exciter1Params->Tef = ieee9.exc1.TE;
+    exciter1Params->Kef = ieee9.exc1.KE;
+    exciter1Params->Tf = ieee9.exc1.TF;
+    exciter1Params->Kf = ieee9.exc1.KF;
+    exciter1Params->Tr = 0.01;
+    exciter1Params->MaxVa = ieee9.exc1.VRmax;
+    exciter1Params->MinVa = ieee9.exc1.VRmin;
+    exciter1Params->Bef = std::log(ieee9.exc1.S_EX2 / ieee9.exc1.S_EX1) /
+                          (ieee9.exc1.EX2 - ieee9.exc1.EX1);
+    exciter1Params->Aef =
+        ieee9.exc1.S_EX1 / std::exp(exciter1Params->Bef * ieee9.exc1.EX1);
+    auto exciter1 =
+        Signal::ExciterDC1Simp::make("Gen1_Exciter", CPS::Logger::Level::off);
+    exciter1->setParameters(exciter1Params);
+    generator->addExciter(exciter1);
 
-  // Adaptation of the governor model parameters to the dpsim implementation
-  CPS::Real T4 = 1.0;
-  CPS::Real T5 = 1.0;
-
-  std::shared_ptr<Signal::TurbineGovernorType1> turbineGovernor1 =
-      Signal::TurbineGovernorType1::make("Gen1_TurbineGovernor",
-                                         CPS::Logger::Level::off);
-
-  turbineGovernor1->setParameters(ieee9.gov1.T2, T4, T5, ieee9.gov1.T3,
-                                  ieee9.gov1.T1, ieee9.gov1.R, ieee9.gov1.Vmin,
-                                  ieee9.gov1.Vmax, 1.0);
-
-  gen1EMT->addGovernor(turbineGovernor1);
+    auto turbineGovernor1 = Signal::TurbineGovernorType1::make(
+        "Gen1_TurbineGovernor", CPS::Logger::Level::off);
+    turbineGovernor1->setParameters(
+        ieee9.gov1.T2, 1.0, 1.0, ieee9.gov1.T3, ieee9.gov1.T1, ieee9.gov1.R,
+        ieee9.gov1.Vmin, ieee9.gov1.Vmax, 1.0);
+    generator->addGovernor(turbineGovernor1);
+    gen1EMT = generator;
+  }
 
   const Real omegaN = 2.0 * PI * ieee9.nomFreq;
 
   // gen2 replaced by a grid-forming SSN inverter, keeping the GEN2 identity.
   // nominalVoltage is the peak phase target at the 1.025 pu PV setpoint.
   const Real gfmNominalVoltage = RMS3PH_TO_PEAK1PH * ieee9.gen2.InitialVoltage;
-  GfmParams gfm;
+  GfmParams gfm = gfmSeed;
   // Optional overrides for studying the grid-forming tuning from a notebook.
   auto opt = [&](const String &key, Real def) {
     return args.options.find(key) != args.options.end()
@@ -307,8 +418,8 @@ SystemTopology buildTopology(CommandLineArgs &args,
                                          CPS::Logger::Level::off);
   gen2EMT->setNumericalLinearizationParameters(1e-6, 1e-8);
   gen2EMT->setParameters(gfm.Lf, gfm.Cf, gfm.Rf, gfm.Rc, gfmNominalVoltage,
-                         omegaN, ieee9.gen2.InitialPower,
-                         ieee9.gen2.InitialPowerReactive, gfm.virtualInertia,
+                         omegaN, ieee9.gen2.InitialPower, gen2PowerPF.imag(),
+                         gfm.virtualInertia,
                          gfm.dampingCoefficient, gfm.voltageDroopGain,
                          gfm.reactiveIntegralGain, gfm.KpVoltage, gfm.KiVoltage,
                          gfm.KpCurrent, gfm.KiCurrent, gfm.activeDampingGain,
@@ -321,15 +432,39 @@ SystemTopology buildTopology(CommandLineArgs &args,
 
   // gen3 replaced by a grid-following averaged VSI (SSN), keeping the GEN3
   // identity so the topology wiring is unchanged.
-  auto gen3EMT = EMT::Ph3::AvVoltSourceInverterStateSpace::make(
-      ieee9.gen3.Name, CPS::Logger::Level::off);
-  // Optional overrides for studying the grid-following tuning from a notebook.
-  gen3EMT->setParameters(
-      gfl.Lf, gfl.Cf, gfl.Rf, gfl.Rc, omegaN, opt("gfl_kppll", gfl.KpPLL),
-      opt("gfl_kipll", gfl.KiPLL), omegaN, ieee9.gen3.InitialPower,
-      ieee9.gen3.InitialPowerReactive, opt("gfl_kpp", gfl.KpPowerCtrl),
-      opt("gfl_kip", gfl.KiPowerCtrl), opt("gfl_kpi", gfl.KpCurrCtrl),
-      opt("gfl_kii", gfl.KiCurrCtrl));
+  std::shared_ptr<SimPowerComp<Real>> gen3EMT;
+  const auto configureGfl = [&](const auto &inverter) {
+    inverter->setParameters(
+        gfl.Lf, gfl.Cf, gfl.Rf, gfl.Rc, omegaN,
+        opt("gfl_kppll", gfl.KpPLL), opt("gfl_kipll", gfl.KiPLL), omegaN,
+        ieee9.gen3.InitialPower, ieee9.gen3.InitialPowerReactive,
+        opt("gfl_kpp", gfl.KpPowerCtrl), opt("gfl_kip", gfl.KiPowerCtrl),
+        opt("gfl_kpi", gfl.KpCurrCtrl), opt("gfl_kii", gfl.KiCurrCtrl));
+  };
+  if (gflFormulation == "variable") {
+    auto inverter =
+        EMT::Ph3::SSN_GFL::make(ieee9.gen3.Name, CPS::Logger::Level::off);
+    configureGfl(inverter);
+    inverter->setEnableCurrentCrossCoupling(enableGflCurrentCrossCoupling);
+    gen3EMT = inverter;
+  } else if (gflFormulation == "split") {
+    auto inverter = EMT::Ph3::SSN_GFL_Split::make(
+        ieee9.gen3.Name, CPS::Logger::Level::off);
+    configureGfl(inverter);
+    inverter->setEnableCurrentCrossCoupling(enableGflCurrentCrossCoupling);
+    gen3EMT = inverter;
+  } else if (gflFormulation == "legacy_variable") {
+    if (enableGflCurrentCrossCoupling)
+      throw std::invalid_argument(
+          "Current cross-coupling is unavailable for legacy_variable GFL.");
+    auto inverter = EMT::Ph3::AvVoltSourceInverterStateSpace::make(
+        ieee9.gen3.Name, CPS::Logger::Level::off);
+    configureGfl(inverter);
+    gen3EMT = inverter;
+  } else {
+    throw std::invalid_argument("Unknown gfl_formulation: " +
+                                gflFormulation);
+  }
 
   // Loads
   auto load5EMT =
@@ -337,21 +472,21 @@ SystemTopology buildTopology(CommandLineArgs &args,
   load5EMT->setParameters(
       Math::singlePhasePowerToThreePhase(ieee9.load5.RealPower),
       Math::singlePhasePowerToThreePhase(ieee9.load5.ReactivePower),
-      ieee9.load5.BaseVoltage);
+      std::abs(n5PF->singleVoltage()));
 
   auto load6EMT =
       EMT::Ph3::RXLoad::make(ieee9.load6.Name, CPS::Logger::Level::off);
   load6EMT->setParameters(
       Math::singlePhasePowerToThreePhase(ieee9.load6.RealPower),
       Math::singlePhasePowerToThreePhase(ieee9.load6.ReactivePower),
-      ieee9.load6.BaseVoltage);
+      std::abs(n6PF->singleVoltage()));
 
   auto load8EMT =
       EMT::Ph3::RXLoad::make(ieee9.load8.Name, CPS::Logger::Level::off);
   load8EMT->setParameters(
-      Math::singlePhasePowerToThreePhase(ieee9.load8.RealPower),
+      Math::singlePhasePowerToThreePhase(load8ActivePower),
       Math::singlePhasePowerToThreePhase(ieee9.load8.ReactivePower),
-      ieee9.load8.BaseVoltage);
+      std::abs(n8PF->singleVoltage()));
 
   // Lines
   auto line54EMT =
@@ -402,14 +537,32 @@ SystemTopology buildTopology(CommandLineArgs &args,
       Math::singlePhaseParameterToThreePhase(ieee9.line89.Capacitance),
       Math::singlePhaseParameterToThreePhase(ieee9.line89.Conductance));
 
+  std::shared_ptr<EMT::Ph3::Switch> line96BreakerEMT;
+  if (enableLine96Breaker) {
+    if (outagedLine == ieee9.line96.Name)
+      throw std::invalid_argument(
+          "line96_breaker cannot be combined with outaged_line=LINE96.");
+    line96BreakerEMT = EMT::Ph3::Switch::make(
+        "LINE96_BREAKER", CPS::Logger::Level::off);
+    line96BreakerEMT->setParameters(Matrix::Identity(3, 3) * 1.0e9,
+                                    Matrix::Identity(3, 3) * 1.0e-3, true);
+  }
+
+  for (const auto &line : {line54EMT, line64EMT, line75EMT, line96EMT,
+                           line78EMT, line89EMT}) {
+    line->setDefaultParallelConductanceEnabled(enableDefaultLineConductance);
+  }
+
   // Transformers
   auto transf14EMT =
       EMT::Ph3::Transformer::make(ieee9.transf14.Name, CPS::Logger::Level::off);
   transf14EMT->setParameters(
       ieee9.transf14.VoltageLVSide, ieee9.transf14.VoltageHVSide,
       ieee9.transf14.RatedPower, ieee9.transf14.Ratio, 0.0,
-      Math::singlePhaseParameterToThreePhase(ieee9.transf14.Resistance),
-      Math::singlePhaseParameterToThreePhase(ieee9.transf14.Inductance));
+      Math::singlePhaseParameterToThreePhase(
+          networkEquivalentImpedanceScale * ieee9.transf14.Resistance),
+      Math::singlePhaseParameterToThreePhase(
+          networkEquivalentImpedanceScale * ieee9.transf14.Inductance));
 
   auto transf27EMT =
       EMT::Ph3::Transformer::make(ieee9.transf27.Name, CPS::Logger::Level::off);
@@ -427,6 +580,14 @@ SystemTopology buildTopology(CommandLineArgs &args,
       Math::singlePhaseParameterToThreePhase(ieee9.transf39.Resistance),
       Math::singlePhaseParameterToThreePhase(ieee9.transf39.Inductance));
 
+  if (useMagnetizingBranches) {
+    for (const auto &transformer :
+         {transf14EMT, transf27EMT, transf39EMT}) {
+      transformer->setMagnetizingBranch(transformerCoreLossPu,
+                                         transformerMagnetizingQPu);
+    }
+  }
+
   // Connect components to nodes
   gen1EMT->connect({n1EMT});
   // Inverter terminals: 0 = GND, 1 = PCC.
@@ -437,84 +598,126 @@ SystemTopology buildTopology(CommandLineArgs &args,
   load6EMT->connect({n6EMT});
   load8EMT->connect({n8EMT});
 
-  line54EMT->connect({n5EMT, n4EMT});
-  line64EMT->connect({n6EMT, n4EMT});
-  line75EMT->connect({n7EMT, n5EMT});
-  line96EMT->connect({n9EMT, n6EMT});
-  line78EMT->connect({n7EMT, n8EMT});
-  line89EMT->connect({n8EMT, n9EMT});
+  if (lineInService(line54EMT))
+    line54EMT->connect({n5EMT, n4EMT});
+  if (lineInService(line64EMT))
+    line64EMT->connect({n6EMT, n4EMT});
+  if (lineInService(line75EMT))
+    line75EMT->connect({n7EMT, n5EMT});
+  if (lineInService(line96EMT)) {
+    if (line96BreakerEMT) {
+      line96BreakerEMT->connect({n9EMT, n96BreakerEMT});
+      line96EMT->connect({n96BreakerEMT, n6EMT});
+    } else {
+      line96EMT->connect({n9EMT, n6EMT});
+    }
+  }
+  if (lineInService(line78EMT))
+    line78EMT->connect({n7EMT, n8EMT});
+  if (lineInService(line89EMT))
+    line89EMT->connect({n8EMT, n9EMT});
 
   transf14EMT->connect({n1EMT, n4EMT});
   transf27EMT->connect({n2EMT, n7EMT});
   transf39EMT->connect({n3EMT, n9EMT});
 
   // Create system topology
-  auto systemEMT = SystemTopology(
-      ieee9.nomFreq,
-      SystemNodeList{n1EMT, n2EMT, n3EMT, n4EMT, n5EMT, n6EMT, n7EMT, n8EMT,
-                     n9EMT},
-      SystemComponentList{gen1EMT, gen2EMT, gen3EMT, load5EMT, load6EMT,
-                          load8EMT, line54EMT, line64EMT, line75EMT, line96EMT,
-                          line78EMT, line89EMT, transf14EMT, transf27EMT,
-                          transf39EMT});
+  SystemComponentList componentsEMT{gen1EMT,   gen2EMT,    gen3EMT,
+                                    load5EMT,  load6EMT,   load8EMT,
+                                    transf14EMT, transf27EMT, transf39EMT};
+  for (const auto &line : {line54EMT, line64EMT, line75EMT, line96EMT,
+                           line78EMT, line89EMT}) {
+    if (lineInService(line))
+      componentsEMT.push_back(line);
+  }
+  SystemNodeList nodesEMT{n1EMT, n2EMT, n3EMT, n4EMT, n5EMT,
+                          n6EMT, n7EMT, n8EMT, n9EMT};
+  if (line96BreakerEMT) {
+    nodesEMT.push_back(n96BreakerEMT);
+    componentsEMT.push_back(line96BreakerEMT);
+  }
+  auto systemEMT =
+      SystemTopology(ieee9.nomFreq, nodesEMT, componentsEMT);
 
   systemEMT.initWithPowerflow(systemPF, Domain::EMT);
+  if (line96BreakerEMT)
+    n96BreakerEMT->setInitialVoltage(n9EMT->initialVoltage());
 
   // Logger
   if (logger) {
-    // Logging
-    logger->logAttribute("BUS1", n1EMT->attribute("v"));
     logger->logAttribute("BUS2", n2EMT->attribute("v"));
     logger->logAttribute("BUS3", n3EMT->attribute("v"));
-    logger->logAttribute("BUS4", n4EMT->attribute("v"));
-    logger->logAttribute("BUS5", n5EMT->attribute("v"));
-    logger->logAttribute("BUS6", n6EMT->attribute("v"));
-    logger->logAttribute("BUS7", n7EMT->attribute("v"));
-    logger->logAttribute("BUS8", n8EMT->attribute("v"));
-    logger->logAttribute("BUS9", n9EMT->attribute("v"));
+    if (!compactLog) {
+      logger->logAttribute("BUS1", n1EMT->attribute("v"));
+      logger->logAttribute("BUS4", n4EMT->attribute("v"));
+      logger->logAttribute("BUS5", n5EMT->attribute("v"));
+      logger->logAttribute("BUS6", n6EMT->attribute("v"));
+      logger->logAttribute("BUS7", n7EMT->attribute("v"));
+      logger->logAttribute("BUS8", n8EMT->attribute("v"));
+      logger->logAttribute("BUS9", n9EMT->attribute("v"));
+    }
+
+    if (useNetworkEquivalent && !compactLog) {
+      logger->logAttribute("GEN1.I", gen1EMT->attribute("i_intf"));
+      logger->logAttribute("GEN1.V", gen1EMT->attribute("v_intf"));
+    }
 
     // GFM inverter (gen2) signals
-    logger->logAttribute("GEN2.I", gen2EMT->attribute("i_intf"));
-    logger->logAttribute("GEN2.V", gen2EMT->attribute("v_intf"));
+    if (!compactLog) {
+      logger->logAttribute("GEN2.I", gen2EMT->attribute("i_intf"));
+      logger->logAttribute("GEN2.V", gen2EMT->attribute("v_intf"));
+      logger->logAttribute("GEN2.vc_d", gen2EMT->attribute("vc_d"));
+      logger->logAttribute("GEN2.vc_q", gen2EMT->attribute("vc_q"));
+    }
     logger->logAttribute("GEN2.p_inst", gen2EMT->attribute("p_inst"));
     logger->logAttribute("GEN2.q_inst", gen2EMT->attribute("q_inst"));
     logger->logAttribute("GEN2.omega", gen2EMT->attribute("omega_gfm"));
-    logger->logAttribute("GEN2.vc_d", gen2EMT->attribute("vc_d"));
-    logger->logAttribute("GEN2.vc_q", gen2EMT->attribute("vc_q"));
 
     // GFL inverter (gen3) signals
-    logger->logAttribute("GEN3.I", gen3EMT->attribute("i_intf"));
-    logger->logAttribute("GEN3.V", gen3EMT->attribute("v_intf"));
+    if (!compactLog) {
+      logger->logAttribute("GEN3.I", gen3EMT->attribute("i_intf"));
+      logger->logAttribute("GEN3.V", gen3EMT->attribute("v_intf"));
+      logger->logAttribute("GEN3.vc_d", gen3EMT->attribute("vc_d"));
+      logger->logAttribute("GEN3.vc_q", gen3EMT->attribute("vc_q"));
+    }
     logger->logAttribute("GEN3.p_inst", gen3EMT->attribute("p_inst"));
     logger->logAttribute("GEN3.q_inst", gen3EMT->attribute("q_inst"));
     logger->logAttribute("GEN3.omega_pll", gen3EMT->attribute("omega_pll"));
-    logger->logAttribute("GEN3.vc_d", gen3EMT->attribute("vc_d"));
-    logger->logAttribute("GEN3.vc_q", gen3EMT->attribute("vc_q"));
 
-    // log generator's current
-    for (auto comp : systemEMT.mComponents) {
-      if (std::dynamic_pointer_cast<CPS::EMT::Ph3::SynchronGenerator4OrderVBR>(
-              comp)) {
-        logger->logAttribute(comp->name() + ".I", comp->attribute("i_intf"));
-        logger->logAttribute(comp->name() + ".V", comp->attribute("v_intf"));
-        logger->logAttribute(comp->name() + ".omega", comp->attribute("w_r"));
-        logger->logAttribute(comp->name() + ".delta", comp->attribute("delta"));
+    if (!compactLog) {
+      // log generator's current
+      for (auto comp : systemEMT.mComponents) {
+        if (std::dynamic_pointer_cast<
+                CPS::EMT::Ph3::SynchronGenerator4OrderVBR>(comp)) {
+          logger->logAttribute(comp->name() + ".I",
+                               comp->attribute("i_intf"));
+          logger->logAttribute(comp->name() + ".V",
+                               comp->attribute("v_intf"));
+          logger->logAttribute(comp->name() + ".omega",
+                               comp->attribute("w_r"));
+          logger->logAttribute(comp->name() + ".delta",
+                               comp->attribute("delta"));
+        }
       }
-    }
 
-    // log transfomers voltages & currents
-    for (auto comp : systemEMT.mComponents) {
-      if (std::dynamic_pointer_cast<CPS::EMT::Ph3::Transformer>(comp)) {
-        logger->logAttribute(comp->name() + ".I", comp->attribute("i_intf"));
-        logger->logAttribute(comp->name() + ".V", comp->attribute("v_intf"));
+      // log transformer voltages and currents
+      for (auto comp : systemEMT.mComponents) {
+        if (std::dynamic_pointer_cast<CPS::EMT::Ph3::Transformer>(comp)) {
+          logger->logAttribute(comp->name() + ".I",
+                               comp->attribute("i_intf"));
+          logger->logAttribute(comp->name() + ".V",
+                               comp->attribute("v_intf"));
+        }
       }
-    }
 
-    // log Lines voltages & currents
-    for (auto comp : systemEMT.mComponents) {
-      if (std::dynamic_pointer_cast<CPS::EMT::Ph3::PiLine>(comp)) {
-        logger->logAttribute(comp->name() + ".I", comp->attribute("i_intf"));
-        logger->logAttribute(comp->name() + ".V", comp->attribute("v_intf"));
+      // log line voltages and currents
+      for (auto comp : systemEMT.mComponents) {
+        if (std::dynamic_pointer_cast<CPS::EMT::Ph3::PiLine>(comp)) {
+          logger->logAttribute(comp->name() + ".I",
+                               comp->attribute("i_intf"));
+          logger->logAttribute(comp->name() + ".V",
+                               comp->attribute("v_intf"));
+        }
       }
     }
   }
@@ -522,6 +725,7 @@ SystemTopology buildTopology(CommandLineArgs &args,
   return systemEMT;
 }
 
+#ifndef DPSIM_IEEE9_INVERTER_MIX_LIBRARY
 int main(int argc, char *argv[]) {
 
   CommandLineArgs args(argc, argv, "EMT_Ph3_IEEE9_SSN_InverterMix", 0.00005,
@@ -555,3 +759,4 @@ int main(int argc, char *argv[]) {
 
   CPS::Logger::get(args.name)->info("Simulation finished.");
 }
+#endif

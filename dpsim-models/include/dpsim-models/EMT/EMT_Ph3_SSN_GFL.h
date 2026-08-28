@@ -81,6 +81,7 @@ private:
   Real mKiPowerCtrl;
   Real mKpCurrCtrl;
   Real mKiCurrCtrl;
+  Bool mEnableCurrentCrossCoupling = false;
 
   // Logging attributes
   const Attribute<Real>::Ptr mVcD;
@@ -147,6 +148,12 @@ public:
                      Real kpPLL, Real kiPLL, Real omegaCutoff, Real pRef,
                      Real qRef, Real kpPowerCtrl, Real kiPowerCtrl,
                      Real kpCurrCtrl, Real kiCurrCtrl);
+
+  /// Enable nominal-frequency filter-inductor cross-coupling compensation:
+  /// v_ref,d += -omega_N L_f i_f,q, v_ref,q += omega_N L_f i_f,d.
+  void setEnableCurrentCrossCoupling(Bool enable) {
+    mEnableCurrentCrossCoupling = enable;
+  }
 
   void initializeFromNodesAndTerminals(Real frequency) override final;
 

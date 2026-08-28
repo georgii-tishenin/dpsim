@@ -38,6 +38,11 @@ private:
   /// Internal parallel capacitance 2 as snubber
   std::shared_ptr<EMT::Ph3::Capacitor> mSubSnubCapacitor2;
 
+  /// Core-loss resistance of the optional magnetizing branch
+  std::shared_ptr<EMT::Ph3::Resistor> mSubMagnetizingResistor;
+  /// Magnetizing inductance of the optional magnetizing branch
+  std::shared_ptr<EMT::Ph3::Inductor> mSubMagnetizingInductor;
+
   /// Snubber resistance 1
   Matrix mSnubberResistance1;
   /// Snubber resistance 2
@@ -46,6 +51,19 @@ private:
   Matrix mSnubberCapacitance1;
   /// Snubber capacitance 2
   Matrix mSnubberCapacitance2;
+
+  /// Enable the legacy numerical snubber network.
+  Bool mSnubbersEnabled = true;
+  /// Enable a physical high-voltage-side magnetizing branch.
+  Bool mMagnetizingBranchEnabled = false;
+  /// Three-phase no-load core loss on transformer rated-power base [pu].
+  Real mCoreLossPerUnit = 0.0;
+  /// Three-phase inductive magnetizing reactive power at nominal voltage [pu].
+  Real mMagnetizingReactivePowerPerUnit = 0.0;
+  /// Magnetizing resistance referred to the high-voltage side.
+  Matrix mMagnetizingResistance;
+  /// Magnetizing inductance referred to the high-voltage side.
+  Matrix mMagnetizingInductance;
 
   /// Boolean for considering resistive losses with sub resistor
   Bool mWithResistiveLosses;
@@ -66,6 +84,14 @@ public:
   void setParameters(Real nomVoltageEnd1, Real nomVoltageEnd2, Real ratedPower,
                      Real ratioAbs, Real ratioPhase, Matrix resistance,
                      Matrix inductance);
+  /// Enable or disable the legacy numerical snubber network. This must be
+  /// configured before initialization.
+  void setSnubbersEnabled(Bool enabled);
+  /// Replace the legacy snubbers with a physical Rm || Lm magnetizing branch
+  /// on the high-voltage side. The powers are positive three-phase per-unit
+  /// values on the transformer rated-power base at nominal voltage.
+  void setMagnetizingBranch(Real coreLossPerUnit,
+                            Real magnetizingReactivePowerPerUnit);
   /// Constructs and registers MNA subcomponents; idempotent.
   void createSubComponents() override;
   /// Initializes component from power flow data

@@ -340,17 +340,21 @@ struct Ieee9SsnGridForming {
   // rebased to the BUS2 base, per-unit preserved. The cascaded-loop gains are
   // computed from design bandwidths, not hand-set.
 
-  // BUS2 base
+  // BUS2 base. The 200 MVA rating keeps the 163 MW IEEE-9 dispatch within the
+  // converter rating. The physical values below preserve the original 100 MVA
+  // design in per unit; this is a base conversion, not a controller redesign.
   Real ratedVoltage = 18e3;    // V line-to-line RMS
-  Real ratedPower = 100e6;     // VA
+  Real ratedPower = 200e6;     // VA
+  Real referencePower = 100e6; // VA, base of the source parameter set
+  Real powerScale = ratedPower / referencePower;
   Real systemFrequency = 60.0; // Hz
   Real OmegaNull = 2.0 * M_PI * systemFrequency;
 
   // LC filter and coupling resistance (BUS2 base)
-  Real Lf = 6.694215e-4; // H
-  Real Cf = 6.224280e-5; // F
-  Real Rf = 1.338843e-2; // Ohm
-  Real Rc = 1.338843e-2; // Ohm
+  Real Lf = 6.694215e-4 / powerScale; // H
+  Real Cf = 6.224280e-5 * powerScale; // F
+  Real Rf = 1.338843e-2 / powerScale; // Ohm
+  Real Rc = 1.338843e-2 / powerScale; // Ohm
 
   // Inner current loop: PI cancels the filter pole, so the closed loop is a
   // first-order lag of bandwidth currentCtrlBandwidth (Kp = Lf*w, Ki = Rf*w).
@@ -369,13 +373,13 @@ struct Ieee9SsnGridForming {
 
   // VSG swing: virtual inertia J and damping D. D is raised well above the
   // islanded value for stiff-grid stability.
-  Real virtualInertia = 1157.407407;
-  Real dampingCoefficient = 3.0e6;
+  Real virtualInertia = 1157.407407 * powerScale;
+  Real dampingCoefficient = 3.0e6 * powerScale;
 
   // Integral excitation (superseded by the proportional Q-V droop below, but
   // still passed to setParameters for the islanded fallback).
   Real voltageDroopGain = 1.0 / 15.0;
-  Real reactiveIntegralGain = 1.700559e-3;
+  Real reactiveIntegralGain = 1.700559e-3 / powerScale;
 
   // Active damping off (the converter delay makes its sign uncertain here),
   // power-measurement filter cutoff, and switching/delay bandwidth.
@@ -388,7 +392,7 @@ struct Ieee9SsnGridForming {
   // turned off and the integral excitation replaced by a proportional Q-V
   // droop, both for stiff-grid stability.
   Real gridCurrentFeedforward = 0.0; // 1 = full islanded feedforward
-  Real reactivePowerDroop = 1.0e-5;  // Dq [V/var]
+  Real reactivePowerDroop = 1.0e-5 / powerScale; // Dq [V/var]
   Real reactiveDroopCutoff = 100.0;  // rad/s
 };
 } // namespace GFM

@@ -50,20 +50,18 @@ void SP::Ph1::PiLine::setParameters(Real resistance, Real inductance,
         mSLog, "Zero value for Capacitance, setting default value of C={} [F]",
         **mParallelCap);
   }
-  if (conductance > 0) {
+  // A nonnegative value is explicitly specified physical data. In particular,
+  // zero means that line leakage is neglected. The negative default denotes
+  // an unspecified value for which the historical numerical fallback remains.
+  if (conductance >= 0) {
     **mParallelCond = conductance;
     mParallelCondIsFallback = false;
   } else {
-    if (mBehaviour == Behaviour::Initialization)
-      **mParallelCond =
-          (conductance >= 0)
-              ? conductance
-              : 1e-6; // init mode for initFromPowerFlow of mna system components
-    else
-      **mParallelCond = (conductance > 0) ? conductance : 1e-6;
+    **mParallelCond = 1e-6;
     mParallelCondIsFallback = true;
     SPDLOG_LOGGER_WARN(
-        mSLog, "Zero value for Conductance, setting default value of G={} [S]",
+        mSLog,
+        "Unspecified Conductance, setting default value of G={} [S]",
         **mParallelCond);
   }
   SPDLOG_LOGGER_INFO(mSLog, "Capacitance={} [F] Conductance={} [S]",

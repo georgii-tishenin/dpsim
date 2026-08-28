@@ -110,6 +110,7 @@ void DP::Ph3::SSN_GFL_Split::setParameters(Real lf, Real cf, Real rf, Real rc,
   Matrix Hu = Matrix::Zero(mControllerInputSize, mTerminalInputSize);
   Hx.block(0, 0, 6, 6) = Matrix::Identity(6, 6);
   Hx.block(6, 0, 6, 6) = (1.0 / mRc) * Matrix::Identity(6, 6);
+  Hx.block(12, 6, 6, 6) = Matrix::Identity(6, 6);
   Hu.block(6, 0, 6, 6) = (-1.0 / mRc) * Matrix::Identity(6, 6);
   setSplitParameters(A, B, C, D, Bv, Hx, Hu);
 }
@@ -161,21 +162,32 @@ void DP::Ph3::SSN_GFL_Split::evaluateControllerOutput(const Matrix &x,
                                                       Matrix &output) const {
   Complex3 vc, iGrid;
   unpackMeasurement(measurement, vc, iGrid);
+  Complex3 iF;
+  for (Int p = 0; p < 3; ++p)
+    iF[p] = Complex(measurement(mMeasIfRe[p], 0),
+                    measurement(mMeasIfIm[p], 0));
   const Complex3 projection = {Complex(1.0, 0.0), SHIFT_TO_PHASE_C,
                                SHIFT_TO_PHASE_B};
   Complex pI(0.0, 0.0);
-  for (Int p = 0; p < 3; ++p)
+  Complex pIf(0.0, 0.0);
+  for (Int p = 0; p < 3; ++p) {
     pI += projection[p] * iGrid[p];
+    pIf += projection[p] * iF[p];
+  }
   const Complex rot = std::exp(Complex(0.0, -x(Psi, 0)));
   const Complex expJPsi = std::conj(rot);
   const Complex iDq = 0.5 * K23 * rot * pI;
+  const Complex ifDq = 0.5 * K23 * rot * pIf;
   const Complex iRef(-mKpPowerCtrl * x(PFiltered, 0) +
                          mKiPowerCtrl * x(PhiD, 0) + mKpPowerCtrl * mPRef,
                      mKpPowerCtrl * x(QFiltered, 0) +
                          mKiPowerCtrl * x(PhiQ, 0) - mKpPowerCtrl * mQRef);
   const Complex gamma(x(GammaD, 0), x(GammaQ, 0));
-  const Complex vRefDq =
-      -mKpCurrCtrl * iDq + mKiCurrCtrl * gamma + mKpCurrCtrl * iRef;
+  const Real crossCoupling =
+      mEnableCurrentCrossCoupling ? mOmegaN * mLf : 0.0;
+  const Complex vRefDq = -mKpCurrCtrl * iDq + mKiCurrCtrl * gamma +
+                         mKpCurrCtrl * iRef +
+                         Complex(0.0, crossCoupling) * ifDq;
   const Complex vRefA = K23 * vRefDq * expJPsi;
   output = Matrix::Zero(6, 1);
   for (Int p = 0; p < 3; ++p) {
@@ -190,30 +202,39 @@ void DP::Ph3::SSN_GFL_Split::calculateControllerAnalyticalJacobians(
     Matrix &D) const {
   Complex3 vc, iGrid;
   unpackMeasurement(measurement, vc, iGrid);
+  Complex3 iF;
+  for (Int p = 0; p < 3; ++p)
+    iF[p] = Complex(measurement(mMeasIfRe[p], 0),
+                    measurement(mMeasIfIm[p], 0));
   const Complex j(0.0, 1.0);
   const Complex3 projection = {Complex(1.0, 0.0), SHIFT_TO_PHASE_C,
                                SHIFT_TO_PHASE_B};
-  Complex pV(0.0, 0.0), pI(0.0, 0.0);
+  Complex pV(0.0, 0.0), pI(0.0, 0.0), pIf(0.0, 0.0);
   for (Int p = 0; p < 3; ++p) {
     pV += projection[p] * vc[p];
     pI += projection[p] * iGrid[p];
+    pIf += projection[p] * iF[p];
   }
   const Complex rot = std::exp(-j * x(Psi, 0));
   const Complex expJPsi = std::conj(rot);
   const Complex vcDq = 0.5 * K23 * rot * pV;
   const Complex iDq = 0.5 * K23 * rot * pI;
+  const Complex ifDq = 0.5 * K23 * rot * pIf;
   const Complex iRef(-mKpPowerCtrl * x(PFiltered, 0) +
                          mKiPowerCtrl * x(PhiD, 0) + mKpPowerCtrl * mPRef,
                      mKpPowerCtrl * x(QFiltered, 0) +
                          mKiPowerCtrl * x(PhiQ, 0) - mKpPowerCtrl * mQRef);
   const Complex gamma(x(GammaD, 0), x(GammaQ, 0));
-  const Complex vRefDq =
-      -mKpCurrCtrl * iDq + mKiCurrCtrl * gamma + mKpCurrCtrl * iRef;
+  const Real crossCoupling =
+      mEnableCurrentCrossCoupling ? mOmegaN * mLf : 0.0;
+  const Complex vRefDq = -mKpCurrCtrl * iDq + mKiCurrCtrl * gamma +
+                         mKpCurrCtrl * iRef +
+                         j * crossCoupling * ifDq;
 
   A = Matrix::Zero(8, 8);
-  B = Matrix::Zero(8, 12);
+  B = Matrix::Zero(mControllerStateSize, mControllerInputSize);
   C = Matrix::Zero(6, 8);
-  D = Matrix::Zero(6, 12);
+  D = Matrix::Zero(mControllerOutputSize, mControllerInputSize);
   A(Psi, Psi) = -mKpPLL * vcDq.real();
   A(Psi, PhiPLL) = mKiPLL;
   A(PhiPLL, Psi) = -vcDq.real();
@@ -249,7 +270,9 @@ void DP::Ph3::SSN_GFL_Split::calculateControllerAnalyticalJacobians(
     }
   }
 
-  const Complex dVRefPsi = j * K23 * expJPsi * (mKpCurrCtrl * iDq + vRefDq);
+  const Complex dVRefPsi =
+      K23 * expJPsi *
+      (j * (mKpCurrCtrl * iDq + vRefDq) + crossCoupling * ifDq);
   const std::array<Complex, 8> own = {
       dVRefPsi,
       Complex(0.0, 0.0),
@@ -276,6 +299,16 @@ void DP::Ph3::SSN_GFL_Split::calculateControllerAnalyticalJacobians(
       D(2 * pout + 1, mMeasIRe[pin]) = dRe.imag();
       D(2 * pout, mMeasIIm[pin]) = dIm.real();
       D(2 * pout + 1, mMeasIIm[pin]) = dIm.imag();
+
+      const Complex gIf = 0.5 * K23 * rot * projection[pin];
+      const Complex dIfRe = redistribute * K23 * expJPsi *
+                            (j * crossCoupling * gIf);
+      const Complex dIfIm = redistribute * K23 * expJPsi *
+                            (-crossCoupling * gIf);
+      D(2 * pout, mMeasIfRe[pin]) = dIfRe.real();
+      D(2 * pout + 1, mMeasIfRe[pin]) = dIfRe.imag();
+      D(2 * pout, mMeasIfIm[pin]) = dIfIm.real();
+      D(2 * pout + 1, mMeasIfIm[pin]) = dIfIm.imag();
     }
   }
 }
@@ -332,6 +365,7 @@ void DP::Ph3::SSN_GFL_Split::initializeFromNodesAndTerminals(Real frequency) {
   const Complex rot = std::exp(-j * psi);
   const Complex vcDq = K32 * vc * rot;
   const Complex iDq = K32 * iGrid * rot;
+  const Complex ifDq = K32 * ifCurrent * rot;
   const Complex vRefDq = K32 * vRef * rot;
   const Real pInit = (vcDq * std::conj(iDq)).real();
   const Real qInit = (vcDq * std::conj(iDq)).imag();
@@ -350,10 +384,16 @@ void DP::Ph3::SSN_GFL_Split::initializeFromNodesAndTerminals(Real frequency) {
   const Real iRefQ = mKpPowerCtrl * qInit +
                      mKiPowerCtrl * mControllerState(PhiQ, 0) -
                      mKpPowerCtrl * mQRef;
+  const Complex crossVoltage =
+      j * (mEnableCurrentCrossCoupling ? mOmegaN * mLf : 0.0) * ifDq;
   mControllerState(GammaD, 0) =
-      (vRefDq.real() + mKpCurrCtrl * (iDq.real() - iRefD)) / mKiCurrCtrl;
+      (vRefDq.real() - crossVoltage.real() +
+       mKpCurrCtrl * (iDq.real() - iRefD)) /
+      mKiCurrCtrl;
   mControllerState(GammaQ, 0) =
-      (vRefDq.imag() + mKpCurrCtrl * (iDq.imag() - iRefQ)) / mKiCurrCtrl;
+      (vRefDq.imag() - crossVoltage.imag() +
+       mKpCurrCtrl * (iDq.imag() - iRefQ)) /
+      mKiCurrCtrl;
 
   const Matrix uPacked = packComplex(u);
   mControllerMeasurementOld = buildControllerMeasurement(**mX, uPacked);

@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 
@@ -70,6 +71,10 @@ void StateSpaceModalAnalysis::update() {
   mStateNames = buildStateNamesInAnalysisFrame();
   mAuxiliaryReductionResidual = 0.0;
   mAuxiliaryReductionPoleError = 0.0;
+  mZeroSequenceCouplingResidual = 0.0;
+
+  std::vector<UInt> originalStateIndices(static_cast<UInt>(Ad.rows()));
+  std::iota(originalStateIndices.begin(), originalStateIndices.end(), 0U);
   if (mReduceAuxiliaryStates &&
       !mExtractor.getMetadata().auxiliaryStateIndices.empty()) {
     std::vector<UInt> physicalIndices;
@@ -79,6 +84,11 @@ void StateSpaceModalAnalysis::update() {
     for (const UInt idx : physicalIndices)
       physicalStateNames.push_back(mStateNames[idx]);
     mStateNames = std::move(physicalStateNames);
+    originalStateIndices = std::move(physicalIndices);
+  }
+
+  if (mExcludeDecoupledZeroSequenceStates) {
+    Ad = excludeDecoupledZeroSequenceStates(Ad, originalStateIndices);
   }
 
   Eigen::EigenSolver<Matrix> eigenSolver(Ad, true);
@@ -195,6 +205,83 @@ Matrix StateSpaceModalAnalysis::reduceToReachablePhysicalStateMatrix(
     mAuxiliaryReductionPoleError =
         std::max(mAuxiliaryReductionPoleError, nearest);
   }
+  return reduced;
+}
+
+Matrix StateSpaceModalAnalysis::excludeDecoupledZeroSequenceStates(
+    const Matrix &matrix, std::vector<UInt> &originalStateIndices) {
+  if (mAnalysisFrame != StateSpaceAnalysisFrame::GlobalDQ0) {
+    throw std::logic_error(
+        "Zero-sequence exclusion requires the GlobalDQ0 analysis frame.");
+  }
+  if (originalStateIndices.size() != static_cast<std::size_t>(matrix.rows())) {
+    throw std::logic_error(
+        "Modal state-index mapping is inconsistent with the state matrix.");
+  }
+
+  const UInt fullStateCount = mExtractor.getStateCount();
+  std::vector<Bool> isZeroSequence(fullStateCount, false);
+  for (const auto &abcBlock : mExtractor.getMetadata().abcStateBlocks) {
+    const UInt zeroIndex = abcBlock.indices[2];
+    if (zeroIndex >= fullStateCount)
+      throw std::logic_error(
+          "Zero-sequence state index lies outside the modal state matrix.");
+    isZeroSequence[zeroIndex] = true;
+  }
+
+  std::vector<UInt> retainedPositions;
+  std::vector<UInt> discardedPositions;
+  retainedPositions.reserve(originalStateIndices.size());
+  discardedPositions.reserve(originalStateIndices.size());
+  for (UInt position = 0; position < originalStateIndices.size(); ++position) {
+    const UInt originalIndex = originalStateIndices[position];
+    if (originalIndex >= fullStateCount)
+      throw std::logic_error(
+          "Modal state-index mapping lies outside the extracted state set.");
+    (isZeroSequence[originalIndex] ? discardedPositions : retainedPositions)
+        .push_back(position);
+  }
+
+  if (discardedPositions.empty())
+    return matrix;
+  if (retainedPositions.empty())
+    throw std::logic_error(
+        "Zero-sequence exclusion would discard every modal state.");
+
+  Real couplingSquared = 0.0;
+  for (const UInt retained : retainedPositions) {
+    for (const UInt discarded : discardedPositions) {
+      const Real retainedToDiscarded = matrix(discarded, retained);
+      const Real discardedToRetained = matrix(retained, discarded);
+      couplingSquared += retainedToDiscarded * retainedToDiscarded;
+      couplingSquared += discardedToRetained * discardedToRetained;
+    }
+  }
+  mZeroSequenceCouplingResidual =
+      std::sqrt(couplingSquared) /
+      std::max(matrix.norm(), std::numeric_limits<Real>::epsilon());
+  if (mZeroSequenceCouplingResidual > mZeroSequenceCouplingTolerance) {
+    throw std::runtime_error(
+        "Cannot exclude zero-sequence states because they are coupled to the "
+        "retained modal subsystem.");
+  }
+
+  const UInt retainedCount = retainedPositions.size();
+  Matrix reduced(retainedCount, retainedCount);
+  std::vector<String> retainedNames;
+  std::vector<UInt> retainedOriginalIndices;
+  retainedNames.reserve(retainedCount);
+  retainedOriginalIndices.reserve(retainedCount);
+  for (UInt row = 0; row < retainedCount; ++row) {
+    retainedNames.push_back(mStateNames[retainedPositions[row]]);
+    retainedOriginalIndices.push_back(originalStateIndices[retainedPositions[row]]);
+    for (UInt col = 0; col < retainedCount; ++col) {
+      reduced(row, col) =
+          matrix(retainedPositions[row], retainedPositions[col]);
+    }
+  }
+  mStateNames = std::move(retainedNames);
+  originalStateIndices = std::move(retainedOriginalIndices);
   return reduced;
 }
 

@@ -5,6 +5,7 @@
 #include <dpsim/Definitions.h>
 #include <dpsim/MNAStateSpaceExtractor.h>
 
+#include <stdexcept>
 #include <vector>
 
 namespace DPsim {
@@ -61,6 +62,24 @@ public:
   /// participation factors.
   void setReduceAuxiliaryStates(Bool reduce) {
     mReduceAuxiliaryStates = reduce;
+  }
+
+  /// Exclude metadata-registered zero-sequence coordinates from a balanced
+  /// GlobalDQ0 modal analysis.
+  ///
+  /// The reduction is accepted only when the discarded zero-sequence
+  /// coordinates are decoupled from the retained states within the configured
+  /// relative tolerance. It must not be used for unbalanced studies where the
+  /// zero-sequence subsystem is part of the physical dynamics of interest.
+  void setExcludeDecoupledZeroSequenceStates(Bool exclude) {
+    mExcludeDecoupledZeroSequenceStates = exclude;
+  }
+
+  void setZeroSequenceCouplingTolerance(Real tolerance) {
+    if (tolerance < 0.0)
+      throw std::invalid_argument(
+          "Zero-sequence coupling tolerance must be nonnegative.");
+    mZeroSequenceCouplingTolerance = tolerance;
   }
 
   /// Update modal quantities from the current extracted state matrix.
@@ -122,11 +141,20 @@ public:
     return mAuxiliaryReductionPoleError;
   }
 
+  /// Relative off-diagonal coupling of the discarded zero-sequence block in
+  /// the most recent update; zero when no such reduction was requested.
+  Real getZeroSequenceCouplingResidual() const {
+    return mZeroSequenceCouplingResidual;
+  }
+
 private:
   Matrix buildDiscreteStateMatrixInAnalysisFrame() const;
 
   Matrix reduceToReachablePhysicalStateMatrix(const Matrix &matrix,
                                                std::vector<UInt> &physicalIndices);
+
+  Matrix excludeDecoupledZeroSequenceStates(
+      const Matrix &matrix, std::vector<UInt> &originalStateIndices);
 
   Matrix buildGlobalDq0Transformation(Real theta) const;
 
@@ -141,6 +169,12 @@ private:
   StateSpacePoleMapping mPoleMapping = StateSpacePoleMapping::Bilinear;
 
   Bool mReduceAuxiliaryStates = false;
+
+  Bool mExcludeDecoupledZeroSequenceStates = false;
+
+  Real mZeroSequenceCouplingTolerance = 1e-8;
+
+  Real mZeroSequenceCouplingResidual = 0.0;
 
   Real mAuxiliaryReductionResidual = 0.0;
 

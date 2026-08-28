@@ -170,6 +170,8 @@ StateSpace/DP_Ph1_Inverter_StateSpaceExtraction.cpp
 StateSpace/DP_Ph1_Composite_StateSpaceExtraction.cpp
 StateSpace/DP_Ph1_Switch_StateSpaceExtraction.cpp
 StateSpace/EMT_DP_Ph3_GFL_StateSpaceValidation.cpp
+StateSpace/EMT_DP_Ph3_GFL_CrossCoupled_StateSpaceValidation.cpp
+StateSpace/EMT_Ph3_IEEE9_Inverter_StateSpaceValidation.cpp
 )
 
 # Targets required for tests in the Jupyter Notebooks. This list is only for grouping the (already configured) targets, so every entry

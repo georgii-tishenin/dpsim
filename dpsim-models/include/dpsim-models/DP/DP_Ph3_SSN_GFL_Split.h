@@ -20,7 +20,7 @@ private:
   static constexpr Int mTerminalInputSize = 6;
   static constexpr Int mOutputSize = 6;
   static constexpr Int mControllerStateSize = 8;
-  static constexpr Int mControllerInputSize = 12;
+  static constexpr Int mControllerInputSize = 18;
   static constexpr Int mControllerOutputSize = 6;
 
   enum ControllerStateIndex : Int {
@@ -42,6 +42,8 @@ private:
   static constexpr std::array<Int, 3> mMeasVcIm = {1, 3, 5};
   static constexpr std::array<Int, 3> mMeasIRe = {6, 8, 10};
   static constexpr std::array<Int, 3> mMeasIIm = {7, 9, 11};
+  static constexpr std::array<Int, 3> mMeasIfRe = {12, 14, 16};
+  static constexpr std::array<Int, 3> mMeasIfIm = {13, 15, 17};
 
   using Complex3 = std::array<Complex, 3>;
 
@@ -59,6 +61,7 @@ private:
   Real mKiPowerCtrl = 0.0;
   Real mKpCurrCtrl = 0.0;
   Real mKiCurrCtrl = 0.0;
+  Bool mEnableCurrentCrossCoupling = false;
 
   const Attribute<Real>::Ptr mVcD;
   const Attribute<Real>::Ptr mVcQ;
@@ -99,6 +102,10 @@ public:
                      Real kpPLL, Real kiPLL, Real omegaCutoff, Real pRef,
                      Real qRef, Real kpPowerCtrl, Real kiPowerCtrl,
                      Real kpCurrCtrl, Real kiCurrCtrl);
+  /// Enable nominal-frequency filter-inductor cross-coupling compensation.
+  void setEnableCurrentCrossCoupling(Bool enable) {
+    mEnableCurrentCrossCoupling = enable;
+  }
   void initializeFromNodesAndTerminals(Real frequency) override final;
 
   std::vector<String> getSplitLocalStateNames() const override final;

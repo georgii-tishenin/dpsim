@@ -187,14 +187,19 @@ void DP::Ph3::AvVoltSourceInverterStateSpace::buildStateSpaceModel(
   // Positive-sequence dq measurements from pV = vc_a + a*vc_b + a^2*vc_c.
   Complex pV(0.0, 0.0);
   Complex pU(0.0, 0.0);
+  Complex pIf(0.0, 0.0);
   for (Int p = 0; p < 3; ++p) {
     pV += projCoeff[p] * vc[p];
     pU += projCoeff[p] * uEnv[p];
+    pIf += projCoeff[p] * iF[p];
   }
   const Complex pI = (pV - pU) / mRc;
 
   const Complex vcDQ = 0.5 * K23 * rot * pV;
   const Complex ircDQ = 0.5 * K23 * rot * pI;
+  const Complex ifDQ = 0.5 * K23 * rot * pIf;
+  const Real crossCoupling =
+      mEnableCurrentCrossCoupling ? mOmegaN * mLf : 0.0;
   const Real vcD = vcDQ.real();
   const Real vcQ = vcDQ.imag();
   const Real ircD = ircDQ.real();
@@ -223,8 +228,8 @@ void DP::Ph3::AvVoltSourceInverterStateSpace::buildStateSpaceModel(
   const Complex iRefDQ(iRefD, iRefQ);
   const Complex gammaDQ(gammaD, gammaQ);
 
-  const Complex vRefDQ =
-      -mKpCurrCtrl * ircDQ + mKiCurrCtrl * gammaDQ + mKpCurrCtrl * iRefDQ;
+  const Complex vRefDQ = -mKpCurrCtrl * ircDQ + mKiCurrCtrl * gammaDQ +
+                         mKpCurrCtrl * iRefDQ + j * crossCoupling * ifDQ;
 
   // Positive-sequence bridge-voltage reference, distributed via the inverse Park.
   const Complex vRefEnv0 = K23 * vRefDQ * expJPsi;
@@ -375,7 +380,8 @@ void DP::Ph3::AvVoltSourceInverterStateSpace::buildStateSpaceModel(
   RefSensitivities sens;
 
   const Complex dVRefEnv0DPsi =
-      j * K23 * expJPsi * (mKpCurrCtrl * ircDQ + vRefDQ);
+      K23 * expJPsi *
+      (j * (mKpCurrCtrl * ircDQ + vRefDQ) + crossCoupling * ifDQ);
 
   // d(vRefDQ)/dOwnVar for the six own-frame control states.
   const Complex dVRefEnv0DpF = K23 * expJPsi * (mKpCurrCtrl * (-mKpPowerCtrl));
@@ -394,6 +400,10 @@ void DP::Ph3::AvVoltSourceInverterStateSpace::buildStateSpaceModel(
   for (Int p = 0; p < 3; ++p) {
     sens.posVcRe[p] = K23 * expJPsi * (-mKpCurrCtrl * gIrcVc[p]);
     sens.posVcIm[p] = K23 * expJPsi * (-mKpCurrCtrl * j * gIrcVc[p]);
+    sens.posIfRe[p] =
+        K23 * expJPsi * (j * crossCoupling * gVc[p]);
+    sens.posIfIm[p] =
+        K23 * expJPsi * (-crossCoupling * gVc[p]);
     sens.posURe[p] = K23 * expJPsi * (-mKpCurrCtrl * gIrcU[p]);
     sens.posUIm[p] = K23 * expJPsi * (-mKpCurrCtrl * j * gIrcU[p]);
   }
@@ -465,6 +475,13 @@ void DP::Ph3::AvVoltSourceInverterStateSpace::buildInductorRows(
       A(imRow, mVcReCol[pSrc]) += dVRefVcRe.imag() / mLf;
       A(reRow, mVcImCol[pSrc]) += dVRefVcIm.real() / mLf;
       A(imRow, mVcImCol[pSrc]) += dVRefVcIm.imag() / mLf;
+
+      const Complex dVRefIfRe = redistFactor[pOut] * sens.posIfRe[pSrc];
+      const Complex dVRefIfIm = redistFactor[pOut] * sens.posIfIm[pSrc];
+      A(reRow, mIfReCol[pSrc]) += dVRefIfRe.real() / mLf;
+      A(imRow, mIfReCol[pSrc]) += dVRefIfRe.imag() / mLf;
+      A(reRow, mIfImCol[pSrc]) += dVRefIfIm.real() / mLf;
+      A(imRow, mIfImCol[pSrc]) += dVRefIfIm.imag() / mLf;
 
       const Complex dVRefURe = redistFactor[pOut] * sens.posURe[pSrc];
       const Complex dVRefUIm = redistFactor[pOut] * sens.posUIm[pSrc];
@@ -610,6 +627,7 @@ void DP::Ph3::AvVoltSourceInverterStateSpace::initializeFromNodesAndTerminals(
   const Real vcD = vcDQ.real();
   const Real vcQ = vcDQ.imag();
   const Complex ircDQ = K32 * irc * rot0;
+  const Complex ifDQ = K32 * ifCurrent * rot0;
   const Real ircD = ircDQ.real();
   const Real ircQ = ircDQ.imag();
 
@@ -626,10 +644,16 @@ void DP::Ph3::AvVoltSourceInverterStateSpace::initializeFromNodesAndTerminals(
       mKpPowerCtrl * qInit + mKiPowerCtrl * phiQ0 - mKpPowerCtrl * mQRef;
 
   const Complex vRefDQ0 = K32 * vRef * rot0;
+  const Complex crossVoltage =
+      j * (mEnableCurrentCrossCoupling ? mOmegaN * mLf : 0.0) * ifDQ;
   const Real gammaD0 =
-      (vRefDQ0.real() + mKpCurrCtrl * (ircD - iRefD0)) / mKiCurrCtrl;
+      (vRefDQ0.real() - crossVoltage.real() +
+       mKpCurrCtrl * (ircD - iRefD0)) /
+      mKiCurrCtrl;
   const Real gammaQ0 =
-      (vRefDQ0.imag() + mKpCurrCtrl * (ircQ - iRefQ0)) / mKiCurrCtrl;
+      (vRefDQ0.imag() - crossVoltage.imag() +
+       mKpCurrCtrl * (ircQ - iRefQ0)) /
+      mKiCurrCtrl;
 
   const MatrixComp vcAbc = Math::singlePhaseVariableToThreePhase(vc);
   const MatrixComp ifAbc = Math::singlePhaseVariableToThreePhase(ifCurrent);

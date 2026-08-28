@@ -174,6 +174,7 @@ void EMT::Ph3::SSN_GFL_Split::setParameters(Real lf, Real cf, Real rf, Real rc,
       Matrix::Zero(mControllerInputSize, mNetworkStateSize);
   measurementState.block(0, VcA, 3, 3) = identity3;
   measurementState.block(3, VcA, 3, 3) = (1.0 / mRc) * identity3;
+  measurementState.block(6, IfA, 3, 3) = identity3;
 
   Matrix measurementTerminal =
       Matrix::Zero(mControllerInputSize, mTerminalInputSize);
@@ -293,13 +294,17 @@ void EMT::Ph3::SSN_GFL_Split::evaluateControllerOutput(
   const Real gammaQ = xController(GammaQ, 0);
 
   const Matrix iGridAbc = measurement.block(3, 0, 3, 1);
+  const Matrix ifAbc = measurement.block(6, 0, 3, 1);
 
   const Matrix parkTransform = getParkTransformMatrix(thetaPLL);
   const Matrix inverseParkTransform = getInverseParkTransformMatrix(thetaPLL);
 
   const Matrix iGridDq = parkTransform * iGridAbc;
+  const Matrix ifDq = parkTransform * ifAbc;
   const Real iGridD = iGridDq(0, 0);
   const Real iGridQ = iGridDq(1, 0);
+  const Real ifD = ifDq(0, 0);
+  const Real ifQ = ifDq(1, 0);
 
   const Real currentReferenceD =
       mKpPowerCtrl * (mPRef - pFiltered) + mKiPowerCtrl * phiD;
@@ -310,9 +315,11 @@ void EMT::Ph3::SSN_GFL_Split::evaluateControllerOutput(
   const Real currentErrorQ = currentReferenceQ - iGridQ;
 
   const Real converterVoltageReferenceD =
-      mKpCurrCtrl * currentErrorD + mKiCurrCtrl * gammaD;
+      mKpCurrCtrl * currentErrorD + mKiCurrCtrl * gammaD +
+      (mEnableCurrentCrossCoupling ? -mOmegaN * mLf * ifQ : 0.0);
   const Real converterVoltageReferenceQ =
-      mKpCurrCtrl * currentErrorQ + mKiCurrCtrl * gammaQ;
+      mKpCurrCtrl * currentErrorQ + mKiCurrCtrl * gammaQ +
+      (mEnableCurrentCrossCoupling ? mOmegaN * mLf * ifD : 0.0);
 
   Matrix converterVoltageReferenceDq(2, 1);
   converterVoltageReferenceDq << converterVoltageReferenceD,
@@ -343,6 +350,7 @@ void EMT::Ph3::SSN_GFL_Split::calculateControllerAnalyticalJacobians(
 
   const Matrix vcAbc = measurement.block(0, 0, 3, 1);
   const Matrix iGridAbc = measurement.block(3, 0, 3, 1);
+  const Matrix ifAbc = measurement.block(6, 0, 3, 1);
 
   const Matrix parkTransform = getParkTransformMatrix(thetaPLL);
   const Matrix tD = parkTransform.row(0);
@@ -362,11 +370,17 @@ void EMT::Ph3::SSN_GFL_Split::calculateControllerAnalyticalJacobians(
   const Real vcQ = (tQ * vcAbc)(0, 0);
   const Real iGridD = (tD * iGridAbc)(0, 0);
   const Real iGridQ = (tQ * iGridAbc)(0, 0);
+  const Real ifD = (tD * ifAbc)(0, 0);
+  const Real ifQ = (tQ * ifAbc)(0, 0);
 
   const Real dVcDByTheta = (dTdTheta * vcAbc)(0, 0);
   const Real dVcQByTheta = (dTqTheta * vcAbc)(0, 0);
   const Real dIGridDByTheta = (dTdTheta * iGridAbc)(0, 0);
   const Real dIGridQByTheta = (dTqTheta * iGridAbc)(0, 0);
+  const Real dIfDByTheta = (dTdTheta * ifAbc)(0, 0);
+  const Real dIfQByTheta = (dTqTheta * ifAbc)(0, 0);
+  const Real crossCoupling =
+      mEnableCurrentCrossCoupling ? mOmegaN * mLf : 0.0;
 
   const Matrix dPByVc = iGridD * tD + iGridQ * tQ;
   const Matrix dPByI = vcD * tD + vcQ * tQ;
@@ -389,9 +403,11 @@ void EMT::Ph3::SSN_GFL_Split::calculateControllerAnalyticalJacobians(
   const Real currentErrorQ = currentReferenceQ - iGridQ;
 
   const Real converterVoltageReferenceD =
-      mKpCurrCtrl * currentErrorD + mKiCurrCtrl * gammaD;
+      mKpCurrCtrl * currentErrorD + mKiCurrCtrl * gammaD -
+      crossCoupling * ifQ;
   const Real converterVoltageReferenceQ =
-      mKpCurrCtrl * currentErrorQ + mKiCurrCtrl * gammaQ;
+      mKpCurrCtrl * currentErrorQ + mKiCurrCtrl * gammaQ +
+      crossCoupling * ifD;
 
   A.setZero(mControllerStateSize, mControllerStateSize);
   B.setZero(mControllerStateSize, mControllerInputSize);
@@ -443,8 +459,10 @@ void EMT::Ph3::SSN_GFL_Split::calculateControllerAnalyticalJacobians(
   // -----------------------------------------------------------------------
   C.col(ThetaPLL) = dSdTheta * converterVoltageReferenceD +
                     dSqTheta * converterVoltageReferenceQ +
-                    sD * (-mKpCurrCtrl * dIGridDByTheta) +
-                    sQ * (-mKpCurrCtrl * dIGridQByTheta);
+                    sD * (-mKpCurrCtrl * dIGridDByTheta -
+                          crossCoupling * dIfQByTheta) +
+                    sQ * (-mKpCurrCtrl * dIGridQByTheta +
+                          crossCoupling * dIfDByTheta);
 
   C.col(PFiltered) += sD * (-mKpCurrCtrl * mKpPowerCtrl);
   C.col(PhiD) += sD * (mKpCurrCtrl * mKiPowerCtrl);
@@ -455,6 +473,8 @@ void EMT::Ph3::SSN_GFL_Split::calculateControllerAnalyticalJacobians(
   C.col(GammaQ) += sQ * mKiCurrCtrl;
 
   D.block(0, 3, 3, 3) = sD * (-mKpCurrCtrl * tD) + sQ * (-mKpCurrCtrl * tQ);
+  D.block(0, 6, 3, 3) =
+      sD * (-crossCoupling * tQ) + sQ * (crossCoupling * tD);
 }
 
 void EMT::Ph3::SSN_GFL_Split::buildControllerStateSpaceModel(
@@ -561,6 +581,7 @@ void EMT::Ph3::SSN_GFL_Split::initializeFromNodesAndTerminals(Real frequency) {
   const Matrix parkTransform = getParkTransformMatrix(theta0);
 
   const Matrix vcDq0 = parkTransform * vcAbc0;
+  const Matrix ifDq0 = parkTransform * ifAbc0;
   const Matrix injectionCurrentDq0 = parkTransform * injectionCurrentAbc0;
   const Matrix converterVoltageReferenceDq0 =
       parkTransform * converterVoltageReferenceAbc0;
@@ -569,6 +590,8 @@ void EMT::Ph3::SSN_GFL_Split::initializeFromNodesAndTerminals(Real frequency) {
   const Real vcQ0 = vcDq0(1, 0);
   const Real iGridD0 = injectionCurrentDq0(0, 0);
   const Real iGridQ0 = injectionCurrentDq0(1, 0);
+  const Real crossCoupling =
+      mEnableCurrentCrossCoupling ? mOmegaN * mLf : 0.0;
 
   const Real pInitial = vcD0 * iGridD0 + vcQ0 * iGridQ0;
   const Real qInitial = -vcD0 * iGridQ0 + vcQ0 * iGridD0;
@@ -607,10 +630,12 @@ void EMT::Ph3::SSN_GFL_Split::initializeFromNodesAndTerminals(Real frequency) {
                                  mKpPowerCtrl * mQRef;
 
   mControllerState(GammaD, 0) = (converterVoltageReferenceDq0(0, 0) +
+                                 crossCoupling * ifDq0(1, 0) +
                                  mKpCurrCtrl * (iGridD0 - currentReferenceD)) /
                                 mKiCurrCtrl;
 
-  mControllerState(GammaQ, 0) = (converterVoltageReferenceDq0(1, 0) +
+  mControllerState(GammaQ, 0) = (converterVoltageReferenceDq0(1, 0) -
+                                 crossCoupling * ifDq0(0, 0) +
                                  mKpCurrCtrl * (iGridQ0 - currentReferenceQ)) /
                                 mKiCurrCtrl;
 

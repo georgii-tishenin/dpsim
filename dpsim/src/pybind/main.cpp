@@ -215,6 +215,12 @@ PYBIND11_MODULE(dpsimpy, m) {
       .def("set_pole_mapping", &DPsim::StateSpaceModalAnalysis::setPoleMapping)
       .def("set_reduce_auxiliary_states",
            &DPsim::StateSpaceModalAnalysis::setReduceAuxiliaryStates)
+      .def("set_exclude_decoupled_zero_sequence_states",
+           &DPsim::StateSpaceModalAnalysis::
+               setExcludeDecoupledZeroSequenceStates)
+      .def("set_zero_sequence_coupling_tolerance",
+           &DPsim::StateSpaceModalAnalysis::
+               setZeroSequenceCouplingTolerance)
       .def("update", &DPsim::StateSpaceModalAnalysis::update)
       .def("get_discrete_eigenvalues",
            &DPsim::StateSpaceModalAnalysis::getDiscreteEigenvalues,
@@ -236,7 +242,10 @@ PYBIND11_MODULE(dpsimpy, m) {
       .def("get_auxiliary_reduction_residual",
            &DPsim::StateSpaceModalAnalysis::getAuxiliaryReductionResidual)
       .def("get_auxiliary_reduction_pole_error",
-           &DPsim::StateSpaceModalAnalysis::getAuxiliaryReductionPoleError);
+           &DPsim::StateSpaceModalAnalysis::getAuxiliaryReductionPoleError)
+      .def("get_zero_sequence_coupling_residual",
+           &DPsim::StateSpaceModalAnalysis::
+               getZeroSequenceCouplingResidual);
 
   py::class_<DPsim::Simulation>(m, "Simulation")
       .def(py::init<std::string, CPS::Logger::Level>(), "name"_a,

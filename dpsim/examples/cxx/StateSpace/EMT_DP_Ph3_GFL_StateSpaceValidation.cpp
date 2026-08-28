@@ -549,6 +549,9 @@ void writeParameters(const std::filesystem::path &path, const Parameters &p) {
          << "filter_capacitance," << p.filterCapacitance << ",F\n"
          << "filter_resistance," << p.filterResistance << ",ohm\n"
          << "coupling_resistance," << p.couplingResistance << ",ohm\n"
+         << "current_cross_coupling_coefficient,"
+         << p.omega * p.filterInductance << ",ohm\n"
+         << "current_cross_coupling_default_enabled,0,-\n"
          << "kp_pll," << p.kpPll << ",rad_per_V_s\n"
          << "ki_pll," << p.kiPll << ",rad_per_V_s2\n"
          << "kp_pll_pu," << p.kpPllPuPerSecond << ",pu_per_s\n"
@@ -613,15 +616,32 @@ void writeParameters(const std::filesystem::path &path, const Parameters &p) {
 
 } // namespace
 
+namespace {
+
 class EMTDPPh3GFLStateSpaceValidation {
 public:
-  explicit EMTDPPh3GFLStateSpaceValidation(Bool runTimeDomain)
+  explicit EMTDPPh3GFLStateSpaceValidation(
+      Bool runTimeDomain, Bool enableCurrentCrossCoupling = false,
+      const String &resultDirectory =
+          "EMT_DP_Ph3_GFL_StateSpaceValidation")
       : mRunTimeDomain(runTimeDomain),
-        mOutputDirectory(std::filesystem::path("logs") /
-                         "EMT_DP_Ph3_GFL_StateSpaceValidation") {}
+        mEnableCurrentCrossCoupling(enableCurrentCrossCoupling),
+        mOutputDirectory(std::filesystem::path("logs") / resultDirectory) {
+    if (mEnableCurrentCrossCoupling) {
+      // The original 0.4/0.45 pair is already unstable with decoupling because
+      // a separate electrical mode crosses first.  Use a lower pair that
+      // brackets that cross-coupled stability boundary without retuning any
+      // other controller coefficient.
+      mParameters.shortCircuitRatio = 1.4;
+      mParameters.stableGainScale = 0.2;
+      mParameters.unstableGainScale = 0.26;
+      mParameters.updateDerived();
+    }
+  }
 
   void run();
   void runBenchmarkSelectionScan();
+  void runWeakGridStudy();
   void runCandidateCheck();
   void runEmtVariableDiagnostics();
 
@@ -640,38 +660,47 @@ private:
   SystemTopology runPowerFlow(const String &name) const;
   SystemHandles buildEmtSystem(ModelKind model, const SystemTopology &powerFlow,
                                Real gainScale,
-                               const std::shared_ptr<DataLogger> &logger) const;
+                               const std::shared_ptr<DataLogger> &logger,
+                               Bool enableCurrentCrossCoupling = false) const;
   SystemHandles buildDpSystem(ModelKind model,
                               const SystemTopology &powerFlow, Real gainScale,
-                              const std::shared_ptr<DataLogger> &logger) const;
+                              const std::shared_ptr<DataLogger> &logger,
+                              Bool enableCurrentCrossCoupling = false) const;
   SystemHandles buildSystem(ModelKind model, const SystemTopology &powerFlow,
                             const OperatingPoint &op, Real gainScale,
-                            const std::shared_ptr<DataLogger> &logger) const;
+                            const std::shared_ptr<DataLogger> &logger,
+                            Bool enableCurrentCrossCoupling = false) const;
 
   ModalResult extractOneStep(ModelKind model, const SystemTopology &powerFlow,
                              const OperatingPoint &op, Real gainScale,
                              Real timeStep, const String &study,
-                             Bool useCompactHistoryState = false) const;
+                             Bool useCompactHistoryState = false,
+                             Bool enableCurrentCrossCoupling = false) const;
   VectorComp calculateMonodromy(ModelKind model,
                                 const SystemTopology &powerFlow,
                                 const OperatingPoint &op, Real gainScale,
                                 Real timeStep,
                                 UInt warmupPeriods = 0,
-                                Bool useCompactHistoryState = false) const;
+                                Bool useCompactHistoryState = false,
+                                Bool enableCurrentCrossCoupling = false) const;
   TimeDomainResult
   runTimeDomainCase(ModelKind model, const SystemTopology &powerFlow,
                     const OperatingPoint &op, Real gainScale, Real timeStep,
-                    Real finalTime, const String &stabilityCase) const;
+                    Real finalTime, const String &stabilityCase,
+                    Real perturbationRelative =
+                        std::numeric_limits<Real>::quiet_NaN()) const;
 
   Matrix controllerDerivative(const Matrix &controllerState,
                               const Matrix &measurement,
                               Real gainScale) const;
   Matrix controllerOutput(const Matrix &controllerState,
-                          const Matrix &measurement, Real gainScale) const;
+                          const Matrix &measurement, Real gainScale,
+                          Bool enableCurrentCrossCoupling = false) const;
   Matrix physicalDerivative(const Matrix &physicalState,
                             const Matrix &bridgeVoltage) const;
   ReferenceResult buildReferences(const OperatingPoint &op, Real gainScale,
-                                  Real timeStep) const;
+                                  Real timeStep,
+                                  Bool enableCurrentCrossCoupling = false) const;
 
   void writeEigenvalues(const std::vector<EigenvalueRecord> &records) const;
   void writeSummary(const std::vector<SummaryRecord> &records) const;
@@ -682,6 +711,7 @@ private:
 
   Parameters mParameters;
   Bool mRunTimeDomain;
+  Bool mEnableCurrentCrossCoupling;
   std::filesystem::path mOutputDirectory;
 };
 
@@ -780,7 +810,8 @@ EMTDPPh3GFLStateSpaceValidation::runPowerFlow(const String &name) const {
 EMTDPPh3GFLStateSpaceValidation::SystemHandles
 EMTDPPh3GFLStateSpaceValidation::buildEmtSystem(
     ModelKind model, const SystemTopology &powerFlow, Real gainScale,
-    const std::shared_ptr<DataLogger> &logger) const {
+    const std::shared_ptr<DataLogger> &logger,
+    Bool enableCurrentCrossCoupling) const {
   auto grid = SimNode<Real>::make("nGrid", PhaseType::ABC);
   auto middle = SimNode<Real>::make("nMiddle", PhaseType::ABC);
   auto pcc = SimNode<Real>::make("nPcc", PhaseType::ABC);
@@ -813,6 +844,7 @@ EMTDPPh3GFLStateSpaceValidation::buildEmtSystem(
         mParameters.powerCutoff, mParameters.activePowerReference,
         mParameters.reactivePowerReference, kpPower, kiPower, kpCurrent,
         kiCurrent);
+    inverter->setEnableCurrentCrossCoupling(enableCurrentCrossCoupling);
     inverter->connect({EMT::SimNode::GND, pcc});
     activePower = inverter->attributeTyped<Real>("p_inst");
     reactivePower = inverter->attributeTyped<Real>("q_inst");
@@ -828,6 +860,10 @@ EMTDPPh3GFLStateSpaceValidation::buildEmtSystem(
         mParameters.powerCutoff, mParameters.activePowerReference,
         mParameters.reactivePowerReference, kpPower, kiPower, kpCurrent,
         kiCurrent);
+    if (enableCurrentCrossCoupling)
+      throw std::invalid_argument(
+          "Cross-coupling comparison is not implemented for the legacy EMT "
+          "diagnostic model.");
     inverter->connect({EMT::SimNode::GND, pcc});
     activePower = inverter->attributeTyped<Real>("p_inst");
     reactivePower = inverter->attributeTyped<Real>("q_inst");
@@ -841,6 +877,7 @@ EMTDPPh3GFLStateSpaceValidation::buildEmtSystem(
         mParameters.powerCutoff, mParameters.activePowerReference,
         mParameters.reactivePowerReference, kpPower, kiPower, kpCurrent,
         kiCurrent);
+    inverter->setEnableCurrentCrossCoupling(enableCurrentCrossCoupling);
     inverter->connect({EMT::SimNode::GND, pcc});
     activePower = inverter->attributeTyped<Real>("p_inst");
     reactivePower = inverter->attributeTyped<Real>("q_inst");
@@ -864,7 +901,8 @@ EMTDPPh3GFLStateSpaceValidation::buildEmtSystem(
 EMTDPPh3GFLStateSpaceValidation::SystemHandles
 EMTDPPh3GFLStateSpaceValidation::buildDpSystem(
     ModelKind model, const SystemTopology &powerFlow, Real gainScale,
-    const std::shared_ptr<DataLogger> &logger) const {
+    const std::shared_ptr<DataLogger> &logger,
+    Bool enableCurrentCrossCoupling) const {
   auto pcc = SimNode<Complex>::make("nPcc", PhaseType::ABC);
   auto middle = SimNode<Complex>::make("nMiddle", PhaseType::ABC);
   auto grid = SimNode<Complex>::make("nGrid", PhaseType::ABC);
@@ -895,6 +933,7 @@ EMTDPPh3GFLStateSpaceValidation::buildDpSystem(
         mParameters.powerCutoff, mParameters.activePowerReference,
         mParameters.reactivePowerReference, kpPower, kiPower, kpCurrent,
         kiCurrent);
+    inverter->setEnableCurrentCrossCoupling(enableCurrentCrossCoupling);
     inverter->connect({DP::SimNode::GND, pcc});
     activePower = inverter->attributeTyped<Real>("p_inst");
     reactivePower = inverter->attributeTyped<Real>("q_inst");
@@ -908,6 +947,7 @@ EMTDPPh3GFLStateSpaceValidation::buildDpSystem(
         mParameters.powerCutoff, mParameters.activePowerReference,
         mParameters.reactivePowerReference, kpPower, kiPower, kpCurrent,
         kiCurrent);
+    inverter->setEnableCurrentCrossCoupling(enableCurrentCrossCoupling);
     inverter->connect({DP::SimNode::GND, pcc});
     activePower = inverter->attributeTyped<Real>("p_inst");
     reactivePower = inverter->attributeTyped<Real>("q_inst");
@@ -936,21 +976,25 @@ EMTDPPh3GFLStateSpaceValidation::buildDpSystem(
 EMTDPPh3GFLStateSpaceValidation::SystemHandles
 EMTDPPh3GFLStateSpaceValidation::buildSystem(
     ModelKind model, const SystemTopology &powerFlow, const OperatingPoint &op,
-    Real gainScale, const std::shared_ptr<DataLogger> &logger) const {
+    Real gainScale, const std::shared_ptr<DataLogger> &logger,
+    Bool enableCurrentCrossCoupling) const {
   if (isEmt(model))
-    return buildEmtSystem(model, powerFlow, gainScale, logger);
-  return buildDpSystem(model, powerFlow, gainScale, logger);
+    return buildEmtSystem(model, powerFlow, gainScale, logger,
+                          enableCurrentCrossCoupling);
+  return buildDpSystem(model, powerFlow, gainScale, logger,
+                       enableCurrentCrossCoupling);
 }
 
 ModalResult EMTDPPh3GFLStateSpaceValidation::extractOneStep(
     ModelKind model, const SystemTopology &powerFlow, const OperatingPoint &op,
     Real gainScale, Real timeStep, const String &study,
-    Bool useCompactHistoryState) const {
+    Bool useCompactHistoryState, Bool enableCurrentCrossCoupling) const {
   const String name = "GFLValidation_" + study + "_" + fileToken(model) +
                       "_g" + gainToken(gainScale) + "_dt_" +
                       timeStepToken(timeStep);
   SystemHandles handles =
-      buildSystem(model, powerFlow, op, gainScale, nullptr);
+      buildSystem(model, powerFlow, op, gainScale, nullptr,
+                  enableCurrentCrossCoupling);
   if (handles.emtVariableBase)
     handles.emtVariableBase->useAugmentedPhysicalStateExtraction(
         !useCompactHistoryState);
@@ -1009,7 +1053,7 @@ ModalResult EMTDPPh3GFLStateSpaceValidation::extractOneStep(
 VectorComp EMTDPPh3GFLStateSpaceValidation::calculateMonodromy(
     ModelKind model, const SystemTopology &powerFlow, const OperatingPoint &op,
     Real gainScale, Real timeStep, UInt warmupPeriods,
-    Bool useCompactHistoryState) const {
+    Bool useCompactHistoryState, Bool enableCurrentCrossCoupling) const {
   if (!isEmt(model))
     throw std::invalid_argument("Monodromy is only required for EMT models.");
   const UInt steps =
@@ -1017,7 +1061,8 @@ VectorComp EMTDPPh3GFLStateSpaceValidation::calculateMonodromy(
   const String name = "GFLValidation_monodromy_" + fileToken(model) + "_dt_" +
                       timeStepToken(timeStep);
   SystemHandles handles =
-      buildSystem(model, powerFlow, op, gainScale, nullptr);
+      buildSystem(model, powerFlow, op, gainScale, nullptr,
+                  enableCurrentCrossCoupling);
   if (handles.emtVariableBase)
     handles.emtVariableBase->useAugmentedPhysicalStateExtraction(
         !useCompactHistoryState);
@@ -1056,13 +1101,14 @@ VectorComp EMTDPPh3GFLStateSpaceValidation::calculateMonodromy(
 TimeDomainResult EMTDPPh3GFLStateSpaceValidation::runTimeDomainCase(
     ModelKind model, const SystemTopology &powerFlow, const OperatingPoint &op,
     Real gainScale, Real timeStep, Real finalTime,
-    const String &stabilityCase) const {
+    const String &stabilityCase, Real perturbationRelative) const {
   const String name = "EMT_DP_Ph3_GFL_StateSpaceValidation_" +
                       fileToken(model) + "_" + stabilityCase + "_dt_" +
                       timeStepToken(timeStep);
   Logger::setLogDir((mOutputDirectory / "time_domain" / name).string());
   auto logger = DataLogger::make(name);
-  SystemHandles handles = buildSystem(model, powerFlow, op, gainScale, logger);
+  SystemHandles handles = buildSystem(model, powerFlow, op, gainScale, logger,
+                                      mEnableCurrentCrossCoupling);
   Simulation simulation(name, Logger::Level::warn);
   simulation.setSystem(handles.system);
   simulation.addLogger(logger);
@@ -1075,8 +1121,12 @@ TimeDomainResult EMTDPPh3GFLStateSpaceValidation::runTimeDomainCase(
   simulation.initialize();
 
   const MatrixComp nominalVoltage = handles.sourceVoltageReference->get();
+  const Real appliedPerturbation =
+      std::isfinite(perturbationRelative)
+          ? perturbationRelative
+          : mParameters.gridVoltagePulseRelative;
   const MatrixComp perturbedVoltage =
-      (1.0 + mParameters.gridVoltagePulseRelative) * nominalVoltage;
+      (1.0 + appliedPerturbation) * nominalVoltage;
   // Study 3 starts from the common power-flow initialization and applies the
   // scheduled pulse before the first MNA step. This avoids mixing an arbitrary
   // pre-disturbance transient with the free-response plotting interval.
@@ -1156,8 +1206,10 @@ Matrix EMTDPPh3GFLStateSpaceValidation::controllerDerivative(
 }
 
 Matrix EMTDPPh3GFLStateSpaceValidation::controllerOutput(
-    const Matrix &x, const Matrix &measurement, Real gainScale) const {
+    const Matrix &x, const Matrix &measurement, Real gainScale,
+    Bool enableCurrentCrossCoupling) const {
   const Complex current(measurement(3, 0), measurement(4, 0));
+  const Complex filterCurrent(measurement(6, 0), measurement(7, 0));
   const Complex rotation = std::exp(Complex(0.0, -x(0, 0)));
   const Complex currentLocal = current * rotation;
   const Real kpPower = gainScale * mParameters.kpPowerBase;
@@ -1171,7 +1223,12 @@ Matrix EMTDPPh3GFLStateSpaceValidation::controllerOutput(
           kiPower * x(5, 0));
   const Complex voltageLocal =
       kpCurrent * (currentReference - currentLocal) +
-      kiCurrent * Complex(x(6, 0), x(7, 0));
+      kiCurrent * Complex(x(6, 0), x(7, 0)) +
+      (enableCurrentCrossCoupling
+           ? Complex(0.0, mParameters.omega *
+                              mParameters.filterInductance) *
+                 filterCurrent * rotation
+           : Complex(0.0, 0.0));
   const Complex voltageGlobal =
       voltageLocal * std::exp(Complex(0.0, x(0, 0)));
   Matrix output = Matrix::Zero(3, 1);
@@ -1209,11 +1266,13 @@ Matrix EMTDPPh3GFLStateSpaceValidation::physicalDerivative(
 }
 
 ReferenceResult EMTDPPh3GFLStateSpaceValidation::buildReferences(
-    const OperatingPoint &op, Real gainScale, Real timeStep) const {
+    const OperatingPoint &op, Real gainScale, Real timeStep,
+    Bool enableCurrentCrossCoupling) const {
   const Real angle = std::arg(op.capacitorVoltage);
   const Complex rotation = std::exp(Complex(0.0, -angle));
   const Complex current = op.gridCurrent * rotation;
   const Complex bridge = op.bridgeVoltage * rotation;
+  const Complex filterCurrent = op.filterCurrent * rotation;
   const Real kiPower = mParameters.kiPowerBase;
   const Real kiCurrent = mParameters.kiCurrentBase;
 
@@ -1223,14 +1282,22 @@ ReferenceResult EMTDPPh3GFLStateSpaceValidation::buildReferences(
   controller(3, 0) = mParameters.reactivePowerReference;
   controller(4, 0) = current.real() / kiPower;
   controller(5, 0) = current.imag() / kiPower;
-  controller(6, 0) = bridge.real() / kiCurrent;
-  controller(7, 0) = bridge.imag() / kiCurrent;
+  const Complex crossVoltage =
+      enableCurrentCrossCoupling
+          ? Complex(0.0, mParameters.omega *
+                             mParameters.filterInductance) *
+                filterCurrent
+          : Complex(0.0, 0.0);
+  controller(6, 0) = (bridge.real() - crossVoltage.real()) / kiCurrent;
+  controller(7, 0) = (bridge.imag() - crossVoltage.imag()) / kiCurrent;
 
-  Matrix measurement = Matrix::Zero(6, 1);
+  Matrix measurement = Matrix::Zero(9, 1);
   measurement(0, 0) = op.capacitorVoltage.real();
   measurement(1, 0) = op.capacitorVoltage.imag();
   measurement(3, 0) = op.gridCurrent.real();
   measurement(4, 0) = op.gridCurrent.imag();
+  measurement(6, 0) = op.filterCurrent.real();
+  measurement(7, 0) = op.filterCurrent.imag();
   Matrix physical = Matrix::Zero(PhysicalStateCount, 1);
   physical(0, 0) = op.capacitorVoltage.real();
   physical(1, 0) = op.capacitorVoltage.imag();
@@ -1246,9 +1313,10 @@ ReferenceResult EMTDPPh3GFLStateSpaceValidation::buildReferences(
                                                      const Matrix &u) {
     return controllerDerivative(x, u, gainScale);
   };
-  const auto outputFunction = [this, gainScale](const Matrix &x,
-                                                 const Matrix &u) {
-    return controllerOutput(x, u, gainScale);
+  const auto outputFunction = [this, gainScale,
+                               enableCurrentCrossCoupling](const Matrix &x,
+                                                           const Matrix &u) {
+    return controllerOutput(x, u, gainScale, enableCurrentCrossCoupling);
   };
   const auto physicalFunction = [this](const Matrix &x, const Matrix &u) {
     return physicalDerivative(x, u);
@@ -1283,9 +1351,10 @@ ReferenceResult EMTDPPh3GFLStateSpaceValidation::buildReferences(
   const Matrix bp =
       numericalInputJacobian(physicalFunction, physical, bridgeInput);
 
-  Matrix measurementFromPhysical = Matrix::Zero(6, PhysicalStateCount);
+  Matrix measurementFromPhysical = Matrix::Zero(9, PhysicalStateCount);
   measurementFromPhysical.block(0, 0, 3, 3).setIdentity();
   measurementFromPhysical.block(3, 6, 3, 3).setIdentity();
+  measurementFromPhysical.block(6, 3, 3, 3).setIdentity();
 
   Matrix noDelay = Matrix::Zero(NoDelayStateCount, NoDelayStateCount);
   noDelay.block(0, 0, ControllerStateCount, ControllerStateCount) = ac;
@@ -1505,9 +1574,15 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
   // additionally restricted to steps that close exactly over one 50 Hz
   // period; one-step extraction and analytical references have no such
   // restriction.
-  const std::array<Real, 17> timeSteps = {
-      1e-6,  5e-6,  10e-6, 50e-6, 55e-6, 60e-6, 65e-6, 70e-6, 75e-6,
-      80e-6, 85e-6, 90e-6, 95e-6, 100e-6, 250e-6, 500e-6, 1e-3};
+  const std::vector<Real> timeSteps =
+      mEnableCurrentCrossCoupling
+          ? std::vector<Real>{1e-6,   5e-6,   10e-6, 20e-6, 25e-6, 30e-6,
+                              35e-6,  40e-6,  45e-6, 50e-6, 55e-6, 60e-6,
+                              65e-6,  70e-6,  75e-6, 80e-6, 85e-6, 90e-6,
+                              95e-6,  100e-6, 250e-6, 500e-6, 1e-3}
+          : std::vector<Real>{1e-6,   5e-6,   10e-6, 50e-6, 55e-6, 60e-6,
+                              65e-6,  70e-6,  75e-6, 80e-6, 85e-6, 90e-6,
+                              95e-6,  100e-6, 250e-6, 500e-6, 1e-3};
   std::vector<EigenvalueRecord> eigenvalueRecords;
   std::vector<SummaryRecord> summaryRecords;
   std::vector<ParticipationRecord> participationRecords;
@@ -1518,14 +1593,17 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
             << "Topology: ideal source -> R/L grid -> averaged GFL inverter\n"
             << "Models: EMT/DP Ph3 variable and split SSN\n"
             << "Stable Kp,P multiplier: " << mParameters.stableGainScale
+            << "\nCurrent cross-coupling: "
+            << (mEnableCurrentCrossCoupling ? "enabled" : "disabled")
             << "\n"
             << "Time-domain logging: "
             << (mRunTimeDomain ? "enabled" : "disabled (use --time-domain)")
             << "\n";
 
   for (const Real timeStep : timeSteps) {
-    const ReferenceResult reference =
-        buildReferences(op, mParameters.stableGainScale, timeStep);
+    const ReferenceResult reference = buildReferences(
+        op, mParameters.stableGainScale, timeStep,
+        mEnableCurrentCrossCoupling);
     const VectorComp noDelayZ = eigenvalues(reference.noDelayAd);
     const VectorComp noDelayLambda =
         bilinearContinuousEigenvalues(noDelayZ, timeStep);
@@ -1543,8 +1621,11 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
 
     const Bool storeParticipation =
         timeStep == timeSteps.front() ||
-        std::abs(timeStep - 60e-6) < 1e-12 ||
-        std::abs(timeStep - 80e-6) < 1e-12;
+        (mEnableCurrentCrossCoupling
+             ? (std::abs(timeStep - 40e-6) < 1e-12 ||
+                std::abs(timeStep - 45e-6) < 1e-12)
+             : (std::abs(timeStep - 60e-6) < 1e-12 ||
+                std::abs(timeStep - 80e-6) < 1e-12));
     if (storeParticipation) {
       const std::vector<String> noDelayNames = {
           "psi",       "phi_pll", "p_filtered", "q_filtered",
@@ -1568,7 +1649,7 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
     for (const ModelKind model : models) {
       const ModalResult result = extractOneStep(
           model, powerFlow, op, mParameters.stableGainScale, timeStep,
-          "time_step_sweep");
+          "time_step_sweep", false, mEnableCurrentCrossCoupling);
       const VectorComp referenceLambda =
           isSplit(model) ? splitLambda : noDelayLambda;
       const VectorComp referenceZ = isSplit(model) ? splitZ : noDelayZ;
@@ -1618,7 +1699,8 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
       if (isEmt(model) && closesFundamentalPeriod) {
         try {
           const VectorComp multipliers = calculateMonodromy(
-              model, powerFlow, op, mParameters.stableGainScale, timeStep);
+              model, powerFlow, op, mParameters.stableGainScale, timeStep, 0,
+              false, mEnableCurrentCrossCoupling);
           VectorComp floquetLambda(multipliers.rows());
           for (Eigen::Index idx = 0; idx < multipliers.rows(); ++idx)
             floquetLambda(idx) = std::log(multipliers(idx)) / period;
@@ -1644,11 +1726,15 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
   // shows that the time-domain cases bracket a continuously moving
   // converter-grid interaction mode rather than isolated operating points.
   constexpr Real gainSweepTimeStep = 1e-6;
-  const std::array<Real, 8> gainScales = {0.35, 0.375, 0.4,   0.4125,
-                                          0.425, 0.4375, 0.45, 0.475};
+  const std::vector<Real> gainScales =
+      mEnableCurrentCrossCoupling
+          ? std::vector<Real>{0.1, 0.15, 0.19, 0.2, 0.225, 0.25, 0.255,
+                              0.26, 0.275, 0.3, 0.35}
+          : std::vector<Real>{0.35, 0.375, 0.4, 0.4125, 0.425, 0.4375, 0.45,
+                              0.475};
   for (const Real gainScale : gainScales) {
-    const ReferenceResult reference =
-        buildReferences(op, gainScale, gainSweepTimeStep);
+    const ReferenceResult reference = buildReferences(
+        op, gainScale, gainSweepTimeStep, mEnableCurrentCrossCoupling);
     const VectorComp noDelayZ = eigenvalues(reference.noDelayAd);
     const VectorComp noDelayLambda =
         bilinearContinuousEigenvalues(noDelayZ, gainSweepTimeStep);
@@ -1664,7 +1750,7 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
     for (const ModelKind model : models) {
       const ModalResult result = extractOneStep(
           model, powerFlow, op, gainScale, gainSweepTimeStep,
-          "kp_power_sweep");
+          "kp_power_sweep", false, mEnableCurrentCrossCoupling);
       const VectorComp &referenceZ = isSplit(model) ? splitZ : noDelayZ;
       const VectorComp &referenceLambda =
           isSplit(model) ? splitLambda : noDelayLambda;
@@ -1687,8 +1773,97 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
                : 0.0});
     }
   }
+
+  // Additional controller study: repeat the same one-parameter gain sweep
+  // with nominal-frequency filter-inductor decoupling enabled.  Keeping this
+  // in a separate study preserves the original controller as the baseline and
+  // isolates the effect of +j*omega_N*L_f*i_f,dq from timestep effects.
+  if (!mEnableCurrentCrossCoupling) {
+  for (const Real gainScale : gainScales) {
+    const ReferenceResult reference = buildReferences(
+        op, gainScale, gainSweepTimeStep, true);
+    const VectorComp noDelayZ = eigenvalues(reference.noDelayAd);
+    const VectorComp noDelayLambda =
+        bilinearContinuousEigenvalues(noDelayZ, gainSweepTimeStep);
+    const VectorComp splitZ = eigenvalues(reference.splitAd);
+    const VectorComp splitLambda =
+        logarithmicContinuousEigenvalues(splitZ, gainSweepTimeStep);
+    eigenvalueRecords.push_back(
+        {"current_cross_coupling_kp_sweep", "analytical no delay",
+         "trapezoidal", gainScale, gainSweepTimeStep, noDelayZ,
+         noDelayLambda});
+    eigenvalueRecords.push_back(
+        {"current_cross_coupling_kp_sweep", "exact split companion",
+         "partitioned_trapezoidal", gainScale, gainSweepTimeStep, splitZ,
+         splitLambda});
+
+    const Bool storeCrossCouplingParticipation =
+        std::abs(gainScale - mParameters.stableGainScale) < 1e-12;
+    if (storeCrossCouplingParticipation) {
+      const std::vector<String> noDelayNames = {
+          "psi",       "phi_pll", "p_filtered", "q_filtered",
+          "phi_d",     "phi_q",   "gamma_d",    "gamma_q",
+          "vc_d",      "vc_q",    "vc_0",       "if_d",
+          "if_q",      "if_0",    "i_line_d",   "i_line_q",
+          "i_line_0"};
+      std::vector<String> splitNames = noDelayNames;
+      splitNames.push_back("v_inv_delay_d");
+      splitNames.push_back("v_inv_delay_q");
+      splitNames.push_back("v_inv_delay_0");
+      appendParticipationFromMatrix(
+          "current_cross_coupling_kp_sweep", "analytical no delay",
+          gainSweepTimeStep, reference.noDelayAd, noDelayNames,
+          participationRecords);
+      appendParticipationFromMatrix(
+          "current_cross_coupling_kp_sweep", "exact split companion",
+          gainSweepTimeStep, reference.splitAd, splitNames,
+          participationRecords);
+    }
+
+    for (const ModelKind model : models) {
+      const ModalResult result = extractOneStep(
+          model, powerFlow, op, gainScale, gainSweepTimeStep,
+          "current_cross_coupling_kp_sweep", false, true);
+      const VectorComp &referenceZ = isSplit(model) ? splitZ : noDelayZ;
+      const VectorComp &referenceLambda =
+          isSplit(model) ? splitLambda : noDelayLambda;
+      eigenvalueRecords.push_back(
+          {"current_cross_coupling_kp_sweep", modelName(model), "one_step",
+           gainScale, gainSweepTimeStep, result.discreteEigenvalues,
+           result.continuousEigenvalues});
+      summaryRecords.push_back(
+          {"current_cross_coupling_kp_sweep", modelName(model), gainScale,
+           gainSweepTimeStep, result.stateCount, result.extractionTime,
+           maximumRealPart(result.continuousEigenvalues),
+           spectralRadius(result.discreteEigenvalues),
+           directedEigenvalueDistance(referenceZ,
+                                      result.discreteEigenvalues),
+           directedFiniteEigenvalueDistance(referenceLambda,
+                                            result.continuousEigenvalues),
+           isSplit(model)
+               ? directedFiniteEigenvalueDistance(
+                     noDelayLambda, result.continuousEigenvalues)
+               : 0.0});
+      if (storeCrossCouplingParticipation) {
+        for (UInt mode = 0; mode < result.stateCount; ++mode) {
+          for (UInt state = 0; state < result.stateCount; ++state) {
+            const String stateName =
+                state < result.stateNames.size()
+                    ? result.stateNames[state]
+                    : "x" + std::to_string(state);
+            participationRecords.push_back(
+                {"current_cross_coupling_kp_sweep", modelName(model),
+                 gainSweepTimeStep, mode, state, stateName,
+                 result.participationFactors(state, mode)});
+          }
+        }
+      }
+    }
+  }
+  }
   writeEigenvalues(eigenvalueRecords);
   writeSummary(summaryRecords);
+  writeParticipation(participationRecords);
 
   for (const Real gainScale : {mParameters.stableGainScale,
                                mParameters.unstableGainScale}) {
@@ -1696,7 +1871,8 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
                                      ? "stable"
                                      : "unstable";
     for (const Real timeStep : {1e-6, 1e-3}) {
-      const ReferenceResult reference = buildReferences(op, gainScale, timeStep);
+      const ReferenceResult reference = buildReferences(
+          op, gainScale, timeStep, mEnableCurrentCrossCoupling);
       const VectorComp noDelayLambda = bilinearContinuousEigenvalues(
           eigenvalues(reference.noDelayAd), timeStep);
       const VectorComp splitLambda = logarithmicContinuousEigenvalues(
@@ -1704,7 +1880,8 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
       for (const ModelKind model : models) {
         const ModalResult result = extractOneStep(
             model, powerFlow, op, gainScale, timeStep,
-            "stability_" + stabilityCase);
+            "stability_" + stabilityCase, false,
+            mEnableCurrentCrossCoupling);
         const VectorComp referenceLambda =
             isSplit(model) ? splitLambda : noDelayLambda;
         const VectorComp referenceZ =
@@ -1743,38 +1920,64 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
     };
     // A short balanced grid-voltage pulse is present from t = 0 and excites
     // the response without using model-specific state coordinates. The 1 us
-    // cases validate the Kp,P-induced modal stability change. The 50 and
-    // 100 us cases provide a wide bracket, while the additional 60 and 80 us
-    // cases show the response closer to the refined split-delay boundary.
+    // cases validate the Kp,P-induced modal stability change. The additional
+    // cross-coupled 35 and 45 us cases straddle its refined split-delay
+    // boundary; the non-cross-coupled benchmark keeps its 60 and 80 us pair.
     // A 1 ms waveform would undersample the approximately 1.1 kHz branch and
     // can overflow; it remains a modal diagnostic only.
     const std::array<TimeDomainCase, 6> timeDomainCases = {
-        TimeDomainCase{"stable", mParameters.stableGainScale, 1e-6,
-                       mParameters.gainCaseFinalTime},
-        TimeDomainCase{"unstable", mParameters.unstableGainScale, 1e-6,
-                       mParameters.gainCaseFinalTime},
-        TimeDomainCase{"delay_stable", mParameters.stableGainScale, 50e-6,
+        TimeDomainCase{"stable",
+                       mEnableCurrentCrossCoupling
+                           ? 0.19
+                           : mParameters.stableGainScale,
+                       1e-6,
+                       mEnableCurrentCrossCoupling
+                           ? 1.5
+                           : mParameters.gainCaseFinalTime},
+        TimeDomainCase{"unstable",
+                       mEnableCurrentCrossCoupling
+                           ? 0.255
+                           : mParameters.unstableGainScale,
+                       1e-6,
+                       mEnableCurrentCrossCoupling
+                           ? 1.5
+                           : mParameters.gainCaseFinalTime},
+        TimeDomainCase{"delay_stable", mParameters.stableGainScale,
+                       mEnableCurrentCrossCoupling ? 30e-6 : 50e-6,
                        mParameters.largeStepFinalTime},
         TimeDomainCase{"near_transition_stable",
-                       mParameters.stableGainScale, 60e-6,
-                       mParameters.largeStepFinalTime},
+                       mParameters.stableGainScale,
+                       mEnableCurrentCrossCoupling ? 35e-6 : 60e-6,
+                       mEnableCurrentCrossCoupling
+                           ? 1.5
+                           : mParameters.largeStepFinalTime},
         TimeDomainCase{"near_transition_unstable",
-                       mParameters.stableGainScale, 80e-6,
-                       mParameters.largeStepFinalTime},
-        TimeDomainCase{"large_step", mParameters.stableGainScale, 100e-6,
+                       mParameters.stableGainScale,
+                       mEnableCurrentCrossCoupling ? 45e-6 : 80e-6,
+                       mEnableCurrentCrossCoupling
+                           ? 1.5
+                           : mParameters.largeStepFinalTime},
+        TimeDomainCase{"large_step", mParameters.stableGainScale,
+                       mEnableCurrentCrossCoupling ? 80e-6 : 100e-6,
                        mParameters.largeStepFinalTime}};
+    // The weak-grid cross-coupled base case requires a smaller perturbation
+    // to remain in the local linear regime. Keep the established excitation
+    // of the non-cross-coupled validation unchanged.
+    const Real perturbationRelative =
+        mEnableCurrentCrossCoupling ? 2e-5
+                                    : mParameters.gridVoltagePulseRelative;
     for (const auto &timeDomainCase : timeDomainCases) {
       for (const ModelKind model : models) {
         const TimeDomainResult result = runTimeDomainCase(
             model, powerFlow, op, timeDomainCase.gainScale,
             timeDomainCase.timeStep, timeDomainCase.finalTime,
-            timeDomainCase.name);
+            timeDomainCase.name, perturbationRelative);
         timeDomainRecords.push_back(
             {modelName(model), timeDomainCase.name,
              timeDomainCase.gainScale, timeDomainCase.timeStep,
              timeDomainCase.finalTime, mParameters.perturbationTime,
              mParameters.perturbationDuration,
-             mParameters.gridVoltagePulseRelative,
+             perturbationRelative,
              result.prePerturbationActivePowerError,
              result.prePerturbationReactivePowerError, result.logPath});
         writeTimeDomainManifest(timeDomainRecords);
@@ -1785,7 +1988,8 @@ void EMTDPPh3GFLStateSpaceValidation::run() {
   writeEigenvalues(eigenvalueRecords);
   writeSummary(summaryRecords);
   writeParticipation(participationRecords);
-  writeTimeDomainManifest(timeDomainRecords);
+  if (mRunTimeDomain)
+    writeTimeDomainManifest(timeDomainRecords);
   std::cout << "Results written to " << mOutputDirectory.string() << "\n";
   if (!mRunTimeDomain)
     std::cout
@@ -1797,6 +2001,8 @@ void EMTDPPh3GFLStateSpaceValidation::runBenchmarkSelectionScan() {
   std::ofstream stream(mOutputDirectory / "benchmark_selection_scan.csv");
   std::ofstream summaryStream(mOutputDirectory /
                               "benchmark_selection_summary.csv");
+  std::ofstream participationStream(
+      mOutputDirectory / "benchmark_selection_participation.csv");
   stream << std::setprecision(std::numeric_limits<Real>::max_digits10)
          << "sweep_parameter,sweep_value,sweep_unit,mode_index,"
             "lambda_real,lambda_imag,frequency_hz,damping_ratio\n";
@@ -1804,20 +2010,32 @@ void EMTDPPh3GFLStateSpaceValidation::runBenchmarkSelectionScan() {
                 << "sweep_parameter,sweep_value,sweep_unit,status,"
                    "max_real_lambda,critical_oscillatory_real,"
                    "critical_oscillatory_frequency_hz\n";
+  participationStream
+      << std::setprecision(std::numeric_limits<Real>::max_digits10)
+      << "sweep_parameter,sweep_value,sweep_unit,mode_index,state_index,"
+         "state_name,p_abs,p_normalized\n";
 
   const Parameters baseline = mParameters;
-  const auto evaluate = [this, &stream, &summaryStream](
+  const auto evaluate = [this, &stream, &summaryStream, &participationStream](
                             const String &parameter, Real value,
                             const String &unit, Parameters candidate) {
     candidate.updateDerived();
     mParameters = candidate;
     try {
       const OperatingPoint op = operatingPoint();
-      const ReferenceResult reference = buildReferences(op, 1.0, 1e-6);
-      const VectorComp modes = eigenvalues(reference.noDelayA);
+      const Real gainScale = mEnableCurrentCrossCoupling
+                                 ? mParameters.stableGainScale
+                                 : 1.0;
+      const ReferenceResult reference = buildReferences(
+          op, gainScale, 1e-6, mEnableCurrentCrossCoupling);
+      Eigen::EigenSolver<Matrix> modalSolver(reference.noDelayA, true);
+      if (modalSolver.info() != Eigen::Success)
+        throw std::runtime_error("Candidate modal decomposition failed.");
+      const VectorComp modes = modalSolver.eigenvalues();
       Real maxReal = -std::numeric_limits<Real>::infinity();
       Real criticalReal = -std::numeric_limits<Real>::infinity();
       Real criticalFrequency = std::numeric_limits<Real>::quiet_NaN();
+      Eigen::Index criticalModeIndex = -1;
       for (Eigen::Index idx = 0; idx < modes.rows(); ++idx) {
         const Complex mode = modes(idx);
         if (!std::isfinite(mode.real()) || !std::isfinite(mode.imag()))
@@ -1826,6 +2044,7 @@ void EMTDPPh3GFLStateSpaceValidation::runBenchmarkSelectionScan() {
         if (mode.imag() > 2.0 * PI * 0.1 && mode.real() > criticalReal) {
           criticalReal = mode.real();
           criticalFrequency = mode.imag() / (2.0 * PI);
+          criticalModeIndex = idx;
         }
         if (mode.imag() < -DOUBLE_EPSILON)
           continue;
@@ -1842,6 +2061,32 @@ void EMTDPPh3GFLStateSpaceValidation::runBenchmarkSelectionScan() {
       summaryStream << parameter << ',' << value << ',' << unit << ','
                     << status << ',' << maxReal << ',' << criticalReal << ','
                     << criticalFrequency << '\n';
+      if (parameter == "short_circuit_ratio" && criticalModeIndex >= 0) {
+        const std::vector<String> stateNames = {
+            "psi",       "phi_pll", "p_filtered", "q_filtered",
+            "phi_d",     "phi_q",   "gamma_d",    "gamma_q",
+            "vc_d",      "vc_q",    "vc_0",       "if_d",
+            "if_q",      "if_0",    "i_line_d",   "i_line_q",
+            "i_line_0"};
+        const MatrixComp right = modalSolver.eigenvectors();
+        const MatrixComp left = right.fullPivLu().inverse();
+        const MatrixComp factors =
+            Math::elementwiseProduct(right, left.transpose());
+        Real total = 0.0;
+        for (Eigen::Index state = 0; state < factors.rows(); ++state)
+          total += std::abs(factors(state, criticalModeIndex));
+        for (Eigen::Index state = 0; state < factors.rows(); ++state) {
+          const Real magnitude = std::abs(factors(state, criticalModeIndex));
+          const String name = state < static_cast<Eigen::Index>(stateNames.size())
+                                  ? stateNames[state]
+                                  : "x" + std::to_string(state);
+          participationStream << parameter << ',' << value << ',' << unit
+                              << ',' << criticalModeIndex << ',' << state
+                              << ',' << name << ',' << magnitude << ','
+                              << (total > 0.0 ? magnitude / total : 0.0)
+                              << '\n';
+        }
+      }
       std::cout << std::setw(26) << parameter << " = " << std::setw(8)
                 << value << ' ' << std::setw(2) << unit << ": " << status
                 << ", max Re(lambda) = " << maxReal
@@ -1855,8 +2100,8 @@ void EMTDPPh3GFLStateSpaceValidation::runBenchmarkSelectionScan() {
     }
   };
 
-  for (const Real scr : {1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.5, 10.0,
-                         20.0, 33.0}) {
+  for (const Real scr : {1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2.0, 2.5, 3.0, 4.0,
+                         5.0, 7.5, 10.0, 20.0, 33.0}) {
     Parameters candidate = baseline;
     candidate.shortCircuitRatio = scr;
     evaluate("short_circuit_ratio", scr, "-", candidate);
@@ -1899,6 +2144,26 @@ void EMTDPPh3GFLStateSpaceValidation::runBenchmarkSelectionScan() {
         multiplier * baseline.kiPllPuPerSecondSquared;
     evaluate("ki_pll_multiplier", multiplier, "-", candidate);
   }
+  for (const Real multiplier : {0.5, 1.0, 2.0, 3.0, 4.0, 6.0}) {
+    Parameters candidate = baseline;
+    candidate.filterInductiveReactancePu =
+        multiplier * baseline.filterInductiveReactancePu;
+    evaluate("filter_inductance_multiplier", multiplier, "-", candidate);
+  }
+  for (const Real multiplier : {0.5, 1.0, 2.0, 3.0, 4.0, 6.0}) {
+    Parameters candidate = baseline;
+    candidate.filterCapacitiveSusceptancePu =
+        multiplier * baseline.filterCapacitiveSusceptancePu;
+    evaluate("filter_capacitance_multiplier", multiplier, "-", candidate);
+  }
+  for (const Real multiplier : {1.0, 1.5, 2.0, 3.0, 4.0}) {
+    Parameters candidate = baseline;
+    candidate.filterInductiveReactancePu =
+        multiplier * baseline.filterInductiveReactancePu;
+    candidate.filterCapacitiveSusceptancePu =
+        multiplier * baseline.filterCapacitiveSusceptancePu;
+    evaluate("combined_filter_multiplier", multiplier, "-", candidate);
+  }
 
   // Candidate fixed controller: only the outer power-loop proportional gain
   // is reduced. These sweeps determine whether grid strength can serve as the
@@ -1928,6 +2193,196 @@ void EMTDPPh3GFLStateSpaceValidation::runBenchmarkSelectionScan() {
   std::cout << "Benchmark-selection modes written to "
             << (mOutputDirectory / "benchmark_selection_scan.csv").string()
             << "\n";
+}
+
+void EMTDPPh3GFLStateSpaceValidation::runWeakGridStudy() {
+  if (!mEnableCurrentCrossCoupling) {
+    std::cout << "The weak-grid extension is defined for the cross-coupled "
+                 "benchmark only.\n";
+    return;
+  }
+
+  std::filesystem::create_directories(mOutputDirectory);
+  std::ofstream modeStream(mOutputDirectory / "weak_grid_eigenvalues.csv");
+  std::ofstream participationStream(mOutputDirectory /
+                                    "weak_grid_participation.csv");
+  struct WeakGridTimeDomainRecord {
+    Real shortCircuitRatio;
+    TimeDomainRecord record;
+  };
+  std::vector<WeakGridTimeDomainRecord> timeDomainRecords;
+  modeStream << std::setprecision(std::numeric_limits<Real>::max_digits10)
+             << "short_circuit_ratio,model,method,index,z_real,z_imag,"
+                "lambda_real,lambda_imag,frequency_hz\n";
+  participationStream
+      << std::setprecision(std::numeric_limits<Real>::max_digits10)
+      << "short_circuit_ratio,model,mode_index,state_index,state_name,p_abs,"
+         "p_normalized\n";
+
+  const Parameters baseline = mParameters;
+  constexpr Real timeStep = 1e-6;
+  const std::array<ModelKind, 4> models = {
+      ModelKind::EmtVariable, ModelKind::EmtSplit, ModelKind::DpVariable,
+      ModelKind::DpSplit};
+  const std::vector<String> noDelayNames = {
+      "psi",       "phi_pll", "p_filtered", "q_filtered",
+      "phi_d",     "phi_q",   "gamma_d",    "gamma_q",
+      "vc_d",      "vc_q",    "vc_0",       "if_d",
+      "if_q",      "if_0",    "i_line_d",   "i_line_q",
+      "i_line_0"};
+
+  const auto criticalMode = [](const VectorComp &continuous) {
+    Eigen::Index selected = -1;
+    Real maximum = -std::numeric_limits<Real>::infinity();
+    for (Eigen::Index idx = 0; idx < continuous.rows(); ++idx) {
+      const Complex mode = continuous(idx);
+      if (mode.imag() > 2.0 * PI * 0.1 && std::isfinite(mode.real()) &&
+          mode.real() > maximum) {
+        maximum = mode.real();
+        selected = idx;
+      }
+    }
+    return selected;
+  };
+
+  const auto appendModes = [&modeStream](Real scr, const String &model,
+                                         const String &method,
+                                         const VectorComp &discrete,
+                                         const VectorComp &continuous) {
+    for (Eigen::Index idx = 0; idx < continuous.rows(); ++idx) {
+      const Complex z = idx < discrete.rows()
+                            ? discrete(idx)
+                            : Complex(std::numeric_limits<Real>::quiet_NaN(),
+                                      std::numeric_limits<Real>::quiet_NaN());
+      const Complex mode = continuous(idx);
+      modeStream << scr << ',' << model << ',' << method << ',' << idx << ','
+                 << z.real() << ',' << z.imag() << ',' << mode.real() << ','
+                 << mode.imag() << ',' << std::abs(mode.imag()) / (2.0 * PI)
+                 << '\n';
+    }
+  };
+
+  const auto appendParticipation = [&participationStream](
+                                       Real scr, const String &model,
+                                       Eigen::Index mode,
+                                       const MatrixComp &factors,
+                                       const std::vector<String> &names) {
+    if (mode < 0 || mode >= factors.cols())
+      return;
+    Real total = 0.0;
+    for (Eigen::Index state = 0; state < factors.rows(); ++state)
+      total += std::abs(factors(state, mode));
+    for (Eigen::Index state = 0; state < factors.rows(); ++state) {
+      const Real magnitude = std::abs(factors(state, mode));
+      const String name = state < static_cast<Eigen::Index>(names.size())
+                              ? names[state]
+                              : "x" + std::to_string(state);
+      participationStream << scr << ',' << model << ',' << mode << ','
+                          << state << ',' << name << ',' << magnitude << ','
+                          << (total > 0.0 ? magnitude / total : 0.0) << '\n';
+    }
+  };
+
+  const auto appendReference = [&](Real scr, const String &model,
+                                   const String &method, const Matrix &matrix,
+                                   Bool logarithmic,
+                                   const std::vector<String> &names) {
+    Eigen::EigenSolver<Matrix> solver(matrix, true);
+    if (solver.info() != Eigen::Success)
+      throw std::runtime_error("Weak-grid reference decomposition failed.");
+    const VectorComp discrete = solver.eigenvalues();
+    const VectorComp continuous =
+        logarithmic ? logarithmicContinuousEigenvalues(discrete, timeStep)
+                    : bilinearContinuousEigenvalues(discrete, timeStep);
+    appendModes(scr, model, method, discrete, continuous);
+    const MatrixComp right = solver.eigenvectors();
+    const MatrixComp left = right.fullPivLu().inverse();
+    appendParticipation(
+        scr, model, criticalMode(continuous),
+        Math::elementwiseProduct(right, left.transpose()), names);
+  };
+
+  for (const Real scr : {1.3, 1.325, 1.35, 1.375, 1.4, 1.45, 1.5, 1.6,
+                         1.8, 2.0}) {
+    mParameters = baseline;
+    mParameters.shortCircuitRatio = scr;
+    mParameters.updateDerived();
+    try {
+      const OperatingPoint op = operatingPoint();
+      const SystemTopology powerFlow =
+          runPowerFlow("GFLValidation_WeakGrid_SCR_" +
+                       std::to_string(static_cast<Int>(1000.0 * scr)));
+      const ReferenceResult reference = buildReferences(
+          op, mParameters.stableGainScale, timeStep, true);
+      appendReference(scr, "analytical no delay", "trapezoidal",
+                      reference.noDelayAd, false, noDelayNames);
+      std::vector<String> splitNames = noDelayNames;
+      splitNames.push_back("v_inv_delay_d");
+      splitNames.push_back("v_inv_delay_q");
+      splitNames.push_back("v_inv_delay_0");
+      appendReference(scr, "exact split companion",
+                      "partitioned_trapezoidal", reference.splitAd, true,
+                      splitNames);
+
+      for (const ModelKind model : models) {
+        const ModalResult result = extractOneStep(
+            model, powerFlow, op, mParameters.stableGainScale, timeStep,
+            "weak_grid_scr_sweep", false, true);
+        appendModes(scr, modelName(model), "one_step",
+                    result.discreteEigenvalues, result.continuousEigenvalues);
+        appendParticipation(scr, modelName(model),
+                            criticalMode(result.continuousEigenvalues),
+                            result.participationFactors, result.stateNames);
+      }
+      if (mRunTimeDomain &&
+          (std::abs(scr - 1.325) < 1e-12 ||
+           std::abs(scr - 1.35) < 1e-12)) {
+        const String stabilityCase = scr < 1.34 ? "scr_unstable" : "scr_stable";
+        constexpr Real responseTimeStep = 5e-6;
+        constexpr Real finalTime = 1.5;
+        for (const ModelKind model : models) {
+          const TimeDomainResult result = runTimeDomainCase(
+              model, powerFlow, op, mParameters.stableGainScale,
+              responseTimeStep, finalTime, stabilityCase, 2e-5);
+          timeDomainRecords.push_back(
+              {scr,
+               {modelName(model), stabilityCase,
+                mParameters.stableGainScale, responseTimeStep, finalTime,
+                mParameters.perturbationTime, mParameters.perturbationDuration,
+                2e-5,
+                result.prePerturbationActivePowerError,
+                result.prePerturbationReactivePowerError, result.logPath}});
+        }
+      }
+      std::cout << "Weak-grid extracted sweep: SCR = " << scr << '\n';
+    } catch (const std::exception &error) {
+      std::cerr << "Weak-grid SCR " << scr << " skipped: " << error.what()
+                << '\n';
+    }
+  }
+  mParameters = baseline;
+  std::ofstream timeDomainStream(
+      mOutputDirectory / "weak_grid_time_domain_manifest.csv");
+  timeDomainStream
+      << std::setprecision(std::numeric_limits<Real>::max_digits10)
+      << "short_circuit_ratio,model,stability_case,kp_power_multiplier,"
+         "time_step_s,time_step_us,final_time_s,perturbation_time_s,"
+         "perturbation_duration_s,perturbation_relative,"
+         "pre_perturbation_p_error,pre_perturbation_q_error,log_path\n";
+  for (const auto &item : timeDomainRecords) {
+    const auto &record = item.record;
+    timeDomainStream
+        << item.shortCircuitRatio << ',' << record.model << ','
+        << record.stabilityCase << ',' << record.gainScale << ','
+        << record.timeStep << ',' << 1e6 * record.timeStep << ','
+        << record.finalTime << ',' << record.perturbationTime << ','
+        << record.perturbationDuration << ',' << record.perturbationRelative
+        << ',' << record.prePerturbationActivePowerError << ','
+        << record.prePerturbationReactivePowerError << ',' << record.logPath
+        << '\n';
+  }
+  std::cout << "Weak-grid modes and participation written to "
+            << mOutputDirectory.string() << '\n';
 }
 
 void EMTDPPh3GFLStateSpaceValidation::runCandidateCheck() {
@@ -1975,7 +2430,8 @@ void EMTDPPh3GFLStateSpaceValidation::runCandidateCheck() {
            std::pair<String, Real>{"stable", mParameters.stableGainScale},
            std::pair<String, Real>{"unstable",
                                    mParameters.unstableGainScale}}) {
-    const ReferenceResult reference = buildReferences(op, multiplier, timeStep);
+    const ReferenceResult reference = buildReferences(
+        op, multiplier, timeStep, mEnableCurrentCrossCoupling);
     append(stabilityCase, "analytical no delay", multiplier,
            eigenvalues(reference.noDelayA));
     append(stabilityCase, "exact split companion", multiplier,
@@ -1983,7 +2439,8 @@ void EMTDPPh3GFLStateSpaceValidation::runCandidateCheck() {
                                             timeStep));
     for (const ModelKind model : models) {
       const ModalResult result = extractOneStep(
-          model, powerFlow, op, multiplier, timeStep, "candidate_check");
+          model, powerFlow, op, multiplier, timeStep, "candidate_check",
+          false, mEnableCurrentCrossCoupling);
       append(stabilityCase, modelName(model), multiplier,
              result.continuousEigenvalues);
     }
@@ -2381,9 +2838,13 @@ void EMTDPPh3GFLStateSpaceValidation::runEmtVariableDiagnostics() {
             << '\n';
 }
 
+} // namespace
+
+#ifndef DP_SIM_GFL_CROSS_COUPLED_VALIDATION
 int main(int argc, char **argv) {
   Bool runTimeDomain = false;
   Bool runBenchmarkScan = false;
+  Bool runWeakGridStudy = false;
   Bool runCandidateCheck = false;
   Bool runEmtVariableDiagnostics = false;
   for (Int idx = 1; idx < argc; ++idx) {
@@ -2391,6 +2852,8 @@ int main(int argc, char **argv) {
       runTimeDomain = true;
     if (String(argv[idx]) == "--benchmark-scan")
       runBenchmarkScan = true;
+    if (String(argv[idx]) == "--weak-grid-study")
+      runWeakGridStudy = true;
     if (String(argv[idx]) == "--candidate-check")
       runCandidateCheck = true;
     if (String(argv[idx]) == "--emt-variable-diagnostics")
@@ -2399,6 +2862,8 @@ int main(int argc, char **argv) {
   EMTDPPh3GFLStateSpaceValidation example(runTimeDomain);
   if (runBenchmarkScan)
     example.runBenchmarkSelectionScan();
+  else if (runWeakGridStudy)
+    example.runWeakGridStudy();
   else if (runCandidateCheck)
     example.runCandidateCheck();
   else if (runEmtVariableDiagnostics)
@@ -2407,3 +2872,4 @@ int main(int argc, char **argv) {
     example.run();
   return 0;
 }
+#endif

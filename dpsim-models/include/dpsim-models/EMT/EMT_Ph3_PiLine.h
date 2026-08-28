@@ -15,6 +15,8 @@
 #include <dpsim-models/EMT/EMT_Ph3_Resistor.h>
 #include <dpsim-models/Solver/MNATearInterface.h>
 
+#include <stdexcept>
+
 namespace CPS {
 namespace EMT {
 namespace Ph3 {
@@ -40,6 +42,10 @@ protected:
   std::shared_ptr<Resistor> mSubParallelResistor1;
   // Parallel capacitor submodel at Terminal 1
   std::shared_ptr<Capacitor> mSubParallelCapacitor1;
+  /// Preserve the historical 1 uS grounding conductance when G_parallel is
+  /// zero. It can be disabled for networks that are already physically
+  /// grounded and whose power-flow model also neglects line leakage.
+  Bool mDefaultParallelConductanceEnabled = true;
   /// solver
   std::vector<const Matrix *> mRightVectorStamps;
 
@@ -51,6 +57,16 @@ public:
       : PiLine(name, name, logLevel) {}
 
   SimPowerComp<Real>::Ptr clone(String copySuffix) override;
+
+  /// Configure whether a zero specified shunt conductance is replaced by the
+  /// historical 1 uS numerical grounding conductance. Call before topology
+  /// initialization creates the line subcomponents.
+  void setDefaultParallelConductanceEnabled(Bool enabled) {
+    if (mSubCompCreated)
+      throw std::logic_error(
+          "PiLine conductance policy must be set before subcomponent creation.");
+    mDefaultParallelConductanceEnabled = enabled;
+  }
 
   // #### General ####
   /// Constructs and registers MNA subcomponents; idempotent.
