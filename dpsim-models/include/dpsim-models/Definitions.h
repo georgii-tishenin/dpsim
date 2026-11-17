@@ -50,8 +50,6 @@
 #define RMS3PH_TO_PEAK1PH sqrt(2. / 3.)
 #define PEAK1PH_TO_RMS3PH sqrt(3. / 2.)
 
-#define P_SNUB_TRANSFORMER 1e-3 // 0.1% of rated power
-#define Q_SNUB_TRANSFORMER 5e-4 // 0.05% of rated power
 #define DOUBLE_EPSILON 1E-12
 
 namespace CPS {
@@ -112,6 +110,9 @@ static const Complex jComp(0.0, 1.0);
 enum class NumericalMethod { Euler, Trapezoidal };
 enum class PhaseType { A, B, C, ABC, Single, DC };
 enum class Domain { SP, DP, EMT };
+/// Winding a transformer's nameplate impedance is referred to.
+/// Auto resolves it to the highest-voltage winding.
+enum class WindingReference { Auto, Primary, Secondary, Tertiary };
 enum class PowerflowBusType { PV, PQ, VD, None };
 enum class GeneratorType {
   PVNode,

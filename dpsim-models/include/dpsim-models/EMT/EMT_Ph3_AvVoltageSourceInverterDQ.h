@@ -58,12 +58,32 @@ protected:
 
   /// Flag for connection transformer usage
   Bool mWithConnectionTransformer = false;
+  /// Use direct MNA stamps instead of electrical filter/source children.
+  Bool mUseSubcomponents = true;
   /// Flag for controller usage
   Bool mWithControl = true;
+  /// Preserve explicit controller-state values when supplied by the caller.
+  Bool mManualInitialStatesSet = false;
+  /// Controller gains used to derive the PF-consistent steady-state integrators.
+  Real mKpPowerCtrl = 0.0;
+  Real mKiPowerCtrl = 0.0;
+  Real mKpCurrCtrl = 0.0;
+  Real mKiCurrCtrl = 0.0;
 
   // #### solver ####
   ///
   std::vector<const Matrix *> mRightVectorStamps;
+  Matrix mDirectRf = Matrix::Zero(3, 3);
+  Matrix mDirectLf = Matrix::Zero(3, 3);
+  Matrix mDirectCf = Matrix::Zero(3, 3);
+  Matrix mDirectRc = Matrix::Zero(3, 3);
+  Matrix mDirectIf = Matrix::Zero(3, 1);
+  Matrix mDirectVlf = Matrix::Zero(3, 1);
+  Matrix mDirectVcf = Matrix::Zero(3, 1);
+  Matrix mDirectIcf = Matrix::Zero(3, 1);
+  Matrix mDirectHistoryLf = Matrix::Zero(3, 1);
+  Matrix mDirectHistoryCf = Matrix::Zero(3, 1);
+  Matrix mDirectSourceVoltage = Matrix::Zero(3, 1);
 
 public:
   // ### General Parameters ###
@@ -108,6 +128,15 @@ public:
   AvVoltageSourceInverterDQ(String uid, String name,
                             Logger::Level logLevel = Logger::Level::off,
                             Bool withTrafo = false);
+  /// Direct MNA filter/source path; legacy child-component path remains default.
+  AvVoltageSourceInverterDQ(String uid, String name, Bool useSubcomponents,
+                            Logger::Level logLevel = Logger::Level::off,
+                            Bool withTrafo = false);
+  AvVoltageSourceInverterDQ(String name, Bool useSubcomponents,
+                            Logger::Level logLevel = Logger::Level::off,
+                            Bool withTrafo = false)
+      : AvVoltageSourceInverterDQ(name, name, useSubcomponents, logLevel,
+                                  withTrafo) {}
 
   // #### General ####
   /// Initializes component from power flow data
@@ -119,9 +148,10 @@ public:
                                Real Ki_powerCtrl, Real Kp_currCtrl,
                                Real Ki_currCtrl, Real Omega_cutoff);
   /// Setter for parameters of transformer
-  void setTransformerParameters(Real nomVoltageEnd1, Real nomVoltageEnd2,
-                                Real ratedPower, Real ratioAbs, Real ratioPhase,
-                                Real resistance, Real inductance, Real omega);
+  void setTransformerParameters(Real nomVoltagePrimary,
+                                Real nomVoltageSecondary, Real ratedPower,
+                                Real ratioAbs, Real ratioPhase, Real resistance,
+                                Real inductance, Real omega);
   /// Setter for parameters of filter
   void setFilterParameters(Real Lf, Real Cf, Real Rf, Real Rc);
   /// Setter for initial values applied in controllers
@@ -143,6 +173,8 @@ public:
   /// Initializes internal variables of the component
   void mnaParentInitialize(Real omega, Real timeStep,
                            Attribute<Matrix>::Ptr leftVector) override;
+  void mnaParentApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
+  void mnaParentApplyRightSideVectorStamp(Matrix &rightVector) override;
   /// Updates current through the component
   void mnaCompUpdateCurrent(const Matrix &leftVector) override;
   /// Updates voltage across component

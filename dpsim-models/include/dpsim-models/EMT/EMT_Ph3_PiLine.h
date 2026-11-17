@@ -8,6 +8,10 @@
 
 #pragma once
 
+#include <stdexcept>
+
+#include <dpsim-models/EMT/EMT_PassiveOperationProfile.h>
+
 #include <dpsim-models/Base/Base_Ph3_PiLine.h>
 #include <dpsim-models/CompositePowerComp.h>
 #include <dpsim-models/EMT/EMT_Ph3_Capacitor.h>
@@ -27,6 +31,9 @@ class PiLine : public CompositePowerComp<Real>,
                public Base::Ph3::PiLine,
                public SharedFactory<PiLine> {
 protected:
+  /// Three-phase currents from each terminal node into the complete Pi line.
+  Attribute<UInt>::Ptr mOutputUpdates;
+  Attribute<Matrix>::Ptr mTerminalCurrent0, mTerminalCurrent1;
   /// True after createSubComponents() runs; prevents double-construction.
   /// Series Inductance submodel
   std::shared_ptr<Inductor> mSubSeriesInductor;
@@ -42,21 +49,82 @@ protected:
   std::shared_ptr<Capacitor> mSubParallelCapacitor1;
   /// solver
   std::vector<const Matrix *> mRightVectorStamps;
+  Bool mUseSubcomponents = true;
+  Bool mUseElementarySSN = false;
+  /// An exactly lossless series branch needs no resistor or midpoint unknown.
+  Bool mHasSeriesResistance = true;
+  Bool mUseDefaultShuntConductance = true;
+  Attribute<Matrix>::Ptr mDirectState;
+  MatrixFixedSize<3, 3> mDirectInductorAdmittance =
+      MatrixFixedSize<3, 3>::Zero();
+  MatrixFixedSize<3, 3> mDirectResistanceConductance =
+      MatrixFixedSize<3, 3>::Zero();
+  MatrixFixedSize<3, 3> mDirectCapAdmittance = MatrixFixedSize<3, 3>::Zero();
+  MatrixFixedSize<3, 1> mDirectSeriesHistory = MatrixFixedSize<3, 1>::Zero();
+  MatrixFixedSize<3, 1> mDirectInductorHistory = MatrixFixedSize<3, 1>::Zero();
+  MatrixFixedSize<3, 1> mDirectCapHistory0 = MatrixFixedSize<3, 1>::Zero();
+  MatrixFixedSize<3, 1> mDirectCapHistory1 = MatrixFixedSize<3, 1>::Zero();
+
+  PassiveOperationProfile mOperationProfile;
 
 public:
+  /// Select discrete Norton SSNs for the existing R/L/C circuit children.
+  /// Must be called before initialization; physical nodes remain unchanged.
+  void setUseElementarySSN(Bool enabled) {
+    if (mSubCompCreated || !mnaSubComponents().empty())
+      throw std::logic_error("Select elementary SSNs before initialization.");
+    if (enabled && !mUseSubcomponents)
+      throw std::invalid_argument(
+          "Elementary SSNs require the subcomponent circuit.");
+    mUseElementarySSN = enabled;
+  }
+  /// Number of actual R/L/C children, excluding ideal transformer constraints.
+  UInt primitiveCount() const {
+    return static_cast<UInt>(mnaSubComponents().size());
+  }
+
+  void mnaSetDetailedProfiling(Bool enabled) override {
+    mOperationProfile.enabled = enabled;
+    for (const auto &component : mnaSubComponents())
+      component->mnaSetDetailedProfiling(enabled);
+  }
+  void mnaWriteProfile(std::ostream &profile) const override {
+    mOperationProfile.write(profile, **mName);
+    for (const auto &component : mnaSubComponents())
+      component->mnaWriteProfile(profile);
+  }
+
   /// Defines UID, name and logging level
   PiLine(String uid, String name, Logger::Level logLevel = Logger::Level::off);
+  /// Optional direct MNA implementation; legacy subcomponents remain the default.
+  PiLine(String uid, String name, Bool useSubcomponents,
+         Logger::Level logLevel = Logger::Level::off);
+  PiLine(String name, Bool useSubcomponents,
+         Logger::Level logLevel = Logger::Level::off)
+      : PiLine(name, name, useSubcomponents, logLevel) {}
   /// Defines name and logging level
   PiLine(String name, Logger::Level logLevel = Logger::Level::off)
       : PiLine(name, name, logLevel) {}
 
   SimPowerComp<Real>::Ptr clone(String copySuffix) override;
 
+  /// Disable the legacy 1 uS fallback when an exact zero shunt is required.
+  /// Select before initialization; physical parameter values are then retained.
+  void setUseDefaultShuntConductance(Bool enabled) {
+    mUseDefaultShuntConductance = enabled;
+  }
+
   // #### General ####
   /// Constructs and registers MNA subcomponents; idempotent.
   void createSubComponents() override;
   /// Derives values from power flow data and pushes them to subcomponents
   void initializeParentFromNodesAndTerminals(Real frequency) override;
+  void mnaParentInitialize(Real omega, Real timeStep,
+                           Attribute<Matrix>::Ptr leftVector) override;
+  void mnaParentApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
+  void mnaParentApplyRightSideVectorStamp(Matrix &rightVector) override;
+  Bool mnaHasCompactRightSideVectorStamp() const override;
+  void mnaAddCompactRightSideVectorStamp(Matrix &rightVector) override;
 
   // #### MNA section ####
   /// Updates internal current variable of the component

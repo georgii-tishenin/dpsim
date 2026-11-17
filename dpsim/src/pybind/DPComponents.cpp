@@ -8,6 +8,9 @@
 
 #include <DPsim.h>
 #include <dpsim-models/CSVReader.h>
+#include <dpsim-models/DP/DP_Ph3_SSN_ImpedanceLoad.h>
+#include <dpsim-models/DP/DP_Ph3_SSN_PiLine.h>
+#include <dpsim-models/DP/DP_Ph3_SSN_Transformer.h>
 #include <dpsim-models/IdentifiedObject.h>
 #include <dpsim/RealTimeSimulation.h>
 #include <dpsim/Simulation.h>
@@ -33,6 +36,8 @@ void addDPComponents(py::module_ mDP) {
       .def("set_initial_voltage",
            py::overload_cast<CPS::Complex, int>(
                &CPS::DP::SimNode::setInitialVoltage, py::const_))
+      .def("set_complex_initial_voltage_scale",
+           &CPS::DP::SimNode::setComplexInitialVoltageScale, "scale"_a)
       .def("single_voltage", &CPS::DP::SimNode::singleVoltage,
            "phase_type"_a = CPS::PhaseType::Single)
       .def_readonly_static("gnd", &CPS::DP::SimNode::GND);
@@ -460,7 +465,7 @@ void addDPPh1Components(py::module_ mDPPh1) {
            "Kp_curr_ctrl"_a, "Ki_curr_ctrl"_a, "omega_cutoff"_a)
       .def("set_transformer_parameters",
            &CPS::DP::Ph1::AvVoltageSourceInverterDQ::setTransformerParameters,
-           "nom_voltage_end_1"_a, "nom_voltage_end_2"_a, "rated_power"_a,
+           "nom_voltage_primary"_a, "nom_voltage_secondary"_a, "rated_power"_a,
            "ratio_abs"_a, "ratio_phase"_a, "resistance"_a, "inductance"_a)
       .def("set_initial_state_values",
            &CPS::DP::Ph1::AvVoltageSourceInverterDQ::setInitialStateValues,
@@ -494,18 +499,53 @@ void addDPPh1Components(py::module_ mDPPh1) {
            py::overload_cast<CPS::Real, CPS::Real, CPS::Real, CPS::Real,
                              CPS::Real, CPS::Real>(
                &CPS::DP::Ph1::Transformer::setParameters),
-           "nom_voltage_end_1"_a, "nom_voltage_end_2"_a, "ratio_abs"_a,
+           "nom_voltage_primary"_a, "nom_voltage_secondary"_a, "ratio_abs"_a,
            "ratio_phase"_a, "resistance"_a, "inductance"_a)
       .def("set_parameters",
            py::overload_cast<CPS::Real, CPS::Real, CPS::Real, CPS::Real,
                              CPS::Real, CPS::Real, CPS::Real>(
                &CPS::DP::Ph1::Transformer::setParameters),
-           "nom_voltage_end_1"_a, "nom_voltage_end_2"_a, "rated_power"_a,
+           "nom_voltage_primary"_a, "nom_voltage_secondary"_a, "rated_power"_a,
            "ratio_abs"_a, "ratio_phase"_a, "resistance"_a, "inductance"_a)
+      .def("set_reference_winding",
+           &CPS::DP::Ph1::Transformer::setReferenceWinding,
+           "reference_winding"_a)
+      .def("set_tap_ratio", &CPS::DP::Ph1::Transformer::setTapRatio,
+           "tap_ratio"_a)
+      .def_property("tap_ratio", &CPS::DP::Ph1::Transformer::tapRatio,
+                    &CPS::DP::Ph1::Transformer::setTapRatio)
+      .def("set_magnetizing_branch",
+           &CPS::DP::Ph1::Transformer::setMagnetizingBranch,
+           "no_load_current"_a, "no_load_loss"_a)
       .def("connect", &CPS::DP::Ph1::Transformer::connect);
 }
 
 void addDPPh3Components(py::module_ mDPPh3) {
+  py::class_<CPS::DP::Ph3::Transformer,
+             std::shared_ptr<CPS::DP::Ph3::Transformer>,
+             CPS::SimPowerComp<CPS::Complex>>(mDPPh3, "Transformer",
+                                              py::multiple_inheritance())
+      .def(py::init<std::string, CPS::Logger::Level>(), "name"_a,
+           "loglevel"_a = CPS::Logger::Level::off)
+      .def(py::init<std::string, std::string, CPS::Logger::Level, CPS::Bool>(),
+           "uid"_a, "name"_a, "loglevel"_a = CPS::Logger::Level::off,
+           // cppcheck-suppress assignBoolToPointer
+           "with_resistive_losses"_a = false)
+      .def("set_parameters", &CPS::DP::Ph3::Transformer::setParameters,
+           "nom_voltage_primary"_a, "nom_voltage_secondary"_a, "rated_power"_a,
+           "ratio_abs"_a, "ratio_phase"_a, "resistance"_a, "inductance"_a)
+      .def("set_reference_winding",
+           &CPS::DP::Ph3::Transformer::setReferenceWinding,
+           "reference_winding"_a)
+      .def("set_tap_ratio", &CPS::DP::Ph3::Transformer::setTapRatio,
+           "tap_ratio"_a)
+      .def_property("tap_ratio", &CPS::DP::Ph3::Transformer::tapRatio,
+                    &CPS::DP::Ph3::Transformer::setTapRatio)
+      .def("set_magnetizing_branch",
+           &CPS::DP::Ph3::Transformer::setMagnetizingBranch,
+           "no_load_current"_a, "no_load_loss"_a)
+      .def("connect", &CPS::DP::Ph3::Transformer::connect);
+
   py::class_<CPS::DP::Ph3::VoltageSource,
              std::shared_ptr<CPS::DP::Ph3::VoltageSource>,
              CPS::SimPowerComp<CPS::Complex>>(mDPPh3, "VoltageSource",
@@ -540,6 +580,43 @@ void addDPPh3Components(py::module_ mDPPh3) {
            "parallel_capacitance"_a = zeroMatrix(3),
            "parallel_conductance"_a = zeroMatrix(3))
       .def("connect", &CPS::DP::Ph3::PiLine::connect);
+
+  py::class_<CPS::DP::Ph3::SSN::PiLine,
+             std::shared_ptr<CPS::DP::Ph3::SSN::PiLine>,
+             CPS::SimPowerComp<CPS::Complex>>(mDPPh3, "SSN_PiLine",
+                                              py::multiple_inheritance())
+      .def(py::init<std::string, CPS::Logger::Level>(), "name"_a,
+           "loglevel"_a = CPS::Logger::Level::off)
+      .def("set_parameters", &CPS::DP::Ph3::SSN::PiLine::setParameters,
+           "series_resistance"_a, "series_inductance"_a,
+           "parallel_capacitance"_a = zeroMatrix(3),
+           "parallel_conductance"_a = zeroMatrix(3))
+      .def("connect", &CPS::DP::Ph3::SSN::PiLine::connect);
+
+  py::class_<CPS::DP::Ph3::SSN::ImpedanceLoad,
+             std::shared_ptr<CPS::DP::Ph3::SSN::ImpedanceLoad>,
+             CPS::SimPowerComp<CPS::Complex>>(mDPPh3, "SSN_ImpedanceLoad",
+                                              py::multiple_inheritance())
+      .def(py::init<std::string, CPS::Logger::Level>(), "name"_a,
+           "loglevel"_a = CPS::Logger::Level::off)
+      .def("set_parameters", &CPS::DP::Ph3::SSN::ImpedanceLoad::setParameters,
+           "active_power"_a, "reactive_power"_a, "nominal_voltage"_a,
+           "shunt_conductance"_a = 0., "shunt_susceptance"_a = 0.)
+      .def("connect", &CPS::DP::Ph3::SSN::ImpedanceLoad::connect);
+
+  py::class_<CPS::DP::Ph3::SSN::Transformer,
+             std::shared_ptr<CPS::DP::Ph3::SSN::Transformer>,
+             CPS::SimPowerComp<CPS::Complex>>(mDPPh3, "SSN_Transformer",
+                                              py::multiple_inheritance())
+      .def(py::init<std::string, CPS::Logger::Level>(), "name"_a,
+           "loglevel"_a = CPS::Logger::Level::off)
+      .def("set_parameters", &CPS::DP::Ph3::SSN::Transformer::setParameters,
+           "nom_voltage_primary"_a, "nom_voltage_secondary"_a, "rated_power"_a,
+           "ratio_abs"_a, "ratio_phase"_a, "resistance"_a, "inductance"_a)
+      .def("set_magnetizing_branch",
+           &CPS::DP::Ph3::SSN::Transformer::setMagnetizingBranch,
+           "no_load_current"_a, "no_load_loss"_a)
+      .def("connect", &CPS::DP::Ph3::SSN::Transformer::connect);
 
   py::class_<CPS::DP::Ph3::CurrentSource,
              std::shared_ptr<CPS::DP::Ph3::CurrentSource>,
@@ -606,6 +683,13 @@ void addDPPh3Components(py::module_ mDPPh3) {
       mDPPh3, "SynchronGeneratorDQTrapez", py::multiple_inheritance())
       .def(py::init<std::string, CPS::Logger::Level>(), "name"_a,
            "loglevel"_a = CPS::Logger::Level::off)
+      .def("set_machine_parameters_fundamental_per_unit",
+           &CPS::DP::Ph3::SynchronGeneratorDQ::
+               setMachineParametersFundamentalPerUnit,
+           "nom_power"_a, "nom_volt"_a, "nom_freq"_a, "pole_number"_a,
+           "nom_field_cur"_a, "Rs"_a, "Ll"_a, "Lmd"_a, "Lmq"_a, "Rfd"_a,
+           "Llfd"_a, "Rkd"_a, "Llkd"_a, "Rkq1"_a, "Llkq1"_a, "Rkq2"_a,
+           "Llkq2"_a, "inertia"_a)
       .def("set_parameters_fundamental_per_unit",
            &CPS::DP::Ph3::SynchronGeneratorDQTrapez::
                setParametersFundamentalPerUnit,
@@ -616,6 +700,20 @@ void addDPPh3Components(py::module_ mDPPh3) {
            "init_reactive_power"_a, "init_terminal_volt"_a, "init_volt_angle"_a,
            "init_mech_power"_a)
       .def("connect", &CPS::DP::Ph3::SynchronGeneratorDQTrapez::connect);
+
+  py::class_<CPS::DP::Ph3::SynchronGenerator4OrderVBR,
+             std::shared_ptr<CPS::DP::Ph3::SynchronGenerator4OrderVBR>,
+             CPS::SimPowerComp<CPS::Complex>>(
+      mDPPh3, "SynchronGenerator4OrderVBR", py::multiple_inheritance())
+      .def(py::init<std::string, CPS::Logger::Level>(), "name"_a,
+           "loglevel"_a = CPS::Logger::Level::off)
+      .def("set_parameters_operational_per_unit",
+           &CPS::DP::Ph3::SynchronGenerator4OrderVBR::
+               setParametersOperationalPerUnit,
+           "nom_power"_a, "nom_volt"_a, "nom_freq"_a, "pole_number"_a,
+           "nom_field_cur"_a, "Rs"_a, "Ld"_a, "Lq"_a, "Ld_t"_a, "Lq_t"_a,
+           "Ll"_a, "Td0_t"_a, "Tq0_t"_a, "inertia"_a)
+      .def("connect", &CPS::DP::Ph3::SynchronGenerator4OrderVBR::connect);
 
   py::class_<CPS::DP::Ph3::SeriesResistor,
              std::shared_ptr<CPS::DP::Ph3::SeriesResistor>,

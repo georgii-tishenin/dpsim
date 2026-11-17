@@ -8,6 +8,8 @@
 
 #include <dpsim-models/Signal/PowerControllerVSI.h>
 
+#include <limits>
+
 using namespace CPS;
 using namespace CPS::Signal;
 
@@ -100,6 +102,7 @@ void PowerControllerVSI::setInitialStateValues(Real pInit, Real qInit,
   mPhi_qInit = phi_qInit;
   mGamma_dInit = gamma_dInit;
   mGamma_qInit = gamma_qInit;
+  mInitialStatesExplicit = true;
 
   SPDLOG_LOGGER_INFO(mSLog, "Initial State Value Parameters:");
   SPDLOG_LOGGER_INFO(mSLog, "PInit = {}, QInit = {}", pInit, qInit);
@@ -109,6 +112,31 @@ void PowerControllerVSI::setInitialStateValues(Real pInit, Real qInit,
                      gamma_qInit);
 }
 
+void PowerControllerVSI::initializeSteadyState(Real pRef, Real qRef, Real iD,
+                                               Real iQ, Real vSourceD,
+                                               Real vSourceQ) {
+  if (mInitialStatesExplicit)
+    return;
+
+  // At equilibrium the power states equal their references, the power-loop
+  // integrators cancel the measured d/q currents, and the current-loop
+  // integrators produce the required converter-side voltage.
+  mPInit = pRef;
+  mQInit = qRef;
+  mPhi_dInit = std::abs(mKiPowerCtrld) > std::numeric_limits<Real>::epsilon()
+                   ? iD / mKiPowerCtrld
+                   : 0.;
+  mPhi_qInit = std::abs(mKiPowerCtrlq) > std::numeric_limits<Real>::epsilon()
+                   ? iQ / mKiPowerCtrlq
+                   : 0.;
+  mGamma_dInit = std::abs(mKiCurrCtrld) > std::numeric_limits<Real>::epsilon()
+                     ? vSourceD / mKiCurrCtrld
+                     : 0.;
+  mGamma_qInit = std::abs(mKiCurrCtrlq) > std::numeric_limits<Real>::epsilon()
+                     ? vSourceQ / mKiCurrCtrlq
+                     : 0.;
+}
+
 void PowerControllerVSI::initializeStateSpaceModel(
     Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
   mTimeStep = timeStep;
@@ -116,6 +144,13 @@ void PowerControllerVSI::initializeStateSpaceModel(
 
   // update B matrix due to its dependence on Irc
   updateBMatrixStateSpaceModel();
+
+  const Matrix identity = Matrix::Identity(mA.rows(), mA.cols());
+  const Matrix f1 = identity + (mTimeStep / 2.) * mA;
+  const Matrix f2 = identity - (mTimeStep / 2.) * mA;
+  mF2Inverse = f2.inverse();
+  mDiscreteA = mF2Inverse * f1;
+  mTransformedB.noalias() = mF2Inverse * (mTimeStep / 2.) * mB;
 
   // initialization of input
   **mInputCurr << mPref, mQref, **mVc_d, **mVc_q, **mIrc_d, **mIrc_q;
@@ -174,8 +209,10 @@ void PowerControllerVSI::signalStep(Real time, Int timeStepCount) {
       time, **mInputCurr, **mInputPrev, **mStatePrev);
 
   // calculate new states
-  **mStateCurr = Math::StateSpaceTrapezoidal(**mStatePrev, mA, mB, mTimeStep,
-                                             **mInputCurr, **mInputPrev);
+  mInputSum.noalias() = **mInputCurr + **mInputPrev;
+  mTransformedB.noalias() = mF2Inverse * (mTimeStep / 2.) * mB;
+  (**mStateCurr).noalias() =
+      mDiscreteA * **mStatePrev + mTransformedB * mInputSum;
   SPDLOG_LOGGER_DEBUG(mSLog, "stateCurr = \n {}", **mStateCurr);
 
   // calculate new outputs

@@ -15,6 +15,7 @@ DP::Ph3::Resistor::Resistor(String uid, String name, Logger::Level logLevel)
       Base::Ph3::Resistor(mAttributes) {
   mPhaseType = PhaseType::ABC;
   setTerminalNumber(2);
+
   **mIntfVoltage = MatrixComp::Zero(3, 1);
   **mIntfCurrent = MatrixComp::Zero(3, 1);
 }
@@ -26,41 +27,58 @@ SimPowerComp<Complex>::Ptr DP::Ph3::Resistor::clone(String name) {
 }
 
 void DP::Ph3::Resistor::initializeFromNodesAndTerminals(Real frequency) {
+  // ---------------------------------------------------------------------------
+  // DP / PF CONVENTION CONVERSION
+  // ---------------------------------------------------------------------------
+  // Power-flow node voltages are line-line RMS phasors.
+  // DP::Ph3 states use phase-peak complex envelopes.
+  //
+  // The previous implementation constructed B/C from mIntfVoltage(A) without
+  // first assigning phase A from the PF terminal voltages. This made standalone
+  // resistor initialization dependent on stale/default interface state.
+  // ---------------------------------------------------------------------------
 
-  Real voltMag = Math::abs((**mIntfVoltage)(0, 0));
-  Real voltPhase = Math::phase((**mIntfVoltage)(0, 0));
-  (**mIntfVoltage)(1, 0) = Complex(voltMag * cos(voltPhase - 2. / 3. * M_PI),
-                                   voltMag * sin(voltPhase - 2. / 3. * M_PI));
-  (**mIntfVoltage)(2, 0) = Complex(voltMag * cos(voltPhase + 2. / 3. * M_PI),
-                                   voltMag * sin(voltPhase + 2. / 3. * M_PI));
+  MatrixComp vInitABC = MatrixComp::Zero(3, 1);
+
+  vInitABC(0, 0) =
+      RMS3PH_TO_PEAK1PH * (initialSingleVoltage(1) - initialSingleVoltage(0));
+
+  vInitABC(1, 0) = vInitABC(0, 0) * SHIFT_TO_PHASE_B;
+
+  vInitABC(2, 0) = vInitABC(0, 0) * SHIFT_TO_PHASE_C;
+
+  **mIntfVoltage = vInitABC;
+
   **mIntfCurrent = (**mResistance).inverse() * **mIntfVoltage;
 
-  SPDLOG_LOGGER_INFO(mSLog,
-                     "\n--- Initialization from powerflow ---"
-                     "\nVoltage across amplitude and phase: \n{:s}"
-                     "\nCurrent amplitude and phase: \n{:s}"
-                     "\nTerminal 0 voltage amplitude and phase: \n{:s}"
-                     "\nTerminal 1 voltage amplitude and phase: \n{:s}"
-                     "\n--- Initialization from powerflow finished ---",
-                     Logger::phasorMatrixToString(**mIntfVoltage),
-                     Logger::phasorMatrixToString(**mIntfCurrent),
-                     Logger::phasorMatrixToString(initialVoltage(0)),
-                     Logger::phasorMatrixToString(initialVoltage(1)));
+  SPDLOG_LOGGER_INFO(
+      mSLog,
+      "\n--- Initialization from powerflow ---"
+      "\nDP convention: phase-peak complex envelopes"
+      "\nVoltage across:"
+      "\n{:s}"
+      "\nCurrent:"
+      "\n{:s}"
+      "\nTerminal 0 PF voltage converted to phase peak: {:s}"
+      "\nTerminal 1 PF voltage converted to phase peak: {:s}"
+      "\n--- Initialization from powerflow finished ---",
+      Logger::matrixCompToString(**mIntfVoltage),
+      Logger::matrixCompToString(**mIntfCurrent),
+      Logger::phasorToString(RMS3PH_TO_PEAK1PH * initialSingleVoltage(0)),
+      Logger::phasorToString(RMS3PH_TO_PEAK1PH * initialSingleVoltage(1)));
 }
 
 void DP::Ph3::Resistor::mnaCompInitialize(Real omega, Real timeStep,
                                           Attribute<Matrix>::Ptr leftVector) {
   updateMatrixNodeIndices();
+  mConductance.real() = (**mResistance).inverse();
   **mRightVector = Matrix::Zero(0, 0);
 }
 
 void DP::Ph3::Resistor::mnaCompApplySystemMatrixStamp(
     SparseMatrixRow &systemMatrix) {
-  MatrixFixedSizeComp<3, 3> conductance = Matrix::Zero(3, 3);
-  conductance.real() = (**mResistance).inverse();
-
   MNAStampUtils::stampAdmittanceMatrix(
-      conductance, systemMatrix, matrixNodeIndex(0), matrixNodeIndex(1),
+      mConductance, systemMatrix, matrixNodeIndex(0), matrixNodeIndex(1),
       terminalNotGrounded(0), terminalNotGrounded(1), mSLog);
 }
 
@@ -81,26 +99,22 @@ void DP::Ph3::Resistor::mnaCompPostStep(Real time, Int timeStepCount,
 }
 
 void DP::Ph3::Resistor::mnaCompUpdateVoltage(const Matrix &leftVector) {
-  // Voltage across component is defined as V1 - V0
-  **mIntfVoltage = MatrixComp::Zero(3, 1);
-  if (terminalNotGrounded(1)) {
-    (**mIntfVoltage)(0, 0) =
-        Math::complexFromVectorElement(leftVector, matrixNodeIndex(1, 0));
-    (**mIntfVoltage)(1, 0) =
-        Math::complexFromVectorElement(leftVector, matrixNodeIndex(1, 1));
-    (**mIntfVoltage)(2, 0) =
-        Math::complexFromVectorElement(leftVector, matrixNodeIndex(1, 2));
-  }
-  if (terminalNotGrounded(0)) {
-    (**mIntfVoltage)(0, 0) =
-        (**mIntfVoltage)(0, 0) -
-        Math::complexFromVectorElement(leftVector, matrixNodeIndex(0, 0));
-    (**mIntfVoltage)(1, 0) =
-        (**mIntfVoltage)(1, 0) -
-        Math::complexFromVectorElement(leftVector, matrixNodeIndex(0, 1));
-    (**mIntfVoltage)(2, 0) =
-        (**mIntfVoltage)(2, 0) -
-        Math::complexFromVectorElement(leftVector, matrixNodeIndex(0, 2));
+  const bool terminal0Connected = terminalNotGrounded(0);
+  const bool terminal1Connected = terminalNotGrounded(1);
+  const Matrix::Index imaginaryOffset = leftVector.rows() / 2;
+  for (UInt phase = 0; phase < 3; ++phase) {
+    Complex voltage(0., 0.);
+    if (terminal1Connected) {
+      const Matrix::Index row = matrixNodeIndex(1, phase);
+      voltage =
+          Complex(leftVector(row, 0), leftVector(row + imaginaryOffset, 0));
+    }
+    if (terminal0Connected) {
+      const Matrix::Index row = matrixNodeIndex(0, phase);
+      voltage -=
+          Complex(leftVector(row, 0), leftVector(row + imaginaryOffset, 0));
+    }
+    (**mIntfVoltage)(phase, 0) = voltage;
   }
 
   SPDLOG_LOGGER_DEBUG(mSLog, "Voltage A: {} < {}",
@@ -109,22 +123,30 @@ void DP::Ph3::Resistor::mnaCompUpdateVoltage(const Matrix &leftVector) {
 }
 
 void DP::Ph3::Resistor::mnaCompUpdateCurrent(const Matrix &leftVector) {
-  **mIntfCurrent = (**mResistance).inverse() * **mIntfVoltage;
-  SPDLOG_LOGGER_DEBUG(mSLog, "Current A: {} < {}",
+  // The dimensions are fixed at 3x3; scalar rows avoid dynamic GEMV setup in
+  // this per-step post-processing path.
+  const MatrixComp &voltage = **mIntfVoltage;
+  MatrixComp &current = **mIntfCurrent;
+  for (Int phase = 0; phase < 3; ++phase)
+    current(phase, 0) = mConductance(phase, 0) * voltage(0, 0) +
+                        mConductance(phase, 1) * voltage(1, 0) +
+                        mConductance(phase, 2) * voltage(2, 0);
 
+  SPDLOG_LOGGER_DEBUG(mSLog, "Current A: {} < {}",
                       std::abs((**mIntfCurrent)(0, 0)),
                       std::arg((**mIntfCurrent)(0, 0)));
 }
 
 // #### Tear Methods ####
+
 void DP::Ph3::Resistor::mnaTearApplyMatrixStamp(SparseMatrixRow &tearMatrix) {
-  MatrixFixedSizeComp<3, 3> conductance = Matrix::Zero(3, 3);
-  conductance.real() = (**mResistance).inverse();
-  // Set diagonal entries
-  Math::addToMatrixElement(tearMatrix, mTearIdx * 3, mTearIdx * 3,
-                           1. / conductance(0, 0).real()); // 1 /
-  Math::addToMatrixElement(tearMatrix, mTearIdx * 3 + 1, mTearIdx * 3 + 1,
-                           1. / conductance(1, 1).real());
-  Math::addToMatrixElement(tearMatrix, mTearIdx * 3 + 2, mTearIdx * 3 + 2,
-                           1. / conductance(2, 2).real());
+  // Keep mutual phase coupling in the tear system. Stamping only the
+  // diagonal here disagrees with the full resistance matrix used by MNA.
+  for (UInt row = 0; row < 3; ++row) {
+    for (UInt col = 0; col < 3; ++col) {
+      Math::addToMatrixElement(tearMatrix, mTearIdx * 3 + row,
+                               mTearIdx * 3 + col,
+                               Complex((**mResistance)(row, col), 0.0));
+    }
+  }
 }

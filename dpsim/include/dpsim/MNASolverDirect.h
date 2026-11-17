@@ -9,8 +9,10 @@
 #pragma once
 
 #include <bitset>
+#include <chrono>
 #include <iostream>
 #include <list>
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -36,6 +38,10 @@
 #include <dpsim/GpuMagmaAdapter.h>
 #endif
 #endif
+#ifdef WITH_METAL
+#include <dpsim/GPU/Apple/MetalDenseAdapter.h>
+#include <dpsim/GPU/Apple/MetalSparseBiCGSTABAdapter.h>
+#endif
 #include <dpsim-models/AttributeList.h>
 #include <dpsim-models/SimPowerComp.h>
 #include <dpsim-models/SimSignalComp.h>
@@ -53,6 +59,8 @@ enum DirectLinearSolverImpl {
   CUDADense,
   CUDASparse,
   CUDAMagma,
+  MetalDense,
+  MetalSparseBiCGSTAB,
   Plugin
 };
 
@@ -68,12 +76,26 @@ protected:
   std::unordered_map<std::bitset<SWITCH_NUM>,
                      std::vector<std::shared_ptr<DirectLinearSolver>>>
       mDirectLinearSolvers;
+  /// RHS accumulation operations resolved once during solver setup. Each
+  /// entry either adds a dense stamp or calls its component's compact path.
+  struct RightVectorStamp {
+    const Matrix *dense = nullptr;
+    CPS::MNAInterface *compact = nullptr;
+  };
+  std::vector<RightVectorStamp> mRightVectorStampOperations;
+  std::size_t mDenseRightVectorStampCalls = 0;
+  std::size_t mCompactRightVectorStampCalls = 0;
 
   // #### Data structures for system recomputation over time ####
   /// System matrix including all static elements
   SparseMatrix mBaseSystemMatrix;
   /// System matrix including stamp of static and variable elements
   SparseMatrix mVariableSystemMatrix;
+  /// Stable offsets and last factorized values for declared varying entries.
+  std::vector<Eigen::Index> mVariableValueIndices;
+  std::vector<Real> mFactorizedVariableValues;
+  std::size_t mUnchangedFactorReuseCount = 0;
+  std::size_t mMatrixStampCount = 0;
   /// LU factorization of variable system matrix
   std::shared_ptr<DirectLinearSolver> mDirectLinearSolverVariableSystemMatrix;
   /// LU factorization indicator
@@ -93,6 +115,7 @@ protected:
   using MnaSolver<VarType>::mMNAIntfVariableComps;
   using MnaSolver<VarType>::mRightSideVector;
   using MnaSolver<VarType>::mLeftSideVector;
+  using MnaSolver<VarType>::mLeftSideVectorValue;
   using MnaSolver<VarType>::mCurrentSwitchStatus;
   using MnaSolver<VarType>::mRightVectorStamps;
   using MnaSolver<VarType>::mNumNetNodes;
@@ -113,9 +136,22 @@ protected:
   using MnaSolver<VarType>::mStateSpaceExtraction;
   using MnaSolver<VarType>::mStateSpaceExtractor;
 
+  struct ProfileMeasurement {
+    std::chrono::nanoseconds total{};
+    std::chrono::nanoseconds minimum{};
+    std::chrono::nanoseconds maximum{};
+    std::size_t count = 0;
+  };
+  std::map<String, ProfileMeasurement> mProfileMeasurements;
+  void recordProfileMeasurement(const String &phase,
+                                std::chrono::steady_clock::time_point start,
+                                std::chrono::steady_clock::time_point end);
+
   // #### General
   /// Create system matrix
   void createEmptySystemMatrix() override;
+  void prepareCompactRightVectorStamps();
+  void addRightVectorStamps(Matrix &rightVector);
 
   // #### Methods for precomputed switch matrices (optionally with parallel frequencies) ####
   /// Sets all entries in the matrix with the given switch index to zero
@@ -126,6 +162,10 @@ protected:
   void switchedMatrixStamp(
       std::size_t index,
       std::vector<std::shared_ptr<CPS::MNAInterface>> &comp) override;
+  /// Applies component and switch stamps for one frequency and factorizes it.
+  void switchedMatrixStamp(std::size_t swIdx, Int freqIdx,
+                           CPS::MNAInterface::List &components,
+                           CPS::MNASwitchInterface::List &switches) override;
 
   // #### Methods for system recomputation over time ####
   /// Stamps components into the variable system matrix
@@ -196,8 +236,15 @@ public:
   public:
     SolveTask(MnaSolverDirect<VarType> &solver)
         : Task(solver.mName + ".Solve"), mSolver(solver) {
+      setFastExecutor<SolveTask, &SolveTask::executeFastImpl>(this);
 
       for (auto it : solver.mMNAComponents) {
+        if (it->getRightVector()->get().size() != 0)
+          mAttributeDependencies.push_back(it->getRightVector());
+      }
+      // Switch interfaces are solved using the precomputed switch matrix
+      // bank, but their pre-step RHS stamps still feed the global solve.
+      for (auto it : solver.mMNAIntfSwitches) {
         if (it->getRightVector()->get().size() != 0)
           mAttributeDependencies.push_back(it->getRightVector());
       }
@@ -210,6 +257,9 @@ public:
     void execute(Real time, Int timeStepCount) {
       mSolver.solve(time, timeStepCount);
     }
+    void executeFastImpl(Real time, Int timeStepCount) {
+      mSolver.solve(time, timeStepCount);
+    }
 
   private:
     MnaSolverDirect<VarType> &mSolver;
@@ -220,8 +270,13 @@ public:
   public:
     SolveTaskHarm(MnaSolverDirect<VarType> &solver, UInt freqIdx)
         : Task(solver.mName + ".Solve"), mSolver(solver), mFreqIdx(freqIdx) {
+      setFastExecutor<SolveTaskHarm, &SolveTaskHarm::executeFastImpl>(this);
 
       for (auto it : solver.mMNAComponents) {
+        if (it->getRightVector()->get().size() != 0)
+          mAttributeDependencies.push_back(it->getRightVector());
+      }
+      for (auto it : solver.mMNAIntfSwitches) {
         if (it->getRightVector()->get().size() != 0)
           mAttributeDependencies.push_back(it->getRightVector());
       }
@@ -236,6 +291,9 @@ public:
     void execute(Real time, Int timeStepCount) {
       mSolver.solveWithHarmonics(time, timeStepCount, mFreqIdx);
     }
+    void executeFastImpl(Real time, Int timeStepCount) {
+      mSolver.solveWithHarmonics(time, timeStepCount, mFreqIdx);
+    }
 
   private:
     MnaSolverDirect<VarType> &mSolver;
@@ -247,6 +305,7 @@ public:
   public:
     SolveTaskRecomp(MnaSolverDirect<VarType> &solver)
         : Task(solver.mName + ".Solve"), mSolver(solver) {
+      setFastExecutor<SolveTaskRecomp, &SolveTaskRecomp::executeFastImpl>(this);
 
       for (auto it : solver.mMNAComponents) {
         if (it->getRightVector()->get().size() != 0)
@@ -266,6 +325,10 @@ public:
       mSolver.solveWithSystemMatrixRecomputation(time, timeStepCount);
       mSolver.log(time, timeStepCount);
     }
+    void executeFastImpl(Real time, Int timeStepCount) {
+      mSolver.solveWithSystemMatrixRecomputation(time, timeStepCount);
+      mSolver.log(time, timeStepCount);
+    }
 
   private:
     MnaSolverDirect<VarType> &mSolver;
@@ -276,11 +339,23 @@ public:
   public:
     StateSpaceExtractionTask(MnaSolverDirect<VarType> &solver)
         : Task(solver.mName + ".StateSpaceExtraction"), mSolver(solver) {
+      setFastExecutor<StateSpaceExtractionTask,
+                      &StateSpaceExtractionTask::executeFastImpl>(this);
       mAttributeDependencies.push_back(solver.mLeftSideVector);
+      if (solver.mStateSpaceExtractor) {
+        // Some contributors update their matrices in post-step;
+        // these dependencies prevent extraction from reading not updated matrices.
+        for (const auto &dependency :
+             solver.mStateSpaceExtractor->getAttributeDependencies())
+          mAttributeDependencies.push_back(dependency);
+      }
       mModifiedAttributes.push_back(Scheduler::external);
     }
 
     void execute(Real time, Int timeStepCount) {
+      mSolver.extractStateSpace(time);
+    }
+    void executeFastImpl(Real time, Int timeStepCount) {
       mSolver.extractStateSpace(time);
     }
 
@@ -293,11 +368,15 @@ public:
   public:
     LogTask(MnaSolverDirect<VarType> &solver)
         : Task(solver.mName + ".Log"), mSolver(solver) {
+      setFastExecutor<LogTask, &LogTask::executeFastImpl>(this);
       mAttributeDependencies.push_back(solver.mLeftSideVector);
       mModifiedAttributes.push_back(Scheduler::external);
     }
 
     void execute(Real time, Int timeStepCount) {
+      mSolver.log(time, timeStepCount);
+    }
+    void executeFastImpl(Real time, Int timeStepCount) {
       mSolver.log(time, timeStepCount);
     }
 

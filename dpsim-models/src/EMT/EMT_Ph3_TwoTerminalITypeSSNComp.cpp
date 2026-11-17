@@ -3,6 +3,8 @@
 
 #include <dpsim-models/EMT/EMT_Ph3_TwoTerminalITypeSSNComp.h>
 
+#include <limits>
+
 using namespace CPS;
 
 EMT::Ph3::TwoTerminalITypeSSNComp::TwoTerminalITypeSSNComp(
@@ -13,18 +15,24 @@ EMT::Ph3::TwoTerminalITypeSSNComp::TwoTerminalITypeSSNComp(
 }
 
 MatrixComp EMT::Ph3::TwoTerminalITypeSSNComp::buildInitialInputFromNodes(Real) {
-  MatrixComp iInitABC = MatrixComp::Zero(3, 1);
+  // Reconstruct the operating current from the PF terminal voltage and power.
+  // The EMT SSN input uses phase-peak phasors before taking the t=0 real part.
+  const Complex voltage = initialSingleVoltage(1) - initialSingleVoltage(0);
+  if (std::abs(voltage) <= std::numeric_limits<Real>::epsilon())
+    return MatrixComp::Zero(3, 1);
 
-  // Interface current convention:
-  // positive current flows from terminal1 to terminal0.
-  //
-  // No initial terminal current is available here, so initialize with zero.
-  return iInitABC;
+  const Complex power = terminal(1)->singlePower() - terminal(0)->singlePower();
+  const Complex rmsCurrent = std::conj(power / voltage / std::sqrt(3.));
+  MatrixComp current = MatrixComp::Zero(3, 1);
+  current(0, 0) = RMS_TO_PEAK * rmsCurrent;
+  current(1, 0) = current(0, 0) * SHIFT_TO_PHASE_B;
+  current(2, 0) = current(0, 0) * SHIFT_TO_PHASE_C;
+  return current;
 }
 
 void EMT::Ph3::TwoTerminalITypeSSNComp::mnaCompApplySystemMatrixStamp(
     SparseMatrixRow &systemMatrix) {
-  Matrix G = mW.inverse();
+  const Matrix &G = mWInverse;
 
   MNAStampUtils::stampConductanceMatrix(
       G, systemMatrix, matrixNodeIndex(0), matrixNodeIndex(1),
@@ -33,8 +41,7 @@ void EMT::Ph3::TwoTerminalITypeSSNComp::mnaCompApplySystemMatrixStamp(
 
 void EMT::Ph3::TwoTerminalITypeSSNComp::mnaCompApplyRightSideVectorStamp(
     Matrix &rightVector) {
-  Matrix G = mW.inverse();
-
+  const Matrix &G = mWInverse;
   // i = G * v - G * mYHist
   Matrix iHist = -G * mYHist;
 
@@ -54,7 +61,7 @@ void EMT::Ph3::TwoTerminalITypeSSNComp::mnaCompApplyRightSideVectorStamp(
 }
 
 void EMT::Ph3::TwoTerminalITypeSSNComp::mnaCompUpdateCurrent(const Matrix &) {
-  Matrix G = mW.inverse();
+  const Matrix &G = mWInverse;
 
   // I-type Norton-equivalent current:
   //
@@ -66,7 +73,7 @@ void EMT::Ph3::TwoTerminalITypeSSNComp::mnaCompUpdateCurrent(const Matrix &) {
 void EMT::Ph3::TwoTerminalITypeSSNComp::mnaCompUpdateVoltage(
     const Matrix &leftVector) {
   // Interface voltage convention: v = v_terminal1 - v_terminal0
-  **mIntfVoltage = Matrix::Zero(3, 1);
+  (**mIntfVoltage).setZero();
 
   if (terminalNotGrounded(1)) {
     for (Int phase = 0; phase < 3; ++phase) {

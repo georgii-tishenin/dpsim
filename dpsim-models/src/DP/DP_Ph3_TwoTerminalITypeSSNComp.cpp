@@ -4,6 +4,8 @@
 #include <dpsim-models/DP/DP_Ph3_TwoTerminalITypeSSNComp.h>
 #include <dpsim-models/MNAStampUtils.h>
 
+#include <limits>
+
 using namespace CPS;
 
 DP::Ph3::TwoTerminalITypeSSNComp::TwoTerminalITypeSSNComp(
@@ -14,16 +16,25 @@ DP::Ph3::TwoTerminalITypeSSNComp::TwoTerminalITypeSSNComp(
 }
 
 MatrixComp DP::Ph3::TwoTerminalITypeSSNComp::buildInitialInputFromNodes(Real) {
-  // Interface current convention: positive current flows from terminal1 to
-  // terminal0. No initial terminal current is available here, so start at
-  // zero.
-  return MatrixComp::Zero(3, 1);
+  // PF stores line-line RMS voltage and terminal RMS power. Convert their
+  // operating point into the phase-peak complex-envelope input used by DP.
+  const Complex voltage = initialSingleVoltage(1) - initialSingleVoltage(0);
+  if (std::abs(voltage) <= std::numeric_limits<Real>::epsilon())
+    return MatrixComp::Zero(3, 1);
+
+  const Complex power = terminal(1)->singlePower() - terminal(0)->singlePower();
+  const Complex rmsCurrent = std::conj(power / voltage / std::sqrt(3.));
+  MatrixComp current = MatrixComp::Zero(3, 1);
+  current(0, 0) = RMS_TO_PEAK * rmsCurrent;
+  current(1, 0) = current(0, 0) * SHIFT_TO_PHASE_B;
+  current(2, 0) = current(0, 0) * SHIFT_TO_PHASE_C;
+  return current;
 }
 
 void DP::Ph3::TwoTerminalITypeSSNComp::mnaCompApplySystemMatrixStamp(
     SparseMatrixRow &systemMatrix) {
   // Norton-equivalent admittance G = W^-1 (v = W i + yHist => i = G v - G yHist).
-  MatrixComp g = mW.inverse();
+  const MatrixComp &g = mWInverse;
 
   MNAStampUtils::stampAdmittanceMatrix(
       g, systemMatrix, matrixNodeIndex(0), matrixNodeIndex(1),
@@ -32,7 +43,7 @@ void DP::Ph3::TwoTerminalITypeSSNComp::mnaCompApplySystemMatrixStamp(
 
 void DP::Ph3::TwoTerminalITypeSSNComp::mnaCompApplyRightSideVectorStamp(
     Matrix &rightVector) {
-  MatrixComp iHist = -mW.inverse() * mYHist;
+  MatrixComp iHist = -mWInverse * mYHist;
 
   if (terminalNotGrounded(0)) {
     for (Int phase = 0; phase < 3; ++phase)
@@ -48,12 +59,21 @@ void DP::Ph3::TwoTerminalITypeSSNComp::mnaCompApplyRightSideVectorStamp(
 
 void DP::Ph3::TwoTerminalITypeSSNComp::mnaCompUpdateCurrent(const Matrix &) {
   // i = W^-1 (v - yHist)
-  **mIntfCurrent = mW.inverse() * (**mIntfVoltage - mYHist);
+  const MatrixComp &voltage = **mIntfVoltage;
+  const MatrixComp &g = mWInverse;
+  const MatrixComp &history = mYHist;
+  MatrixComp &current = **mIntfCurrent;
+  const Complex d0 = voltage(0, 0) - history(0, 0);
+  const Complex d1 = voltage(1, 0) - history(1, 0);
+  const Complex d2 = voltage(2, 0) - history(2, 0);
+  current(0, 0) = g(0, 0) * d0 + g(0, 1) * d1 + g(0, 2) * d2;
+  current(1, 0) = g(1, 0) * d0 + g(1, 1) * d1 + g(1, 2) * d2;
+  current(2, 0) = g(2, 0) * d0 + g(2, 1) * d1 + g(2, 2) * d2;
 }
 
 void DP::Ph3::TwoTerminalITypeSSNComp::mnaCompUpdateVoltage(
     const Matrix &leftVector) {
-  **mIntfVoltage = MatrixComp::Zero(3, 1);
+  (**mIntfVoltage).setZero();
 
   if (terminalNotGrounded(1)) {
     for (Int phase = 0; phase < 3; ++phase)

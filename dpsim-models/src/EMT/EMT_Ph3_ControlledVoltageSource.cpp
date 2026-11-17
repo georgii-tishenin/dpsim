@@ -32,9 +32,13 @@ void EMT::Ph3::ControlledVoltageSource::setParameters(Matrix voltageRef) {
 void EMT::Ph3::ControlledVoltageSource::initializeFromNodesAndTerminals(
     Real frequency) {
   SPDLOG_LOGGER_INFO(mSLog, "\n--- Initialization from node voltages ---");
-  // TODO: this approach currently overwrites voltage reference set from outside, when not using setParameters
   if (!mParametersSet) {
-    // initialize voltage reference as zeroes
+    const Complex voltage = initialSingleVoltage(1) - initialSingleVoltage(0);
+    const MatrixComp voltagePhasor =
+        CPS::Math::singlePhaseVariableToThreePhase(voltage);
+    **mVoltageRef = (RMS3PH_TO_PEAK1PH * voltagePhasor).real();
+    mParametersSet = true;
+
     SPDLOG_LOGGER_INFO(mSLog,
                        "\nReference voltage: {:s}"
                        "\nTerminal 0 voltage: {:s}"
@@ -62,6 +66,9 @@ SimPowerComp<Real>::Ptr EMT::Ph3::ControlledVoltageSource::clone(String name) {
 void EMT::Ph3::ControlledVoltageSource::mnaCompInitialize(
     Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
   updateMatrixNodeIndices();
+  mVirtualNodeRows = {mVirtualNodes[0]->matrixNodeIndex(PhaseType::A),
+                      mVirtualNodes[0]->matrixNodeIndex(PhaseType::B),
+                      mVirtualNodes[0]->matrixNodeIndex(PhaseType::C)};
 }
 
 void EMT::Ph3::ControlledVoltageSource::mnaCompApplySystemMatrixStamp(
@@ -114,14 +121,11 @@ void EMT::Ph3::ControlledVoltageSource::mnaCompApplySystemMatrixStamp(
 
 void EMT::Ph3::ControlledVoltageSource::mnaCompApplyRightSideVectorStamp(
     Matrix &rightVector) {
-  Math::setVectorElement(rightVector,
-                         mVirtualNodes[0]->matrixNodeIndex(PhaseType::A),
+  Math::setVectorElement(rightVector, mVirtualNodeRows[0],
                          (**mIntfVoltage)(0, 0));
-  Math::setVectorElement(rightVector,
-                         mVirtualNodes[0]->matrixNodeIndex(PhaseType::B),
+  Math::setVectorElement(rightVector, mVirtualNodeRows[1],
                          (**mIntfVoltage)(1, 0));
-  Math::setVectorElement(rightVector,
-                         mVirtualNodes[0]->matrixNodeIndex(PhaseType::C),
+  Math::setVectorElement(rightVector, mVirtualNodeRows[2],
                          (**mIntfVoltage)(2, 0));
 }
 
@@ -163,10 +167,10 @@ void EMT::Ph3::ControlledVoltageSource::mnaCompPostStep(
 
 void EMT::Ph3::ControlledVoltageSource::mnaCompUpdateCurrent(
     const Matrix &leftVector) {
-  (**mIntfCurrent)(0, 0) = Math::realFromVectorElement(
-      leftVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::A));
-  (**mIntfCurrent)(1, 0) = Math::realFromVectorElement(
-      leftVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B));
-  (**mIntfCurrent)(2, 0) = Math::realFromVectorElement(
-      leftVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C));
+  (**mIntfCurrent)(0, 0) =
+      Math::realFromVectorElement(leftVector, mVirtualNodeRows[0]);
+  (**mIntfCurrent)(1, 0) =
+      Math::realFromVectorElement(leftVector, mVirtualNodeRows[1]);
+  (**mIntfCurrent)(2, 0) =
+      Math::realFromVectorElement(leftVector, mVirtualNodeRows[2]);
 }

@@ -18,6 +18,13 @@ DPsim is a solver library for dynamic power system simulation.
 
 ## Getting started
 
+### IEEE network SSN examples in C++
+
+Start with `IEEE300_SSN_Sparse` to simulate IEEE300 using a network terminal
+equivalent and KLU. The [SSN example guide](dpsim/examples/cxx/Grids/README_SSN.md)
+covers building, CMake Tools, arguments and external profiling, with additional
+IEEE9, IEEE39 and IEEE118 examples.
+
 ### Using Binder
 
 Click the badge below to explore the interactive Jupyter notebooks in your browser:

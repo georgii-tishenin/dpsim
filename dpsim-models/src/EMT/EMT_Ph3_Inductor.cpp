@@ -99,8 +99,11 @@ void EMT::Ph3::Inductor::mnaCompApplySystemMatrixStamp(
 }
 
 void EMT::Ph3::Inductor::mnaCompApplyRightSideVectorStamp(Matrix &rightVector) {
+  PassiveOperationProfile::Scope operation(mOperationProfile,
+                                           PassiveOperationProfile::History);
   // Update internal state
   mEquivCurrent = mEquivCond * **mIntfVoltage + **mIntfCurrent;
+  operation.next(PassiveOperationProfile::RhsLocal);
   if (terminalNotGrounded(0)) {
     Math::setVectorElement(rightVector, matrixNodeIndex(0, 0),
                            mEquivCurrent(0, 0));
@@ -120,7 +123,6 @@ void EMT::Ph3::Inductor::mnaCompApplyRightSideVectorStamp(Matrix &rightVector) {
   SPDLOG_LOGGER_DEBUG(
       mSLog, "\nEquivalent Current (mnaCompApplyRightSideVectorStamp): {:s}",
       Logger::matrixToString(mEquivCurrent));
-  mSLog->flush();
 }
 
 void EMT::Ph3::Inductor::mnaCompAddPreStepDependencies(
@@ -149,41 +151,43 @@ void EMT::Ph3::Inductor::mnaCompAddPostStepDependencies(
 
 void EMT::Ph3::Inductor::mnaCompPostStep(Real time, Int timeStepCount,
                                          Attribute<Matrix>::Ptr &leftVector) {
+  PassiveOperationProfile::Scope operation(
+      mOperationProfile, PassiveOperationProfile::VoltageRecovery);
   mnaCompUpdateVoltage(**leftVector);
+  operation.next(PassiveOperationProfile::StateAdvance);
   mnaCompUpdateCurrent(**leftVector);
 }
 
 void EMT::Ph3::Inductor::mnaCompUpdateVoltage(const Matrix &leftVector) {
   // v1 - v0
-  **mIntfVoltage = Matrix::Zero(3, 1);
-  if (terminalNotGrounded(1)) {
-    (**mIntfVoltage)(0, 0) =
-        Math::realFromVectorElement(leftVector, matrixNodeIndex(1, 0));
-    (**mIntfVoltage)(1, 0) =
-        Math::realFromVectorElement(leftVector, matrixNodeIndex(1, 1));
-    (**mIntfVoltage)(2, 0) =
-        Math::realFromVectorElement(leftVector, matrixNodeIndex(1, 2));
-  }
-  if (terminalNotGrounded(0)) {
-    (**mIntfVoltage)(0, 0) =
-        (**mIntfVoltage)(0, 0) -
-        Math::realFromVectorElement(leftVector, matrixNodeIndex(0, 0));
-    (**mIntfVoltage)(1, 0) =
-        (**mIntfVoltage)(1, 0) -
-        Math::realFromVectorElement(leftVector, matrixNodeIndex(0, 1));
-    (**mIntfVoltage)(2, 0) =
-        (**mIntfVoltage)(2, 0) -
-        Math::realFromVectorElement(leftVector, matrixNodeIndex(0, 2));
+  const bool terminal0Connected = terminalNotGrounded(0);
+  const bool terminal1Connected = terminalNotGrounded(1);
+  Matrix &voltage = **mIntfVoltage;
+  for (UInt phase = 0; phase < 3; ++phase) {
+    Real value = 0.;
+    if (terminal1Connected)
+      value = leftVector(matrixNodeIndex(1, phase), 0);
+    if (terminal0Connected)
+      value -= leftVector(matrixNodeIndex(0, phase), 0);
+    voltage(phase, 0) = value;
   }
   SPDLOG_LOGGER_DEBUG(mSLog, "\nUpdate Voltage: {:s}",
                       Logger::matrixToString(**mIntfVoltage));
 }
 
 void EMT::Ph3::Inductor::mnaCompUpdateCurrent(const Matrix &leftVector) {
-  **mIntfCurrent = mEquivCond * **mIntfVoltage + mEquivCurrent;
+  // Fuse the fixed-size matrix-vector product with the history term.
+  const Matrix &voltage = **mIntfVoltage;
+  Matrix &current = **mIntfCurrent;
+  for (Int phase = 0; phase < 3; ++phase)
+    current(phase, 0) = mEquivCond(phase, 0) * voltage(0, 0) +
+                        mEquivCond(phase, 1) * voltage(1, 0) +
+                        mEquivCond(phase, 2) * voltage(2, 0) +
+                        mEquivCurrent(phase, 0);
   SPDLOG_LOGGER_DEBUG(mSLog, "\nUpdate Current: {:s}",
                       Logger::matrixToString(**mIntfCurrent));
-  mSLog->flush();
+  if (mSLog->should_log(spdlog::level::debug))
+    mSLog->flush();
 }
 
 // #### Tear Methods ####

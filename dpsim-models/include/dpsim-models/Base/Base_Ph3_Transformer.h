@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <dpsim-models/AttributeList.h>
 #include <dpsim-models/Definitions.h>
 
@@ -17,9 +18,9 @@ namespace Ph3 {
 class Transformer {
 protected:
   /// Nominal voltage of primary side
-  Real mNominalVoltageEnd1;
+  Real mNominalVoltagePrimary;
   /// Nominal voltage of secondary side
-  Real mNominalVoltageEnd2;
+  Real mNominalVoltageSecondary;
   /// Rated Apparent Power [VA]
   Real mRatedPower;
   /// Resistance [Ohm]
@@ -28,18 +29,39 @@ protected:
   Matrix mInductance;
 
 public:
+  /// Nominal voltage of the winding at the given terminal
+  Real nominalVoltageAt(UInt terminal) const {
+    return terminal == 0 ? mNominalVoltagePrimary : mNominalVoltageSecondary;
+  }
+
   ///Transformer ratio
   const Attribute<Complex>::Ptr mRatio;
+  /// Per-unit tap adjustment applied to the nominal complex transformer ratio
+  const Attribute<Real>::Ptr mTapRatio;
 
   explicit Transformer(CPS::AttributeList::Ptr attributeList)
-      : mRatio(attributeList->create<Complex>("ratio")){};
+      : mRatio(attributeList->create<Complex>("ratio")),
+        mTapRatio(attributeList->create<Real>("tapRatio")) {
+    **mTapRatio = 1.;
+  }
+
+  /// Set a positive tap multiplier applied to the nominal complex ratio.
+  void setTapRatio(Real tapRatio) {
+    if (!std::isfinite(tapRatio) || tapRatio <= 0.)
+      throw InvalidArgumentException();
+    **mTapRatio = tapRatio;
+  }
+
+  Real tapRatio() const { return **mTapRatio; }
+
+  Complex effectiveRatio() const { return **mRatio * **mTapRatio; }
 
   ///
-  void setParameters(Real nomVoltageEnd1, Real nomVoltageEnd2, Real ratedPower,
-                     Real ratioAbs, Real ratioPhase, Matrix resistance,
-                     Matrix inductance) {
-    mNominalVoltageEnd1 = nomVoltageEnd1;
-    mNominalVoltageEnd2 = nomVoltageEnd2;
+  void setParameters(Real nomVoltagePrimary, Real nomVoltageSecondary,
+                     Real ratedPower, Real ratioAbs, Real ratioPhase,
+                     Matrix resistance, Matrix inductance) {
+    mNominalVoltagePrimary = nomVoltagePrimary;
+    mNominalVoltageSecondary = nomVoltageSecondary;
     mRatedPower = ratedPower;
     **mRatio = std::polar<Real>(ratioAbs, ratioPhase);
     mResistance = resistance;

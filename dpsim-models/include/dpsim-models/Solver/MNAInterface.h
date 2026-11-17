@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <ostream>
+
 #include <dpsim-models/AttributeList.h>
 #include <dpsim-models/Config.h>
 #include <dpsim-models/Definitions.h>
@@ -31,6 +33,17 @@ public:
   virtual void mnaApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) = 0;
   /// Stamps right side (source) vector
   virtual void mnaApplyRightSideVectorStamp(Matrix &rightVector) = 0;
+  /// Return true when the direct MNA solver can accumulate this component's
+  /// contribution row-wise instead of adding its full-size dense stamp.
+  virtual Bool mnaHasCompactRightSideVectorStamp() const { return false; }
+  /// Add this component's current RHS contribution to the global vector.
+  /// Only called when mnaHasCompactRightSideVectorStamp() is true.
+  virtual void mnaAddCompactRightSideVectorStamp(Matrix &) {}
+  /// Write optional component-internal timing rows into the solver profile.
+  virtual void mnaWriteProfile(std::ostream &) const {}
+  /// Enable optional component-internal clocks. Operation counters may remain
+  /// active when disabled, but headline runs must not pay clock-read overhead.
+  virtual void mnaSetDetailedProfiling(Bool) {}
   /// Update interface voltage from MNA system result
   virtual void mnaUpdateVoltage(const Matrix &leftVector) = 0;
   /// Update interface current from MNA system result

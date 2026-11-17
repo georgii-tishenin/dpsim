@@ -16,6 +16,7 @@
 #include <pybind11/stl.h>
 
 #include <DPsim.h>
+#include <dpsim/SequentialScheduler.h>
 
 #include <DPsimPy.h>
 
@@ -124,7 +125,13 @@ PYBIND11_MODULE(dpsimpy, m) {
       .value("KLU", DPsim::DirectLinearSolverImpl::KLU)
       .value("CUDADense", DPsim::DirectLinearSolverImpl::CUDADense)
       .value("CUDASparse", DPsim::DirectLinearSolverImpl::CUDASparse)
-      .value("CUDAMagma", DPsim::DirectLinearSolverImpl::CUDAMagma);
+      .value("CUDAMagma", DPsim::DirectLinearSolverImpl::CUDAMagma)
+      .value("MetalDense", DPsim::DirectLinearSolverImpl::MetalDense)
+#ifdef WITH_METAL
+      .value("MetalSparseBiCGSTAB",
+             DPsim::DirectLinearSolverImpl::MetalSparseBiCGSTAB)
+#endif
+      ;
 
   py::enum_<DPsim::SCALING_METHOD>(m, "scaling_method")
       .value("no_scaling", DPsim::SCALING_METHOD::NO_SCALING)
@@ -164,10 +171,18 @@ PYBIND11_MODULE(dpsimpy, m) {
       .value("Native", DPsim::StateSpaceAnalysisFrame::Native)
       .value("GlobalDQ0", DPsim::StateSpaceAnalysisFrame::GlobalDQ0);
 
+  py::enum_<DPsim::StateSpacePoleMapping>(m, "StateSpacePoleMapping")
+      .value("Bilinear", DPsim::StateSpacePoleMapping::Bilinear)
+      .value("Logarithmic", DPsim::StateSpacePoleMapping::Logarithmic);
+
+  py::enum_<CPS::WindingReference>(m, "WindingReference")
+      .value("Auto", CPS::WindingReference::Auto)
+      .value("Primary", CPS::WindingReference::Primary)
+      .value("Secondary", CPS::WindingReference::Secondary)
+      .value("Tertiary", CPS::WindingReference::Tertiary);
+
   m.attr("RMS3PH_TO_PEAK1PH") = RMS3PH_TO_PEAK1PH;
   m.attr("PEAK1PH_TO_RMS3PH") = PEAK1PH_TO_RMS3PH;
-  m.attr("P_SNUB_TRANSFORMER") = P_SNUB_TRANSFORMER;
-  m.attr("Q_SNUB_TRANSFORMER") = Q_SNUB_TRANSFORMER;
   m.attr("DOUBLE_EPSILON") = DOUBLE_EPSILON;
 
   addAttributes(m);
@@ -208,6 +223,7 @@ PYBIND11_MODULE(dpsimpy, m) {
       .def("set_global_dq0_frame",
            &DPsim::StateSpaceModalAnalysis::setGlobalDq0Frame, "omega"_a,
            "theta0"_a = 0.0)
+      .def("set_pole_mapping", &DPsim::StateSpaceModalAnalysis::setPoleMapping)
       .def("update", &DPsim::StateSpaceModalAnalysis::update)
       .def("get_discrete_eigenvalues",
            &DPsim::StateSpaceModalAnalysis::getDiscreteEigenvalues,
@@ -237,6 +253,15 @@ PYBIND11_MODULE(dpsimpy, m) {
       .def("set_system", &DPsim::Simulation::setSystem)
       .def("run", &DPsim::Simulation::run)
       .def("set_solver", &DPsim::Simulation::setSolverType)
+      .def(
+          "set_sequential_scheduler",
+          [](DPsim::Simulation &sim, const std::string &measurementFile) {
+            sim.setScheduler(
+                std::make_shared<DPsim::SequentialScheduler>(measurementFile));
+          },
+          "measurement_file"_a = "")
+      .def("set_log_step_times", &DPsim::Simulation::setLogStepTimes)
+      .def("log_step_times", &DPsim::Simulation::logStepTimes)
       .def("set_pf_keep_last_solution",
            &DPsim::Simulation::setPFKeepLastSolution)
       .def("get_pf_keep_last_solution",
@@ -285,6 +310,10 @@ PYBIND11_MODULE(dpsimpy, m) {
            &DPsim::Simulation::getStateSpaceExtractor, "solver_index"_a = 0,
            py::return_value_policy::reference_internal)
       .def("do_steady_state_init", &DPsim::Simulation::doSteadyStateInit)
+      .def("set_steady_state_init_acc_limit",
+           &DPsim::Simulation::setSteadStIniAccLimit)
+      .def("set_steady_state_init_time_limit",
+           &DPsim::Simulation::setSteadStIniTimeLimit)
       .def("do_frequency_parallelization",
            &DPsim::Simulation::doFrequencyParallelization)
       .def("do_split_subnets", &DPsim::Simulation::doSplitSubnets)
@@ -409,6 +438,8 @@ PYBIND11_MODULE(dpsimpy, m) {
   py::class_<DPsim::DataLogger, DPsim::DataLoggerInterface,
              std::shared_ptr<DPsim::DataLogger>>(m, "Logger")
       .def(py::init<std::string>())
+      .def(py::init<std::string, CPS::Bool, CPS::UInt>(), "name"_a, "enabled"_a,
+           "downsampling"_a)
       .def_static("set_log_dir", &CPS::Logger::setLogDir)
       .def_static("get_log_dir", &CPS::Logger::logDir)
       .def("log_attribute",

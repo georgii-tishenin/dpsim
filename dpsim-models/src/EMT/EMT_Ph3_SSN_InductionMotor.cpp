@@ -26,7 +26,19 @@ EMT::Ph3::SSN_InductionMotor::SSN_InductionMotor(String uid, String name,
           Matrix::Zero(mElectricalStateSize, mElectricalStateSize)),
       mResistanceMatrix(
           Matrix::Zero(mElectricalStateSize, mElectricalStateSize)),
+      mResistiveFluxMatrix(
+          Matrix::Zero(mElectricalStateSize, mElectricalStateSize)),
       mJacobianRelativeStep(1e-6), mJacobianAbsoluteStep(1e-8),
+      mJacobianPerturbation(Matrix::Zero(mStateSize, 1)),
+      mJacobianInputPerturbation(Matrix::Zero(mInputSize, 1)),
+      mJacobianDerivativePlus(Matrix::Zero(mStateSize, 1)),
+      mJacobianDerivativeMinus(Matrix::Zero(mStateSize, 1)),
+      mJacobianOutputPlus(Matrix::Zero(mOutputSize, 1)),
+      mJacobianOutputMinus(Matrix::Zero(mOutputSize, 1)),
+      mStateDerivativeScratch(Matrix::Zero(mStateSize, 1)),
+      mOutputScratch(Matrix::Zero(mOutputSize, 1)),
+      mStateOffsetScratch(Matrix::Zero(mStateSize, 1)),
+      mOutputOffsetScratch(Matrix::Zero(mOutputSize, 1)),
       mElectricalPower(mAttributes->create<Real>("electrical_power")),
       mReactivePower(mAttributes->create<Real>("reactive_power")),
       mElectricalTorque(mAttributes->create<Real>("electrical_torque")),
@@ -160,6 +172,8 @@ void EMT::Ph3::SSN_InductionMotor::rebuildMachineMatrices() {
   mResistanceMatrix.setZero();
   mResistanceMatrix.diagonal() << mStatorResistance, mStatorResistance,
       mRotorResistance, mRotorResistance;
+  mResistiveFluxMatrix.noalias() =
+      -mResistanceMatrix * mInverseInductanceMatrix;
 }
 
 void EMT::Ph3::SSN_InductionMotor::setMechanicalTorque(Real mechanicalTorque) {
@@ -180,11 +194,11 @@ void EMT::Ph3::SSN_InductionMotor::setNumericalLinearizationParameters(
   mJacobianAbsoluteStep = absoluteStep;
 }
 
-Matrix EMT::Ph3::SSN_InductionMotor::getParkTransformMatrix(
+MatrixFixedSize<2, 3> EMT::Ph3::SSN_InductionMotor::getParkTransformMatrix(
     Real electricalAngle) const {
   electricalAngle = std::remainder(electricalAngle, 2.0 * PI);
 
-  Matrix transform(2, 3);
+  MatrixFixedSize<2, 3> transform;
   const Real scale = std::sqrt(2.0 / 3.0);
 
   transform.row(0) << scale * std::cos(electricalAngle),
@@ -198,21 +212,12 @@ Matrix EMT::Ph3::SSN_InductionMotor::getParkTransformMatrix(
   return transform;
 }
 
-Matrix EMT::Ph3::SSN_InductionMotor::getInverseParkTransformMatrix(
+MatrixFixedSize<3, 2>
+EMT::Ph3::SSN_InductionMotor::getInverseParkTransformMatrix(
     Real electricalAngle) const {
   // For balanced abc quantities, the inverse of the orthonormal two-axis
   // transform is its transpose.
   return getParkTransformMatrix(electricalAngle).transpose();
-}
-
-Matrix
-EMT::Ph3::SSN_InductionMotor::buildSpeedMatrix(Real electricalSpeed) const {
-  Matrix speedMatrix = Matrix::Zero(mElectricalStateSize, mElectricalStateSize);
-
-  speedMatrix(2, 3) = -electricalSpeed;
-  speedMatrix(3, 2) = electricalSpeed;
-
-  return speedMatrix;
 }
 
 void EMT::Ph3::SSN_InductionMotor::evaluateStateDerivative(
@@ -226,28 +231,28 @@ void EMT::Ph3::SSN_InductionMotor::evaluateStateDerivative(
 
   stateDerivative.setZero(mStateSize, 1);
 
-  const Matrix flux = x.block(0, 0, mElectricalStateSize, 1);
+  const MatrixFixedSize<4, 1> flux = x.block(0, 0, mElectricalStateSize, 1);
   const Real mechanicalSpeed = x(MechanicalSpeed, 0);
   const Real electricalSpeed = static_cast<Real>(mPolePairs) * mechanicalSpeed;
 
-  const Matrix current = mInverseInductanceMatrix * flux;
+  const MatrixFixedSize<4, 1> current = mInverseInductanceMatrix * flux;
   const Real statorCurrentD = current(0, 0);
   const Real statorCurrentQ = current(1, 0);
 
-  const Matrix voltageDq = getParkTransformMatrix(0.0) * u; //squirrel-cage
+  const MatrixFixedSize<2, 1> voltageDq =
+      getParkTransformMatrix(0.0) * u; // squirrel-cage
 
-  Matrix windingVoltage = Matrix::Zero(mElectricalStateSize, 1);
+  MatrixFixedSize<4, 1> windingVoltage = MatrixFixedSize<4, 1>::Zero();
   windingVoltage(0, 0) = voltageDq(0, 0);
   windingVoltage(1, 0) = voltageDq(1, 0);
   windingVoltage(2, 0) = 0.0; // rotor short-circuited
   windingVoltage(3, 0) = 0.0;
 
-  const Matrix fluxDerivative = (-mResistanceMatrix * mInverseInductanceMatrix +
-                                 buildSpeedMatrix(electricalSpeed)) *
-                                    flux +
-                                windingVoltage;
-
-  stateDerivative.block(0, 0, mElectricalStateSize, 1) = fluxDerivative;
+  auto fluxDerivative = stateDerivative.block(0, 0, mElectricalStateSize, 1);
+  fluxDerivative.noalias() = mResistiveFluxMatrix * flux;
+  fluxDerivative += windingVoltage;
+  fluxDerivative(2, 0) -= electricalSpeed * flux(3, 0);
+  fluxDerivative(3, 0) += electricalSpeed * flux(2, 0);
 
   const Real electricalTorque =
       static_cast<Real>(mPolePairs) *
@@ -275,10 +280,10 @@ void EMT::Ph3::SSN_InductionMotor::evaluateOutput(const Matrix &x,
     throw std::invalid_argument(
         "Induction motor state vector has an invalid dimension.");
 
-  const Matrix flux = x.block(0, 0, mElectricalStateSize, 1);
-  const Matrix current = mInverseInductanceMatrix * flux;
+  const MatrixFixedSize<4, 1> flux = x.block(0, 0, mElectricalStateSize, 1);
+  const MatrixFixedSize<4, 1> current = mInverseInductanceMatrix * flux;
 
-  Matrix statorCurrentDq(2, 1);
+  MatrixFixedSize<2, 1> statorCurrentDq;
   statorCurrentDq << current(0, 0), current(1, 0);
 
   // Current entering the stator terminals, as required by the V-type stamp.
@@ -293,28 +298,24 @@ void EMT::Ph3::SSN_InductionMotor::calculateNumericalJacobians(
   C.setZero(mOutputSize, mStateSize);
   D.setZero(mOutputSize, mInputSize);
 
-  Matrix fPlus = Matrix::Zero(mStateSize, 1);
-  Matrix fMinus = Matrix::Zero(mStateSize, 1);
-  Matrix gPlus = Matrix::Zero(mOutputSize, 1);
-  Matrix gMinus = Matrix::Zero(mOutputSize, 1);
-
   for (Int column = 0; column < mStateSize; ++column) {
     const Real step =
         mJacobianAbsoluteStep +
         mJacobianRelativeStep * std::max(1.0, std::abs(x(column, 0)));
 
-    Matrix xPlus = x;
-    Matrix xMinus = x;
-    xPlus(column, 0) += step;
-    xMinus(column, 0) -= step;
+    mJacobianPerturbation = x;
+    mJacobianPerturbation(column, 0) += step;
+    evaluateStateDerivative(mJacobianPerturbation, u, mJacobianDerivativePlus);
+    evaluateOutput(mJacobianPerturbation, u, mJacobianOutputPlus);
 
-    evaluateStateDerivative(xPlus, u, fPlus);
-    evaluateStateDerivative(xMinus, u, fMinus);
-    evaluateOutput(xPlus, u, gPlus);
-    evaluateOutput(xMinus, u, gMinus);
+    mJacobianPerturbation = x;
+    mJacobianPerturbation(column, 0) -= step;
+    evaluateStateDerivative(mJacobianPerturbation, u, mJacobianDerivativeMinus);
+    evaluateOutput(mJacobianPerturbation, u, mJacobianOutputMinus);
 
-    A.col(column) = (fPlus - fMinus) / (2.0 * step);
-    C.col(column) = (gPlus - gMinus) / (2.0 * step);
+    A.col(column) =
+        (mJacobianDerivativePlus - mJacobianDerivativeMinus) / (2.0 * step);
+    C.col(column) = (mJacobianOutputPlus - mJacobianOutputMinus) / (2.0 * step);
   }
 
   for (Int column = 0; column < mInputSize; ++column) {
@@ -322,18 +323,18 @@ void EMT::Ph3::SSN_InductionMotor::calculateNumericalJacobians(
         mJacobianAbsoluteStep +
         mJacobianRelativeStep * std::max(1.0, std::abs(u(column, 0)));
 
-    Matrix uPlus = u;
-    Matrix uMinus = u;
-    uPlus(column, 0) += step;
-    uMinus(column, 0) -= step;
-
-    evaluateStateDerivative(x, uPlus, fPlus);
-    evaluateStateDerivative(x, uMinus, fMinus);
-    evaluateOutput(x, uPlus, gPlus);
-    evaluateOutput(x, uMinus, gMinus);
-
-    B.col(column) = (fPlus - fMinus) / (2.0 * step);
-    D.col(column) = (gPlus - gMinus) / (2.0 * step);
+    mJacobianInputPerturbation = u;
+    mJacobianInputPerturbation(column, 0) += step;
+    evaluateStateDerivative(x, mJacobianInputPerturbation,
+                            mJacobianDerivativePlus);
+    mJacobianInputPerturbation = u;
+    mJacobianInputPerturbation(column, 0) -= step;
+    evaluateStateDerivative(x, mJacobianInputPerturbation,
+                            mJacobianDerivativeMinus);
+    // The stator-current output depends on state only; D is exactly zero.
+    // Avoid re-evaluating that same output for each input perturbation.
+    B.col(column) =
+        (mJacobianDerivativePlus - mJacobianDerivativeMinus) / (2.0 * step);
   }
 }
 
@@ -342,36 +343,30 @@ void EMT::Ph3::SSN_InductionMotor::buildStateSpaceModel(
     Matrix &D, Matrix &E, Matrix &F) const {
   calculateNumericalJacobians(x, u, A, B, C, D);
 
-  Matrix stateDerivative = Matrix::Zero(mStateSize, 1);
-  Matrix output = Matrix::Zero(mOutputSize, 1);
+  evaluateStateDerivative(x, u, mStateDerivativeScratch);
+  evaluateOutput(x, u, mOutputScratch);
 
-  evaluateStateDerivative(x, u, stateDerivative);
-  evaluateOutput(x, u, output);
-
-  E = stateDerivative - A * x - B * u;
-  F = output - C * x - D * u;
+  E = mStateDerivativeScratch - A * x - B * u;
+  F = mOutputScratch - C * x - D * u;
 }
 
 Bool EMT::Ph3::SSN_InductionMotor::updateComponentParameters() {
-  Matrix stateOffset;
-  Matrix outputOffset;
+  buildStateSpaceModel(**mX, **mIntfVoltage, mA, mB, mC, mD,
+                       mStateOffsetScratch, mOutputOffsetScratch);
 
-  buildStateSpaceModel(**mX, **mIntfVoltage, mA, mB, mC, mD, stateOffset,
-                       outputOffset);
-
-  setStateOffset(stateOffset);
-  setOutputOffset(outputOffset);
+  setStateOffset(mStateOffsetScratch);
+  setOutputOffset(mOutputOffsetScratch);
 
   return true;
 }
 
 void EMT::Ph3::SSN_InductionMotor::updateLogAttributes(const Matrix &u) const {
   const Matrix &x = **mX;
-  const Matrix flux = x.block(0, 0, mElectricalStateSize, 1);
-  const Matrix current = mInverseInductanceMatrix * flux;
-  const Matrix voltageDq = getParkTransformMatrix(0.0) * u;
+  const MatrixFixedSize<4, 1> flux = x.block(0, 0, mElectricalStateSize, 1);
+  const MatrixFixedSize<4, 1> current = mInverseInductanceMatrix * flux;
+  const MatrixFixedSize<2, 1> voltageDq = getParkTransformMatrix(0.0) * u;
 
-  Matrix statorCurrentDq(2, 1);
+  MatrixFixedSize<2, 1> statorCurrentDq;
   statorCurrentDq << current(0, 0), current(1, 0);
 
   const Real electricalTorque =
@@ -413,19 +408,103 @@ void EMT::Ph3::SSN_InductionMotor::initializeFromNodesAndTerminals(
   const Matrix initialVoltageAbc = initialVoltagePhasor.real();
 
   Matrix x0 = Matrix::Zero(mStateSize, 1);
-  x0(MechanicalSpeed, 0) = 0.0;
-  x0(ElectricalAngle, 0) = mInitialElectricalAngle;
+  const Complex terminalPower =
+      terminal(1)->singlePower() - terminal(0)->singlePower();
+  const MatrixComp voltageDq =
+      getParkTransformMatrix(0.0) * initialVoltagePhasor;
+  const Complex voltageSpacePhasor = voltageDq(0, 0);
+
+  if (mAutoInitializeMechanicalTorque) {
+    if (std::abs(voltageSpacePhasor) <= DOUBLE_EPSILON ||
+        !std::isfinite(terminalPower.real()) ||
+        !std::isfinite(terminalPower.imag()))
+      throw std::logic_error(
+          "Cannot derive induction-motor steady state from empty or invalid "
+          "power-flow data.");
+
+    // The orthonormal alpha-beta transform preserves three-phase complex
+    // power. The PF terminal powers are in the consumer convention here.
+    const Complex statorCurrentPhasor =
+        std::conj(terminalPower / voltageSpacePhasor);
+
+    // In the stationary frame, the stator flux equation at synchronous
+    // frequency is j*w*psi_s = v_s - Rs*i_s. The rotor is short-circuited;
+    // its steady-state equation determines slip from the same PF operating
+    // point and the configured rotor resistance.
+    const Real synchronousElectricalSpeed = 2.0 * PI * frequency;
+    const Complex statorFluxPhasor =
+        (voltageSpacePhasor - mStatorResistance * statorCurrentPhasor) /
+        Complex(0.0, synchronousElectricalSpeed);
+    const Complex rotorCurrentPhasor =
+        (statorFluxPhasor - mLs * statorCurrentPhasor) / mLm;
+    const Complex rotorFluxPhasor =
+        mLm * statorCurrentPhasor + mLr_dash * rotorCurrentPhasor;
+
+    if (std::abs(rotorFluxPhasor) <= DOUBLE_EPSILON)
+      throw std::logic_error(
+          "Cannot derive induction-motor slip: rotor flux is zero.");
+
+    // Minimize |Rr*ir + j*w_slip*psi_r| over real w_slip. A large residual
+    // means the PF P/Q point is incompatible with the configured motor data.
+    const Complex slipCoefficient = Complex(0.0, 1.0) * rotorFluxPhasor;
+    const Real slipElectricalSpeed =
+        -std::real(std::conj(slipCoefficient) *
+                   (mRotorResistance * rotorCurrentPhasor)) /
+        std::norm(slipCoefficient);
+    const Complex rotorEquationResidual =
+        mRotorResistance * rotorCurrentPhasor +
+        Complex(0.0, slipElectricalSpeed) * rotorFluxPhasor;
+    if (std::abs(rotorEquationResidual) >
+        1e-3 * std::max(1.0, std::abs(mRotorResistance * rotorCurrentPhasor)))
+      throw std::logic_error(
+          "Power-flow operating point is inconsistent with the configured "
+          "induction-motor parameters.");
+
+    const Real mechanicalSpeed =
+        (synchronousElectricalSpeed - slipElectricalSpeed) /
+        static_cast<Real>(mPolePairs);
+    if (!std::isfinite(mechanicalSpeed) || mechanicalSpeed <= 0.0)
+      throw std::logic_error(
+          "Power-flow operating point implies a non-positive induction-motor "
+          "speed.");
+
+    // A rotating complex space vector z = d + j*q has instantaneous initial
+    // state [real(z), imag(z)] at t=0 in this stationary reference frame.
+    x0(PsiSd, 0) = statorFluxPhasor.real();
+    x0(PsiSq, 0) = statorFluxPhasor.imag();
+    x0(PsiRotorD, 0) = rotorFluxPhasor.real();
+    x0(PsiRotorQ, 0) = rotorFluxPhasor.imag();
+    x0(MechanicalSpeed, 0) = mechanicalSpeed;
+    x0(ElectricalAngle, 0) = mInitialElectricalAngle;
+
+    const Matrix initialCurrent =
+        mInverseInductanceMatrix * x0.block(0, 0, mElectricalStateSize, 1);
+    const Real initialTorque =
+        static_cast<Real>(mPolePairs) * (x0(PsiSd, 0) * initialCurrent(1, 0) -
+                                         x0(PsiSq, 0) * initialCurrent(0, 0));
+    mMechanicalTorque =
+        -initialTorque +
+        mMechanicalDamping * (mechanicalSpeed - mNominalMechanicalSpeed);
+  } else {
+    x0(MechanicalSpeed, 0) = mNominalMechanicalSpeed;
+    x0(ElectricalAngle, 0) = mInitialElectricalAngle;
+  }
 
   **mX = x0;
   **mIntfVoltage = initialVoltageAbc;
 
   updateStateSpaceModel();
-  mYHist = calculateHistoryVector();
+  calculateHistoryVector(mYHist);
   **mIntfCurrent = mW * (**mIntfVoltage) + mYHist;
   updateLogAttributes(**mIntfVoltage);
 
-  SPDLOG_LOGGER_INFO(mSLog,
-                     "Cold-start initialization: standstill, zero flux.");
+  SPDLOG_LOGGER_INFO(
+      mSLog,
+      "Initialized induction motor at the PF operating point: "
+      "P={:.6g} W, Q={:.6g} var, speed={:.6g} rad/s, slip={:.6g}, "
+      "shaft torque={:.6g} Nm.",
+      terminalPower.real(), terminalPower.imag(), **mMechanicalSpeedLog,
+      **mSlip, mMechanicalTorque);
 }
 
 Matrix EMT::Ph3::SSN_InductionMotor::getState() const { return **mX; }

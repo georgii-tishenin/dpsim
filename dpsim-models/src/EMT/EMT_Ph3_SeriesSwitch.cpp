@@ -31,13 +31,13 @@ void EMT::Ph3::SeriesSwitch::initializeFromNodesAndTerminals(Real frequency) {
 
   Real impedance = (**mIsClosed) ? **mClosedResistance : **mOpenResistance;
 
-  Complex phasorA = initialSingleVoltage(1) - initialSingleVoltage(0);
-  (**mIntfVoltage)(0, 0) = phasorA.real();
-  Complex alpha(cos(2. / 3. * PI), sin(2. / 3. * PI));
-  (**mIntfVoltage)(1, 0) = Complex(phasorA * pow(alpha, 2)).real();
-  (**mIntfVoltage)(2, 0) = Complex(phasorA * alpha).real();
-
-  **mIntfCurrent = **mIntfVoltage / impedance;
+  MatrixComp vInitABC = MatrixComp::Zero(3, 1);
+  vInitABC(0, 0) =
+      RMS3PH_TO_PEAK1PH * (initialSingleVoltage(1) - initialSingleVoltage(0));
+  vInitABC(1, 0) = vInitABC(0, 0) * SHIFT_TO_PHASE_B;
+  vInitABC(2, 0) = vInitABC(0, 0) * SHIFT_TO_PHASE_C;
+  **mIntfVoltage = vInitABC.real();
+  **mIntfCurrent = (vInitABC / impedance).real();
 
   SPDLOG_LOGGER_INFO(mSLog,
                      "\n--- Initialization from powerflow ---"
@@ -98,7 +98,7 @@ void EMT::Ph3::SeriesSwitch::mnaCompPostStep(
 
 void EMT::Ph3::SeriesSwitch::mnaCompUpdateVoltage(const Matrix &leftVector) {
   // Voltage across component is defined as V1 - V0
-  **mIntfVoltage = Matrix::Zero(3, 1);
+  (**mIntfVoltage).setZero();
   if (terminalNotGrounded(1)) {
     (**mIntfVoltage)(0, 0) =
         Math::realFromVectorElement(leftVector, matrixNodeIndex(1, 0));
@@ -124,7 +124,8 @@ void EMT::Ph3::SeriesSwitch::mnaCompUpdateVoltage(const Matrix &leftVector) {
 
 void EMT::Ph3::SeriesSwitch::mnaCompUpdateCurrent(const Matrix &leftVector) {
   Real impedance = (**mIsClosed) ? **mClosedResistance : **mOpenResistance;
-  **mIntfCurrent = **mIntfVoltage / impedance;
+  const Real conductance = 1. / impedance;
+  **mIntfCurrent = **mIntfVoltage * conductance;
 
   SPDLOG_LOGGER_DEBUG(mSLog, "Current A: {}", (**mIntfCurrent)(0, 0));
 }

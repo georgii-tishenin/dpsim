@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <dpsim-models/EMT/EMT_PassiveOperationProfile.h>
+
 #include <dpsim-models/Base/Base_Ph3_Resistor.h>
 #include <dpsim-models/MNASimPowerComp.h>
 #include <dpsim-models/Solver/MNATearInterface.h>
@@ -19,8 +21,20 @@ class Resistor : public MNASimPowerComp<Real>,
                  public Base::Ph3::Resistor,
                  public MNATearInterface,
                  public SharedFactory<Resistor> {
+private:
+  Matrix mConductance = Matrix::Zero(3, 3);
+
 protected:
+  PassiveOperationProfile mOperationProfile;
+
 public:
+  void mnaSetDetailedProfiling(Bool enabled) override {
+    mOperationProfile.enabled = enabled;
+  }
+  void mnaWriteProfile(std::ostream &profile) const override {
+    mOperationProfile.write(profile, **mName);
+  }
+
   /// Defines UID, name, component parameters and logging level
   Resistor(String uid, String name,
            Logger::Level logLevel = Logger::Level::off);

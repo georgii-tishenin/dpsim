@@ -16,6 +16,10 @@
 #include <dpsim-models/DP/DP_Ph1_Transformer.h>
 #include <dpsim-models/DP/DP_Ph1_TwoTerminalVTypeSSNComp.h>
 #include <dpsim-models/DP/DP_Ph1_VoltageSource.h>
+#include <dpsim-models/DP/DP_Ph3_Inductor.h>
+#include <dpsim-models/DP/DP_Ph3_MixedVTypeVariableSSNComp.h>
+#include <dpsim-models/DP/DP_Ph3_Resistor.h>
+#include <dpsim-models/DP/DP_Ph3_VoltageSource.h>
 #include <dpsim-models/DP/DP_VTypeSSNComp.h>
 #include <dpsim-models/EMT/EMT_Ph3_Capacitor.h>
 #include <dpsim-models/EMT/EMT_Ph3_Inductor.h>
@@ -28,6 +32,7 @@
 #include <dpsim-models/EMT/EMT_Ph3_Switch.h>
 #include <dpsim-models/EMT/EMT_Ph3_Transformer.h>
 #include <dpsim-models/EMT/EMT_Ph3_TwoTerminalVTypeSSNComp.h>
+#include <dpsim-models/EMT/EMT_Ph3_TwoTerminalVTypeSplitSSNComp.h>
 #include <dpsim-models/EMT/EMT_Ph3_TwoTerminalVTypeVariableSSNComp.h>
 #include <dpsim-models/EMT/EMT_Ph3_VoltageSource.h>
 #include <dpsim-models/EMT/EMT_VTypeSSNComp.h>
@@ -150,6 +155,37 @@ buildSinglePhaseComplexInterfaceVoltageMapping(SimPowerCompComplex &component,
   return K;
 }
 
+/// Builds K for interleaved three-phase complex interface quantities:
+/// [Re(v_a), Im(v_a), Re(v_b), Im(v_b), Re(v_c), Im(v_c)]^T = K xMNA.
+Matrix
+buildThreePhaseComplexInterfaceVoltageMapping(SimPowerCompComplex &component,
+                                              UInt mnaVectorSize) {
+  if (mnaVectorSize % 2 != 0) {
+    throw std::logic_error(
+        "DP MNA state-space extraction requires a real-imaginary stacked "
+        "MNA vector with even size.");
+  }
+
+  const UInt complexOffset = mnaVectorSize / 2;
+  Matrix K = Matrix::Zero(6, mnaVectorSize);
+
+  for (UInt phase = 0; phase < 3; ++phase) {
+    if (component.terminalNotGrounded(1)) {
+      const UInt nodeIdx = component.matrixNodeIndex(1, phase);
+      K(2 * phase, nodeIdx) = 1.0;
+      K(2 * phase + 1, nodeIdx + complexOffset) = 1.0;
+    }
+
+    if (component.terminalNotGrounded(0)) {
+      const UInt nodeIdx = component.matrixNodeIndex(0, phase);
+      K(2 * phase, nodeIdx) = -1.0;
+      K(2 * phase + 1, nodeIdx + complexOffset) = -1.0;
+    }
+  }
+
+  return K;
+}
+
 /// Stamps -K^T * outputMatrix into CdMna.
 ///
 /// The sign follows the two-terminal convention vIntf = v1 - v0 and the
@@ -177,6 +213,17 @@ Matrix realAugment(const MatrixComp &matrix) {
 Matrix realAugment(const Complex &value) {
   Matrix result = Matrix::Zero(2, 2);
   result << value.real(), -value.imag(), value.imag(), value.real();
+  return result;
+}
+
+Matrix realAugmentInterleaved(const MatrixComp &matrix) {
+  Matrix result = Matrix::Zero(2 * matrix.rows(), 2 * matrix.cols());
+
+  for (Matrix::Index row = 0; row < matrix.rows(); ++row) {
+    for (Matrix::Index col = 0; col < matrix.cols(); ++col)
+      result.block<2, 2>(2 * row, 2 * col) = realAugment(matrix(row, col));
+  }
+
   return result;
 }
 
@@ -313,7 +360,7 @@ public:
 
   UInt getStateCount() const override { return mComponent->getStateCount(); }
 
-  Bool isVariable() const override { return mIsVariable; }
+  Bool contributesToUpdatedMatrices() const override { return mIsVariable; }
 
   void stamp(Matrix &AdLocal, Matrix &BdMna, Matrix &CdMna, UInt stateOffset,
              UInt mnaVectorSize) const override {
@@ -386,6 +433,90 @@ public:
 private:
   std::shared_ptr<EMT::VTypeSSNComp> mComponent;
   Bool mIsVariable = false;
+};
+
+class EMTPh3TwoTerminalVTypeSplitSSNStateSpaceContributor final
+    : public MNAStateSpaceContributor {
+public:
+  explicit EMTPh3TwoTerminalVTypeSplitSSNStateSpaceContributor(
+      std::shared_ptr<EMT::Ph3::TwoTerminalVTypeSplitSSNComp> component)
+      : mComponent(std::move(component)) {}
+
+  UInt getStateCount() const override {
+    return mComponent->getSplitStateCount();
+  }
+
+  Bool contributesToUpdatedMatrices() const override {
+    return mComponent->requiresStateSpaceMatrixUpdate();
+  }
+
+  Bool requiresUpdate() const override {
+    return mComponent->requiresStateSpaceMatrixUpdate();
+  }
+
+  CPS::AttributeBase::List getAttributeDependencies() const override {
+    if (requiresUpdate())
+      return {mComponent->getSplitStateAttribute()};
+
+    return {};
+  }
+
+  void stamp(Matrix &AdLocal, Matrix &BdMna, Matrix &CdMna, UInt stateOffset,
+             UInt mnaVectorSize) const override {
+    const UInt localStateCount = getStateCount();
+    const Matrix &discreteA = mComponent->getSplitDiscreteA();
+    const Matrix &discreteB = mComponent->getSplitDiscreteB();
+    const Matrix &historyC = mComponent->getSplitHistoryC();
+    const Matrix K =
+        buildTwoTerminalInterfaceVoltageMapping(*mComponent, mnaVectorSize);
+
+    AdLocal.block(stateOffset, stateOffset, localStateCount, localStateCount) +=
+        discreteA;
+    BdMna.block(stateOffset, 0, localStateCount, mnaVectorSize) +=
+        discreteB * K;
+    stampTwoTerminalCurrentInjectionMapping(K, CdMna, stateOffset, historyC);
+  }
+
+  void contributeMetadata(StateSpaceMetadata &metadata,
+                          UInt stateOffset) const override {
+    const UInt localStateCount = getStateCount();
+    const String componentName = mComponent->name();
+    const auto localStateNames = mComponent->getSplitLocalStateNames();
+
+    if (!localStateNames.empty() && localStateNames.size() != localStateCount) {
+      throw std::runtime_error(
+          "Split SSN component returned an invalid number of local state "
+          "names.");
+    }
+
+    for (UInt idx = 0; idx < localStateCount; ++idx) {
+      if (!localStateNames.empty())
+        setStateName(metadata, stateOffset + idx,
+                     componentName + "." + localStateNames[idx]);
+    }
+
+    for (auto abcBlock : mComponent->getSplitLocalAbcStateBlocks()) {
+      if (abcBlock.name.empty()) {
+        throw std::runtime_error(
+            "Split SSN component returned an abc state block with an empty "
+            "name.");
+      }
+
+      for (auto &idx : abcBlock.indices) {
+        if (idx >= localStateCount) {
+          throw std::runtime_error(
+              "Split SSN component returned an invalid abc state index.");
+        }
+        idx += stateOffset;
+      }
+
+      metadata.abcStateBlocks.push_back(
+          {abcBlock.indices, componentName + "." + abcBlock.name});
+    }
+  }
+
+private:
+  std::shared_ptr<EMT::Ph3::TwoTerminalVTypeSplitSSNComp> mComponent;
 };
 
 class DPPh1InductorStateSpaceContributor final
@@ -533,7 +664,7 @@ public:
 
   UInt getStateCount() const override { return mComponent->getStateCount(); }
 
-  Bool isVariable() const override { return true; }
+  Bool contributesToUpdatedMatrices() const override { return true; }
 
   void stamp(Matrix &AdLocal, Matrix &BdMna, Matrix &CdMna, UInt stateOffset,
              UInt mnaVectorSize) const override {
@@ -574,6 +705,95 @@ private:
   std::shared_ptr<DP::Ph1::MixedVTypeVariableSSNComp> mComponent;
 };
 
+class DPPh3InductorStateSpaceContributor final
+    : public MNAStateSpaceContributor {
+public:
+  explicit DPPh3InductorStateSpaceContributor(
+      std::shared_ptr<DP::Ph3::Inductor> component)
+      : mComponent(std::move(component)) {}
+
+  UInt getStateCount() const override { return 6; }
+
+  void stamp(Matrix &AdLocal, Matrix &BdMna, Matrix &CdMna, UInt stateOffset,
+             UInt mnaVectorSize) const override {
+    const MatrixComp &conductance = mComponent->getMNAConductance();
+    const Complex previousCurrentFactor =
+        mComponent->getPreviousCurrentFactor();
+    const MatrixComp identity = MatrixComp::Identity(3, 3);
+    const MatrixComp previousState = previousCurrentFactor * identity;
+    const MatrixComp inputUpdate =
+        (Complex(1.0, 0.0) + previousCurrentFactor) * conductance;
+    const Matrix K = buildThreePhaseComplexInterfaceVoltageMapping(
+        *mComponent, mnaVectorSize);
+
+    AdLocal.block(stateOffset, stateOffset, 6, 6) +=
+        realAugmentInterleaved(previousState);
+
+    BdMna.block(stateOffset, 0, 6, mnaVectorSize) +=
+        realAugmentInterleaved(inputUpdate) * K;
+
+    stampTwoTerminalCurrentInjectionMapping(K, CdMna, stateOffset,
+                                            Matrix::Identity(6, 6));
+  }
+
+  void contributeMetadata(StateSpaceMetadata &metadata,
+                          UInt stateOffset) const override {
+    static constexpr std::array<const char *, 3> phaseNames = {"a", "b", "c"};
+
+    for (UInt phase = 0; phase < 3; ++phase) {
+      const String baseName = mComponent->name() + "_" + phaseNames[phase];
+      setStateName(metadata, stateOffset + 2 * phase, baseName + "_re");
+      setStateName(metadata, stateOffset + 2 * phase + 1, baseName + "_im");
+    }
+  }
+
+private:
+  std::shared_ptr<DP::Ph3::Inductor> mComponent;
+};
+
+class DPPh3MixedVTypeVariableSSNStateSpaceContributor final
+    : public MNAStateSpaceContributor {
+public:
+  explicit DPPh3MixedVTypeVariableSSNStateSpaceContributor(
+      std::shared_ptr<DP::Ph3::MixedVTypeVariableSSNComp> component)
+      : mComponent(std::move(component)) {}
+
+  UInt getStateCount() const override { return mComponent->getStateCount(); }
+
+  Bool contributesToUpdatedMatrices() const override { return true; }
+
+  void stamp(Matrix &AdLocal, Matrix &BdMna, Matrix &CdMna, UInt stateOffset,
+             UInt mnaVectorSize) const override {
+    const UInt localStateCount = getStateCount();
+    const Matrix &discreteA = mComponent->getDiscreteA();
+    const Matrix &discreteB = mComponent->getDiscreteB();
+    const Matrix &outputC = mComponent->getC();
+    const Matrix K = buildThreePhaseComplexInterfaceVoltageMapping(
+        *mComponent, mnaVectorSize);
+
+    AdLocal.block(stateOffset, stateOffset, localStateCount, localStateCount) +=
+        discreteA;
+
+    const Matrix inputUpdate =
+        (discreteA + Matrix::Identity(localStateCount, localStateCount)) *
+        discreteB;
+
+    BdMna.block(stateOffset, 0, localStateCount, mnaVectorSize) +=
+        inputUpdate * K;
+
+    stampTwoTerminalCurrentInjectionMapping(K, CdMna, stateOffset, outputC);
+  }
+
+  void contributeMetadata(StateSpaceMetadata &metadata,
+                          UInt stateOffset) const override {
+    addRealStateMetadata(metadata, stateOffset, getStateCount(),
+                         mComponent->name());
+  }
+
+private:
+  std::shared_ptr<DP::Ph3::MixedVTypeVariableSSNComp> mComponent;
+};
+
 } // namespace
 
 MNAStateSpaceContributor::Ptr
@@ -596,6 +816,13 @@ MNAStateSpaceContributorFactory::create(const MNAInterface::Ptr &component) {
               component)) {
     return std::make_shared<EMTPh3TwoTerminalVTypeSSNStateSpaceContributor>(
         variableSsn, true);
+  }
+
+  if (auto splitSsn =
+          std::dynamic_pointer_cast<EMT::Ph3::TwoTerminalVTypeSplitSSNComp>(
+              component)) {
+    return std::make_shared<
+        EMTPh3TwoTerminalVTypeSplitSSNStateSpaceContributor>(splitSsn);
   }
 
   if (auto ssn = std::dynamic_pointer_cast<EMT::Ph3::TwoTerminalVTypeSSNComp>(
@@ -641,6 +868,23 @@ MNAStateSpaceContributorFactory::create(const MNAInterface::Ptr &component) {
     return nullptr;
 
   if (std::dynamic_pointer_cast<DP::Ph1::VoltageSource>(component))
+    return nullptr;
+
+  if (auto inductor = std::dynamic_pointer_cast<DP::Ph3::Inductor>(component)) {
+    return std::make_shared<DPPh3InductorStateSpaceContributor>(inductor);
+  }
+
+  if (auto mixedVariableSsn =
+          std::dynamic_pointer_cast<DP::Ph3::MixedVTypeVariableSSNComp>(
+              component)) {
+    return std::make_shared<DPPh3MixedVTypeVariableSSNStateSpaceContributor>(
+        mixedVariableSsn);
+  }
+
+  if (std::dynamic_pointer_cast<DP::Ph3::Resistor>(component))
+    return nullptr;
+
+  if (std::dynamic_pointer_cast<DP::Ph3::VoltageSource>(component))
     return nullptr;
 
   throw std::invalid_argument(

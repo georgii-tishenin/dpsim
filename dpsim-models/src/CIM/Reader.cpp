@@ -576,28 +576,24 @@ Reader::mapPowerTransformer(CIMPP::PowerTransformer *trans) {
 
   Real ratioAbsNominal = voltageNode1 / voltageNode2;
   Real ratioAbs = ratioAbsNominal;
+  // Keep the nameplate ratio separate from the regulating tap. A tap on the
+  // primary winding multiplies V1/V2; a tap on the secondary winding divides
+  // it. A solved SvTapStep position takes precedence over normalStep.
+  // Use the tap changer attached to this end, not always PowerTransformerEnd_1.
+  auto tapMultiplierForEnd = [&](CIMPP::PowerTransformerEnd *end) -> Real {
+    if (!end->RatioTapChanger)
+      return Real(1.);
 
-  // use normalStep from RatioTapChanger
-  if (end1->RatioTapChanger) {
-    ratioAbs =
-        voltageNode1 / voltageNode2 *
-        (1 + (end1->RatioTapChanger->normalStep -
-              end1->RatioTapChanger->neutralStep) *
-                 end1->RatioTapChanger->stepVoltageIncrement.value / 100);
-  }
-
-  // if corresponding SvTapStep available, use instead tap position from there
-  if (end1->RatioTapChanger) {
+    Real position = end->RatioTapChanger->normalStep;
     for (auto obj : mModel->Objects) {
       auto tapStep = dynamic_cast<CIMPP::SvTapStep *>(obj);
-      if (tapStep && tapStep->TapChanger == end1->RatioTapChanger) {
-        ratioAbs =
-            voltageNode1 / voltageNode2 *
-            (1 + (tapStep->position - end1->RatioTapChanger->neutralStep) *
-                     end1->RatioTapChanger->stepVoltageIncrement.value / 100);
-      }
+      if (tapStep && tapStep->TapChanger == end->RatioTapChanger)
+        position = tapStep->position;
     }
-  }
+    return 1 + (position - end->RatioTapChanger->neutralStep) *
+                   end->RatioTapChanger->stepVoltageIncrement.value / 100;
+  };
+  Real tapRatio = tapMultiplierForEnd(end1) / tapMultiplierForEnd(end2);
 
   // TODO: To be extracted from cim class
   Real ratioPhase = 0;
@@ -619,6 +615,59 @@ Reader::mapPowerTransformer(CIMPP::PowerTransformer *trans) {
     resistance = end1->r.value / std::pow(ratioAbsNominal, 2);
   }
 
+  CIMPP::PowerTransformerEnd *referenceEnd =
+      (voltageNode1 >= voltageNode2) ? end1 : end2;
+  Real referenceVoltage = std::max(voltageNode1, voltageNode2);
+  Real magnetizingConductance = referenceEnd->g.value;
+  Real magnetizingSusceptance = referenceEnd->b.value;
+  Real noLoadCurrent = 0;
+  Real noLoadLoss = 0;
+  Bool magnetizingFromFile = false;
+
+  if (ratedPower > 0) {
+    Real base = std::pow(referenceVoltage, 2) / ratedPower;
+    Real defaultNoLoadCurrent = 0.01;
+    Real defaultNoLoadLoss = 1e-3;
+    Real defaultSusceptancePerUnit = std::sqrt(
+        std::pow(defaultNoLoadCurrent, 2) - std::pow(defaultNoLoadLoss, 2));
+
+    Bool lossFromFile = magnetizingConductance > DOUBLE_EPSILON;
+    Bool susceptanceFromFile = magnetizingSusceptance < -DOUBLE_EPSILON;
+
+    if (magnetizingSusceptance > DOUBLE_EPSILON)
+      SPDLOG_LOGGER_WARN(
+          mSLog,
+          "    {}: PowerTransformerEnd.b={} [S] is capacitive; the magnetizing "
+          "branch is inductive, so the default susceptance is used instead",
+          cimString(trans->name), magnetizingSusceptance);
+
+    noLoadLoss =
+        lossFromFile ? magnetizingConductance * base : defaultNoLoadLoss;
+    Real susceptancePerUnit = susceptanceFromFile
+                                  ? std::abs(magnetizingSusceptance) * base
+                                  : defaultSusceptancePerUnit;
+    noLoadCurrent = std::hypot(susceptancePerUnit, noLoadLoss);
+    magnetizingFromFile = lossFromFile || susceptanceFromFile;
+
+    if (magnetizingFromFile)
+      SPDLOG_LOGGER_INFO(
+          mSLog, "    {}: magnetizing branch i0={} ({}) P0={} ({})",
+          cimString(trans->name), noLoadCurrent,
+          susceptanceFromFile ? "from the file" : "default susceptance",
+          noLoadLoss, lossFromFile ? "from the file" : "default loss");
+    else
+      SPDLOG_LOGGER_WARN(mSLog,
+                         "    {}: no magnetizing data on PowerTransformerEnd "
+                         "(b={} [S], g={} [S]); using the built-in default",
+                         cimString(trans->name), magnetizingSusceptance,
+                         magnetizingConductance);
+  } else {
+    SPDLOG_LOGGER_WARN(mSLog,
+                       "    {}: rated power is {} [VA], so the magnetizing "
+                       "branch cannot be sized from the file",
+                       cimString(trans->name), ratedPower);
+  }
+
   if (mDomain == Domain::EMT) {
     if (mPhase == PhaseType::ABC) {
       Matrix resistance_3ph =
@@ -632,6 +681,9 @@ Reader::mapPowerTransformer(CIMPP::PowerTransformer *trans) {
       transformer->setParameters(voltageNode1, voltageNode2, ratedPower,
                                  ratioAbs, ratioPhase, resistance_3ph,
                                  inductance_3ph);
+      transformer->setTapRatio(tapRatio);
+      if (magnetizingFromFile)
+        transformer->setMagnetizingBranch(noLoadCurrent, noLoadLoss);
       return transformer;
     } else {
       SPDLOG_LOGGER_INFO(mSLog, "    Transformer for EMT not implemented yet");
@@ -642,6 +694,9 @@ Reader::mapPowerTransformer(CIMPP::PowerTransformer *trans) {
         transRid, cimString(trans->name), mComponentLogLevel);
     transformer->setParameters(voltageNode1, voltageNode2, ratedPower, ratioAbs,
                                ratioPhase, resistance, inductance);
+    transformer->setTapRatio(tapRatio);
+    if (magnetizingFromFile)
+      transformer->setMagnetizingBranch(noLoadCurrent, noLoadLoss);
     Real baseVolt = voltageNode1 >= voltageNode2 ? voltageNode1 : voltageNode2;
     transformer->setBaseVoltage(baseVolt);
     return transformer;
@@ -652,6 +707,9 @@ Reader::mapPowerTransformer(CIMPP::PowerTransformer *trans) {
         withResistiveLosses);
     transformer->setParameters(voltageNode1, voltageNode2, ratedPower, ratioAbs,
                                ratioPhase, resistance, inductance);
+    transformer->setTapRatio(tapRatio);
+    if (magnetizingFromFile)
+      transformer->setMagnetizingBranch(noLoadCurrent, noLoadLoss);
     return transformer;
   }
 }

@@ -47,6 +47,7 @@ protected:
   Real mPhi_qInit = 0;
   Real mGamma_dInit = 0;
   Real mGamma_qInit = 0;
+  Bool mInitialStatesExplicit = false;
 
   // state space matrices
   /// matrix A of state space model
@@ -57,6 +58,11 @@ protected:
   Matrix mC = Matrix::Zero(2, 6);
   /// matrix D of state space model
   Matrix mD = Matrix::Zero(2, 6);
+  /// Cached trapezoidal factors; A and time step are constant during a run.
+  Matrix mDiscreteA = Matrix::Zero(6, 6);
+  Matrix mF2Inverse = Matrix::Zero(6, 6);
+  Matrix mTransformedB = Matrix::Zero(6, 6);
+  Matrix mInputSum = Matrix::Zero(6, 1);
 
 public:
   // attributes of input references
@@ -92,6 +98,10 @@ public:
   void setInitialStateValues(Real pInit, Real qInit, Real phi_dInit,
                              Real phi_qInit, Real gamma_dInit,
                              Real gamma_qInit);
+  /// Derive controller integrator states for a steady operating point unless
+  /// the caller explicitly supplied initial states.
+  void initializeSteadyState(Real pRef, Real qRef, Real iD, Real iQ,
+                             Real vSourceD, Real vSourceQ);
 
   /// Initialize vectors of state space model
   void initializeStateSpaceModel(Real omega, Real timeStep,

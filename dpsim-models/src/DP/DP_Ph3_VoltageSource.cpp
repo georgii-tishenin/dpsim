@@ -50,7 +50,8 @@ void DP::Ph3::VoltageSource::setParameters(MatrixComp voltageRef,
 void DP::Ph3::VoltageSource::initializeFromNodesAndTerminals(Real frequency) {
   if ((**mVoltageRef).isZero())
     **mVoltageRef = CPS::Math::singlePhaseVariableToThreePhase(
-        initialSingleVoltage(1) - initialSingleVoltage(0));
+        RMS3PH_TO_PEAK1PH *
+        (initialSingleVoltage(1) - initialSingleVoltage(0)));
 }
 
 void DP::Ph3::VoltageSource::mnaCompInitialize(
@@ -118,6 +119,16 @@ void DP::Ph3::VoltageSource::mnaCompApplyRightSideVectorStamp(
   Math::setVectorElement(rightVector,
                          mVirtualNodes[0]->matrixNodeIndex(PhaseType::C),
                          (**mIntfVoltage)(2, 0));
+}
+
+void DP::Ph3::VoltageSource::mnaAddCompactRightSideVectorStamp(
+    Matrix &rightVector) {
+  const MatrixComp &voltage = **mIntfVoltage;
+  for (UInt phase = 0; phase < 3; ++phase)
+    Math::addToVectorElement(
+        rightVector,
+        mVirtualNodes[0]->matrixNodeIndex(static_cast<PhaseType>(phase)),
+        voltage(phase, 0));
 }
 
 void DP::Ph3::VoltageSource::updateVoltage(Real time) {

@@ -13,6 +13,7 @@ extern "C" {
 }
 
 #include <bitset>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <list>
@@ -48,10 +49,24 @@ class KLUAdapter : public DirectLinearSolver {
   int mPivotFaults = 0;
 
   PARTIAL_REFACTORIZATION_METHOD mPartialRefactorizationMethod =
-      PARTIAL_REFACTORIZATION_METHOD::FACTORIZATION_PATH;
+      PARTIAL_REFACTORIZATION_METHOD::NO_PARTIAL_REFACTORIZATION;
+
+  std::size_t mAnalysisCalls = 0;
+  std::size_t mFactorizationCalls = 0;
+  std::size_t mRefactorizationCalls = 0;
+  std::size_t mPartialRefactorizationCalls = 0;
+  std::size_t mSolveCalls = 0;
 
   /// Temporary value to store the number of nonzeros
   Int nnz;
+
+  /// KLU operates natively on compressed-column storage. DPSim keeps the
+  /// stamping matrix row-major, so retain a column-major mirror and a stable
+  /// value-index map for coefficient-only updates.
+  CPS::SparseMatrix mKluMatrix;
+  std::vector<Int> mRowToKluValueIndex;
+
+  void syncKluValues(const SparseMatrix &systemMatrix);
 
 public:
   /// Destructor
@@ -81,6 +96,10 @@ public:
 
   /// solution function for a right hand side
   Matrix solve(Matrix &rightSideVector) override;
+
+  /// Solve into caller-owned storage to avoid per-step matrix allocation.
+  void solveInto(Matrix &rightSideVector, Matrix &solution) override;
+  void writeDetailedDiagnostics(std::ostream &diagnostics) const;
 
 protected:
   /// Function to print matrix in MatrixMarket's coo format

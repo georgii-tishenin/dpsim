@@ -3,6 +3,8 @@
 
 #include <dpsim-models/DP/DP_Ph3_CurrentSource.h>
 
+#include <limits>
+
 using namespace CPS;
 
 DP::Ph3::CurrentSource::CurrentSource(String uid, String name,
@@ -43,6 +45,23 @@ void DP::Ph3::CurrentSource::setParameters(MatrixComp currentRef,
 }
 
 void DP::Ph3::CurrentSource::initializeFromNodesAndTerminals(Real frequency) {
+  // Match EMT::Ph3::CurrentSource when no explicit reference was supplied:
+  // derive the source current from the power-flow terminal voltage and power.
+  // The power-flow current is RMS, while DP::Ph3 sources use phase-peak
+  // complex envelopes.
+  if (!mParametersSet) {
+    const Complex voltage = initialSingleVoltage(1) - initialSingleVoltage(0);
+    if (std::abs(voltage) > std::numeric_limits<Real>::epsilon()) {
+      const Complex power =
+          terminal(1)->singlePower() - terminal(0)->singlePower();
+      const Complex rmsCurrent = std::conj(power / voltage / std::sqrt(3.));
+      **mCurrentRef =
+          CPS::Math::singlePhaseVariableToThreePhase(RMS_TO_PEAK * rmsCurrent);
+      if (mSrcSig != nullptr)
+        mSrcFreq->setReference(mSrcSig->mFreq);
+    }
+  }
+
   SPDLOG_LOGGER_INFO(mSLog,
                      "\n--- Initialization from node voltages and terminal ---"
                      "\nReference current: {:s}",
@@ -73,6 +92,26 @@ void DP::Ph3::CurrentSource::mnaCompApplyRightSideVectorStamp(
                            (**mIntfCurrent)(1, 0));
     Math::setVectorElement(rightVector, matrixNodeIndex(0, 2),
                            (**mIntfCurrent)(2, 0));
+  }
+}
+
+void DP::Ph3::CurrentSource::mnaAddCompactRightSideVectorStamp(
+    Matrix &rightVector) {
+  if (terminalNotGrounded(1)) {
+    Math::addToVectorElement(rightVector, matrixNodeIndex(1, 0),
+                             -(**mIntfCurrent)(0, 0));
+    Math::addToVectorElement(rightVector, matrixNodeIndex(1, 1),
+                             -(**mIntfCurrent)(1, 0));
+    Math::addToVectorElement(rightVector, matrixNodeIndex(1, 2),
+                             -(**mIntfCurrent)(2, 0));
+  }
+  if (terminalNotGrounded(0)) {
+    Math::addToVectorElement(rightVector, matrixNodeIndex(0, 0),
+                             (**mIntfCurrent)(0, 0));
+    Math::addToVectorElement(rightVector, matrixNodeIndex(0, 1),
+                             (**mIntfCurrent)(1, 0));
+    Math::addToVectorElement(rightVector, matrixNodeIndex(0, 2),
+                             (**mIntfCurrent)(2, 0));
   }
 }
 
@@ -114,7 +153,7 @@ void DP::Ph3::CurrentSource::mnaCompPostStep(
 }
 
 void DP::Ph3::CurrentSource::mnaCompUpdateVoltage(const Matrix &leftVector) {
-  **mIntfVoltage = MatrixComp::Zero(3, 1);
+  (**mIntfVoltage).setZero();
   if (terminalNotGrounded(1)) {
     (**mIntfVoltage)(0, 0) =
         Math::complexFromVectorElement(leftVector, matrixNodeIndex(1, 0));

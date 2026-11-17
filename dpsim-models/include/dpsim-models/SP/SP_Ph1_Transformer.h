@@ -32,23 +32,14 @@ private:
   /// Internal inductor to model losses
   std::shared_ptr<SP::Ph1::Inductor> mSubInductor;
 
-  /// Internal parallel resistance 1 as snubber
-  std::shared_ptr<SP::Ph1::Resistor> mSubSnubResistor1;
-  /// Internal parallel resistance 2 as snubber
-  std::shared_ptr<SP::Ph1::Resistor> mSubSnubResistor2;
-  /// Internal parallel capacitance 1 as snubber
-  std::shared_ptr<SP::Ph1::Capacitor> mSubSnubCapacitor1;
-  /// Internal parallel capacitance 2 as snubber
-  std::shared_ptr<SP::Ph1::Capacitor> mSubSnubCapacitor2;
-
-  /// Snubber resistance 1 [Ohm]
-  Real mSnubberResistance1;
-  /// Snubber resistance 2 [Ohm]
-  Real mSnubberResistance2;
-  /// Snubber capacitance 1 [F]
-  Real mSnubberCapacitance1;
-  /// Snubber capacitance 2 [F]
-  Real mSnubberCapacitance2;
+  /// Second half of the leakage resistance
+  std::shared_ptr<SP::Ph1::Resistor> mSubResistor2;
+  /// Second half of the leakage inductance
+  std::shared_ptr<SP::Ph1::Inductor> mSubInductor2;
+  /// Core-loss resistance of the magnetizing branch
+  std::shared_ptr<SP::Ph1::Resistor> mSubMagnetizingResistor;
+  /// Magnetizing inductance of the magnetizing branch
+  std::shared_ptr<SP::Ph1::Inductor> mSubMagnetizingInductor;
 
   /// Transformer ratio magnitude
   Real mRatioAbs = 1;
@@ -88,14 +79,47 @@ private:
   Complex mMagnetizingPerUnit;
   /// transformer ratio
   Real mRatioAbsPerUnit;
+  /// complex per-unit turns ratio out of the reference winding
+  Complex mRatioPerUnit;
 
   // #### Admittance matrix stamp ####
   MatrixComp mY_element;
 
+  /// Magnetizing resistance [Ohm]
+  Real mMagnetizingResistance;
+  /// Magnetizing inductance [H]
+  Real mMagnetizingInductance;
+  /// No-load current as a fraction of rated current (IEC 60076 i0)
+  Real mNoLoadCurrent = 0.01;
+  /// No-load loss as a fraction of rated power (IEC 60076 P0)
+  Real mNoLoadLoss = 1e-3;
+
   /// Boolean for considering resistive losses with sub resistor
   Bool mWithResistiveLosses;
 
+  /// Terminal carrying the reference winding
+  UInt mReferenceTerminal = 0;
+  /// Terminal carrying the non-reference winding
+  UInt nonReferenceTerminal() const { return 1 - mReferenceTerminal; }
+  /// Turns ratio out of the reference winding
+  Complex mRatioFromReference;
+  /// Sign carrying series quantities into the terminal 1 to 0 direction
+  Real mOrientationSign = 1.;
+  /// Winding the nameplate impedance is referred to
+  WindingReference mReferenceWinding = WindingReference::Auto;
+  /// Resolves the reference winding
+  void resolveWindingRoles();
+
 public:
+  /// Sets the magnetizing branch from the no-load test quantities
+  void setMagnetizingBranch(Real noLoadCurrent, Real noLoadLoss) {
+    mNoLoadCurrent = noLoadCurrent;
+    mNoLoadLoss = noLoadLoss;
+  }
+  /// Selects the winding the nameplate impedance is referred to
+  void setReferenceWinding(WindingReference referenceWinding) {
+    mReferenceWinding = referenceWinding;
+  }
   /// base voltage [V]
   const Attribute<Real>::Ptr mBaseVoltage;
 
@@ -125,22 +149,23 @@ public:
 
   // #### General ####
   /// Set transformer specific parameters (without rated power)
-  void setParameters(Real nomVoltageEnd1, Real nomVoltageEnd2, Real ratioAbs,
-                     Real ratioPhase, Real resistance, Real inductance);
-  /// Set transformer specific parameters
-  void setParameters(Real nomVoltageEnd1, Real nomVoltageEnd2, Real ratedPower,
+  void setParameters(Real nomVoltagePrimary, Real nomVoltageSecondary,
                      Real ratioAbs, Real ratioPhase, Real resistance,
                      Real inductance);
+  /// Set transformer specific parameters
+  void setParameters(Real nomVoltagePrimary, Real nomVoltageSecondary,
+                     Real ratedPower, Real ratioAbs, Real ratioPhase,
+                     Real resistance, Real inductance);
   /// Constructs and registers MNA subcomponents; idempotent.
   void createSubComponents() override;
   /// Initializes component from power flow data
   void initializeParentFromNodesAndTerminals(Real frequency) override;
 
   // #### Powerflow section ####
-  /// Get nominal voltage at end 1
-  Real getNominalVoltageEnd1() const;
-  /// Get nominal voltage at end 2
-  Real getNominalVoltageEnd2() const;
+  /// Get nominal voltage of the primary winding
+  Real getNominalVoltagePrimary() const;
+  /// Get nominal voltage of the secondary winding
+  Real getNominalVoltageSecondary() const;
   void setBaseVoltage(Real baseVoltage);
   /// Initializes component from power flow data
   void calculatePerUnitParameters(Real baseApparentPower, Real baseOmega);

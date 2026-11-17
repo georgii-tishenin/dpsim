@@ -15,6 +15,8 @@ EMT::Ph3::SynchronGenerator4OrderVBR::SynchronGenerator4OrderVBR(
     : ReducedOrderSynchronGeneratorVBR(uid, name, logLevel),
       mEdq0_t(mAttributes->create<Matrix>("Edq0_t")) {
 
+  // Keep the SG4 shaft damping consistent with the DP phasor implementation.
+  setDamping(1.0);
   //
   mSGOrder = SGOrder::SG4Order;
 
@@ -26,6 +28,61 @@ EMT::Ph3::SynchronGenerator4OrderVBR::SynchronGenerator4OrderVBR(
 EMT::Ph3::SynchronGenerator4OrderVBR::SynchronGenerator4OrderVBR(
     const String &name, Logger::Level logLevel)
     : SynchronGenerator4OrderVBR(name, name, logLevel) {}
+
+EMT::Ph3::SynchronGenerator4OrderVBR::MetalDeviceData
+EMT::Ph3::SynchronGenerator4OrderVBR::metalDeviceData() {
+  if (!mModelAsNortonSource || mHasExciter || mHasPSS || mHasTurbineGovernor ||
+      mHasGovernorAndTurbine)
+    throw std::logic_error(
+        "Metal SG4 VBR export supports only controller-free Norton models.");
+
+  MetalDeviceData data{};
+  for (UInt i = 0; i < 3; ++i) {
+    data.voltageDq0[i] = (**mVdq0)(i, 0);
+    data.currentDq0[i] = (**mIdq0)(i, 0);
+    data.transientVoltageDq0[i] = (**mEdq0_t)(i, 0);
+    data.matrixNodeIndices[i] = matrixNodeIndex(0, i);
+  }
+  for (UInt row = 0; row < 3; ++row)
+    for (UInt col = 0; col < 3; ++col) {
+      data.conductanceDq0[row * 3 + col] = mConductanceMatrixDq0(row, col);
+    }
+  // During DPsim initialize() the first component pre-step has not run yet,
+  // therefore mConductanceMatrix can still be zero. Export the exact stamp
+  // that calculateResistanceMatrix() will create on the first SG4 pre-step.
+  const MatrixFixedSize<3, 3> abcToDq = get_parkTransformMatrix();
+  const MatrixFixedSize<3, 3> dqToAbc = get_inverseParkTransformMatrix();
+  const MatrixFixedSize<3, 3> conductanceAbc =
+      dqToAbc * mConductanceMatrixDq0 * abcToDq;
+  for (UInt row = 0; row < 3; ++row)
+    for (UInt col = 0; col < 3; ++col)
+      data.conductanceAbc[row * 3 + col] = conductanceAbc(row, col);
+
+  data.timeStep = mTimeStep;
+  data.baseVoltage = mBase_V;
+  data.baseCurrent = mBase_I;
+  data.baseImpedance = mBase_Z;
+  data.baseOmegaElec = mBase_OmElec;
+  data.baseOmegaMech = mBase_OmMech;
+  data.inertia = mH;
+  data.damping = mDamping;
+  data.ldTransient = mLd_t;
+  data.lqTransient = mLq_t;
+  data.adTransient = mAd_t;
+  data.bdTransient = mBd_t;
+  data.aqTransient = mAq_t;
+  data.bqTransient = mBq_t;
+  data.dqTransient = mDq_t;
+  data.fieldVoltage = **mEf;
+  data.previousFieldVoltage = mEf_prev;
+  data.mechanicalTorque = **mMechTorque;
+  data.previousMechanicalTorque = mMechTorque_prev;
+  data.electricalTorque = **mElecTorque;
+  data.rotorSpeed = **mOmMech;
+  data.rotorAngle = **mThetaMech;
+  data.loadAngle = **mDelta;
+  return data;
+}
 
 void EMT::Ph3::SynchronGenerator4OrderVBR::specificInitialization() {
   // initial voltage behind the transient reactance in the dq0 reference frame
@@ -45,24 +102,25 @@ void EMT::Ph3::SynchronGenerator4OrderVBR::specificInitialization() {
 
 void EMT::Ph3::SynchronGenerator4OrderVBR::stepInPerUnit() {
 
+  const Matrix &idq0 = *mIdq0Value;
+  const Matrix &vdq0 = *mVdq0Value;
+
   if (mSimTime > 0.0) {
     // calculate Edq_t at t=k
-    (**mEdq0_t)(0, 0) = -(**mIdq0)(1, 0) * mLq_t + (**mVdq0)(0, 0);
-    (**mEdq0_t)(1, 0) = (**mIdq0)(0, 0) * mLd_t + (**mVdq0)(1, 0);
+    (**mEdq0_t)(0, 0) = -idq0(1, 0) * mLq_t + vdq0(0, 0);
+    (**mEdq0_t)(1, 0) = idq0(0, 0) * mLd_t + vdq0(1, 0);
     (**mEdq0_t)(2, 0) = 0.0;
   }
 
-  // get transformation matrix
-  mAbcToDq0 = get_parkTransformMatrix();
-  mDq0ToAbc = get_inverseParkTransformMatrix();
+  updateParkTransformMatrices();
 
   // calculate resistance matrix at t=k+1
   calculateResistanceMatrix();
 
   // VBR history voltage
-  mEhs_vbr(0, 0) = mAd_t * (**mIdq0)(1, 0) + mBd_t * (**mEdq0_t)(0, 0);
-  mEhs_vbr(1, 0) = mAq_t * (**mIdq0)(0, 0) + mBq_t * (**mEdq0_t)(1, 0) +
-                   mDq_t * mEf_prev + mDq_t * (**mEf);
+  mEhs_vbr(0, 0) = mAd_t * idq0(1, 0) + mBd_t * (**mEdq0_t)(0, 0);
+  mEhs_vbr(1, 0) = mAq_t * idq0(0, 0) + mBq_t * (**mEdq0_t)(1, 0) +
+                   mDq_t * mEf_prev + mDq_t * *mEfValue;
   mEhs_vbr(2, 0) = 0.0;
 
   // convert Edq_t into the abc reference frame

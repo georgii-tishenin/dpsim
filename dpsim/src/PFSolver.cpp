@@ -234,6 +234,12 @@ void PFSolver::determinePFBusType() {
           mSLog, "{}: VD and PV type component connect -> set as VD bus",
           node->name());
       mVDBuses.push_back(node);
+    } // VD and PQ type component connected -> set as VD bus
+    else if (!connectedPV && connectedPQ && connectedVD) {
+      SPDLOG_LOGGER_INFO(
+          mSLog, "{}: VD and PQ type component connected -> set as VD bus",
+          node->name());
+      mVDBuses.push_back(node);
     } // VD, PV and PQ type component connect -> set as VD bus
     else if (connectedPV && connectedPQ && connectedVD) {
       SPDLOG_LOGGER_INFO(
@@ -314,9 +320,9 @@ CPS::Real PFSolver::componentBaseVoltage(CPS::TopologicalPowerComp::Ptr comp,
     return line->getBaseVoltage();
   if (auto trans = std::dynamic_pointer_cast<CPS::SP::Ph1::Transformer>(comp)) {
     if (trans->terminal(0)->node()->name() == node->name())
-      return trans->getNominalVoltageEnd1();
+      return trans->getNominalVoltagePrimary();
     if (trans->terminal(1)->node()->name() == node->name())
-      return trans->getNominalVoltageEnd2();
+      return trans->getNominalVoltageSecondary();
     return 0;
   }
   if (auto gen =

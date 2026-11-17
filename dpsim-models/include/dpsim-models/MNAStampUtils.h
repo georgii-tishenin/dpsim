@@ -19,6 +19,15 @@ public:
                               const Logger::Log &mSLog, Int maxFreq = 1,
                               Int freqIdx = 0);
 
+  /// Stamp a packed real 2x2 admittance block that maps [Re(v), Im(v)] to
+  /// [Re(i), Im(i)] for a single complex node voltage/current pair.
+  static void stampAdmittance(const Matrix &admittance, SparseMatrixRow &mat,
+                              UInt node1Index, UInt node2Index,
+                              Bool isTerminal1NotGrounded,
+                              Bool isTerminal2NotGrounded,
+                              const Logger::Log &mSLog, Int maxFreq = 1,
+                              Int freqIdx = 0);
+
   static void stampConductanceMatrix(const Matrix &conductanceMat,
                                      SparseMatrixRow &mat, UInt node1Index,
                                      UInt node2Index,
@@ -39,6 +48,16 @@ public:
       const MatrixComp &admittanceMat, SparseMatrixRow &mat, UInt node1Index,
       UInt node2Index, Bool isTerminal1NotGrounded, Bool isTerminal2NotGrounded,
       const Logger::Log &mSLog, Int maxFreq = 1, Int freqIdx = 0);
+
+  /// Stamp a packed real admittance matrix whose 2x2 blocks map complex phase
+  /// voltages [Re(v), Im(v)] to complex phase currents [Re(i), Im(i)].
+  static void stampAdmittanceMatrix(const Matrix &admittanceMat,
+                                    UInt phaseCount, SparseMatrixRow &mat,
+                                    UInt node1Index, UInt node2Index,
+                                    Bool isTerminal1NotGrounded,
+                                    Bool isTerminal2NotGrounded,
+                                    const Logger::Log &mSLog, Int maxFreq = 1,
+                                    Int freqIdx = 0);
 
   /// Stamps conductance as a 3x3 scalar matrix (a diagonal matrix, where all diagonal elements are equal to conductance).
   static void stampConductanceAs3x3ScalarMatrix(
@@ -98,6 +117,11 @@ private:
 
   static void addToMatrixElement(SparseMatrixRow &mat, Matrix::Index row,
                                  Matrix::Index column, Complex value,
+                                 Int maxFreq, Int freqIdx,
+                                 const Logger::Log &mSLog);
+
+  static void addToMatrixElement(SparseMatrixRow &mat, Matrix::Index row,
+                                 Matrix::Index column, const Matrix &value,
                                  Int maxFreq, Int freqIdx,
                                  const Logger::Log &mSLog);
 };

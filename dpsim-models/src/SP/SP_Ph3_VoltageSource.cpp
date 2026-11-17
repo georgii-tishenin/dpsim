@@ -76,7 +76,7 @@ void SP::Ph3::VoltageSource::mnaCompApplySystemMatrixStamp(
                              Complex(-1, 0));
     Math::addToMatrixElement(systemMatrix,
                              mVirtualNodes[0]->matrixNodeIndex(PhaseType::C),
-                             matrixNodeIndex(0, 2), -Complex(-1, 0));
+                             matrixNodeIndex(0, 2), Complex(-1, 0));
   }
   if (terminalNotGrounded(1)) {
     Math::addToMatrixElement(systemMatrix, matrixNodeIndex(1, 0),
@@ -118,17 +118,14 @@ void SP::Ph3::VoltageSource::mnaCompApplyRightSideVectorStamp(
 void SP::Ph3::VoltageSource::updateVoltage(Real time) {
   // can't we just do nothing??
   // TODO: remove updateVoltage
-  (**mIntfVoltage)(0, 0) = **mVoltageRef;
-  (**mIntfVoltage)(1, 0) =
-      Complex(Math::abs(**mVoltageRef) *
-                  cos(Math::phase(**mVoltageRef) - 2. / 3. * M_PI),
-              Math::abs(**mVoltageRef) *
-                  sin(Math::phase(**mVoltageRef) - 2. / 3. * M_PI));
-  (**mIntfVoltage)(2, 0) =
-      Complex(Math::abs(**mVoltageRef) *
-                  cos(Math::phase(**mVoltageRef) + 2. / 3. * M_PI),
-              Math::abs(**mVoltageRef) *
-                  sin(Math::phase(**mVoltageRef) + 2. / 3. * M_PI));
+  const Complex voltageRef = **mVoltageRef;
+  const Real magnitude = Math::abs(voltageRef);
+  const Real phase = Math::phase(voltageRef);
+  (**mIntfVoltage)(0, 0) = voltageRef;
+  (**mIntfVoltage)(1, 0) = Complex(magnitude * cos(phase - 2. / 3. * M_PI),
+                                   magnitude * sin(phase - 2. / 3. * M_PI));
+  (**mIntfVoltage)(2, 0) = Complex(magnitude * cos(phase + 2. / 3. * M_PI),
+                                   magnitude * sin(phase + 2. / 3. * M_PI));
 }
 
 void SP::Ph3::VoltageSource::mnaCompAddPreStepDependencies(
@@ -162,9 +159,9 @@ void SP::Ph3::VoltageSource::mnaCompPostStep(
 void SP::Ph3::VoltageSource::mnaCompUpdateCurrent(const Matrix &leftVector) {
   (**mIntfCurrent)(0, 0) = Math::complexFromVectorElement(
       leftVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::A));
-  (**mIntfCurrent)(1, 0) = Math::realFromVectorElement(
+  (**mIntfCurrent)(1, 0) = Math::complexFromVectorElement(
       leftVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::B));
-  (**mIntfCurrent)(2, 0) = Math::realFromVectorElement(
+  (**mIntfCurrent)(2, 0) = Math::complexFromVectorElement(
       leftVector, mVirtualNodes[0]->matrixNodeIndex(PhaseType::C));
 }
 

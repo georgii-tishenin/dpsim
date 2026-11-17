@@ -28,47 +28,92 @@ private:
   /// Internal inductor to model losses
   std::shared_ptr<DP::Ph1::Inductor> mSubInductor;
 
-  /// Internal parallel resistance 1 as snubber
-  std::shared_ptr<DP::Ph1::Resistor> mSubSnubResistor1;
-  /// Internal parallel resistance 2 as snubber
-  std::shared_ptr<DP::Ph1::Resistor> mSubSnubResistor2;
-  /// Internal parallel capacitance 1 as snubber
-  std::shared_ptr<DP::Ph1::Capacitor> mSubSnubCapacitor1;
-  /// Internal parallel capacitance 2 as snubber
-  std::shared_ptr<DP::Ph1::Capacitor> mSubSnubCapacitor2;
+  /// Second half of the leakage resistance, secondary-winding side
+  std::shared_ptr<DP::Ph1::Resistor> mSubResistor2;
+  /// Second half of the leakage inductance, secondary-winding side
+  std::shared_ptr<DP::Ph1::Inductor> mSubInductor2;
+  /// Core-loss resistance of the magnetizing branch
+  std::shared_ptr<DP::Ph1::Resistor> mSubMagnetizingResistor;
+  /// Magnetizing inductance of the magnetizing branch
+  std::shared_ptr<DP::Ph1::Inductor> mSubMagnetizingInductor;
 
-  /// Snubber resistance 1 [Ohm]
-  Real mSnubberResistance1;
-  /// Snubber resistance 2 [Ohm]
-  Real mSnubberResistance2;
-  /// Snubber capacitance 1 [F]
-  Real mSnubberCapacitance1;
-  /// Snubber capacitance 2 [F]
-  Real mSnubberCapacitance2;
+  /// Magnetizing resistance [Ohm]
+  Real mMagnetizingResistance;
+  /// Magnetizing inductance [H]
+  Real mMagnetizingInductance;
+  Bool mUseSubcomponents = true;
+  MatrixComp mDirectInductorAdmittance;
+  MatrixComp mDirectInductorPrevCurrentFactor;
+  MatrixComp mDirectInductorCurrent0;
+  MatrixComp mDirectInductorCurrent1;
+  MatrixComp mDirectInductorVoltage0;
+  MatrixComp mDirectInductorVoltage1;
+  MatrixComp mDirectInductorHistory0;
+  MatrixComp mDirectInductorHistory1;
+  MatrixComp mDirectMagnetizingAdmittance;
+  MatrixComp mDirectMagnetizingPrevCurrentFactor;
+  MatrixComp mDirectMagnetizingCurrent;
+  MatrixComp mDirectMagnetizingVoltage;
+  MatrixComp mDirectMagnetizingHistory;
+  /// No-load current as a fraction of rated current (IEC 60076 i0)
+  Real mNoLoadCurrent = 0.01;
+  /// No-load loss as a fraction of rated power (IEC 60076 P0)
+  Real mNoLoadLoss = 1e-3;
 
   /// Boolean for considering resistive losses with sub resistor
   Bool mWithResistiveLosses;
+
+  /// Terminal carrying the reference winding
+  UInt mReferenceTerminal = 0;
+  /// Terminal carrying the non-reference winding
+  UInt nonReferenceTerminal() const { return 1 - mReferenceTerminal; }
+  /// Turns ratio out of the reference winding
+  Complex mRatioFromReference;
+  /// Sign carrying series quantities into the terminal 1 to 0 direction
+  Real mOrientationSign = 1.;
+  /// Winding the nameplate impedance is referred to
+  WindingReference mReferenceWinding = WindingReference::Auto;
+  /// Resolves the reference winding
+  void resolveWindingRoles();
   /// True after createSubComponents() runs; prevents double-construction.
 
 public:
+  /// Sets the magnetizing branch from the no-load test quantities
+  void setMagnetizingBranch(Real noLoadCurrent, Real noLoadLoss) {
+    mNoLoadCurrent = noLoadCurrent;
+    mNoLoadLoss = noLoadLoss;
+  }
+  /// Selects the winding the nameplate impedance is referred to
+  void setReferenceWinding(WindingReference referenceWinding) {
+    mReferenceWinding = referenceWinding;
+  }
   /// Defines UID, name and logging level
   Transformer(String uid, String name,
+              Logger::Level logLevel = Logger::Level::off,
+              Bool withResistiveLosses = false);
+  Transformer(String uid, String name, Bool useSubcomponents,
               Logger::Level logLevel = Logger::Level::off,
               Bool withResistiveLosses = false);
   /// Defines name and logging level
   Transformer(String name, Logger::Level logLevel = Logger::Level::off)
       : Transformer(name, name, logLevel) {}
+  Transformer(String name, Bool useSubcomponents,
+              Logger::Level logLevel = Logger::Level::off,
+              Bool withResistiveLosses = false)
+      : Transformer(name, name, useSubcomponents, logLevel,
+                    withResistiveLosses) {}
 
   SimPowerComp<Complex>::Ptr clone(String name) override;
 
   // #### General ####
   /// Defines component parameters
-  void setParameters(Real nomVoltageEnd1, Real nomVoltageEnd2, Real ratioAbs,
-                     Real ratioPhase, Real resistance, Real inductance);
-  /// Set transformer specific parameters
-  void setParameters(Real nomVoltageEnd1, Real nomVoltageEnd2, Real ratedPower,
+  void setParameters(Real nomVoltagePrimary, Real nomVoltageSecondary,
                      Real ratioAbs, Real ratioPhase, Real resistance,
                      Real inductance);
+  /// Set transformer specific parameters
+  void setParameters(Real nomVoltagePrimary, Real nomVoltageSecondary,
+                     Real ratedPower, Real ratioAbs, Real ratioPhase,
+                     Real resistance, Real inductance);
   /// Constructs and registers MNA subcomponents (incl. terminal swap); idempotent.
   void createSubComponents() override;
   /// Initializes component from power flow data
@@ -78,6 +123,7 @@ public:
   /// Initializes internal variables of the component
   void mnaParentInitialize(Real omega, Real timeStep,
                            Attribute<Matrix>::Ptr leftVector) override;
+  void mnaParentApplyRightSideVectorStamp(Matrix &rightVector) override;
   /// Stamps system matrix
   void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
   /// Updates internal current variable of the component

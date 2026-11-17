@@ -8,6 +8,20 @@ endif()
 
 # Targets
 set(CIRCUIT_SOURCES
+	# Three-phase EMT SSN benchmarks
+	Grids/IEEE9_SSN_Accuracy.cpp
+	Grids/IEEE9_SSN_Dense.cpp
+	Grids/IEEE9_SSN_Sparse.cpp
+	Grids/IEEE39_SSN_Accuracy.cpp
+	Grids/IEEE39_SSN_Dense.cpp
+	Grids/IEEE39_SSN_Sparse.cpp
+	Grids/IEEE118_SSN_Accuracy.cpp
+	Grids/IEEE118_SSN_Dense.cpp
+	Grids/IEEE118_SSN_Sparse.cpp
+	Grids/IEEE300_SSN_Accuracy.cpp
+	Grids/IEEE300_SSN_Dense.cpp
+	Grids/IEEE300_SSN_Sparse.cpp
+
 	# DP examples
 	Circuits/DP_VS_RL1.cpp
 	Circuits/DP_Circuits.cpp
@@ -316,6 +330,18 @@ foreach(SOURCE
 	target_include_directories(${TARGET} PRIVATE ${INCLUDE_DIRS})
 	target_compile_options(${TARGET} PUBLIC ${DPSIM_CXX_FLAGS})
 endforeach()
+
+# Preserve finite-value checks in optimized benchmark builds.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+	foreach(TARGET
+		IEEE9_SSN_Accuracy IEEE9_SSN_Dense IEEE9_SSN_Sparse
+		IEEE39_SSN_Accuracy IEEE39_SSN_Dense IEEE39_SSN_Sparse
+		IEEE118_SSN_Accuracy IEEE118_SSN_Dense IEEE118_SSN_Sparse
+		IEEE300_SSN_Accuracy IEEE300_SSN_Dense IEEE300_SSN_Sparse
+	)
+		target_compile_options(${TARGET} PRIVATE -fno-finite-math-only)
+	endforeach()
+endif()
 
 foreach(TEST_SOURCE ${TEST_SOURCES})
 	get_filename_component(TARGET ${TEST_SOURCE} NAME_WE)

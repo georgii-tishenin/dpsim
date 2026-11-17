@@ -8,6 +8,10 @@
 
 #pragma once
 
+#include <stdexcept>
+
+#include <dpsim-models/EMT/EMT_PassiveOperationProfile.h>
+
 #include <dpsim-models/CompositePowerComp.h>
 #include <dpsim-models/EMT/EMT_Ph3_Capacitor.h>
 #include <dpsim-models/EMT/EMT_Ph3_Inductor.h>
@@ -22,6 +26,9 @@ namespace Ph3 {
 /// Model as current source and read from CSV files
 class RXLoad : public CompositePowerComp<Real>, public SharedFactory<RXLoad> {
 protected:
+  /// Three-phase current from the terminal node into the load.
+  Attribute<UInt>::Ptr mOutputUpdates;
+  Attribute<Matrix>::Ptr mTerminalCurrent0;
   /// True after createSubComponents() runs; prevents double-construction.
   /// Power [Watt]
   MatrixComp mPower;
@@ -43,8 +50,47 @@ protected:
   std::shared_ptr<EMT::Ph3::Capacitor> mSubCapacitor;
   /// Internal resistance
   std::shared_ptr<EMT::Ph3::Resistor> mSubResistor;
+  Bool mUseSubcomponents = true;
+  Bool mUseElementarySSN = false;
+  Attribute<Matrix>::Ptr mDirectState;
+  Matrix mDirectNodalAdmittance = Matrix::Zero(3, 3);
+  Matrix mDirectHistoryLoad = Matrix::Zero(3, 1);
+  Matrix mDirectHistoryShunt = Matrix::Zero(3, 1);
+  Real mDirectTotalConductance = 0.;
+  Real mDirectInductorAdmittance = 0.;
+  Real mDirectCapacitorAdmittance = 0.;
+  Bool mDirectHasInductor = false;
+  Bool mDirectHasCapacitor = false;
+
+  PassiveOperationProfile mOperationProfile;
 
 public:
+  /// Select discrete Norton SSNs for the existing R/L/C circuit children.
+  /// Must be called before initialization; physical nodes remain unchanged.
+  void setUseElementarySSN(Bool enabled) {
+    if (mSubCompCreated || !mnaSubComponents().empty())
+      throw std::logic_error("Select elementary SSNs before initialization.");
+    if (enabled && !mUseSubcomponents)
+      throw std::invalid_argument(
+          "Elementary SSNs require the subcomponent circuit.");
+    mUseElementarySSN = enabled;
+  }
+  /// Number of actual R/L/C children, excluding ideal transformer constraints.
+  UInt primitiveCount() const {
+    return static_cast<UInt>(mnaSubComponents().size());
+  }
+
+  void mnaSetDetailedProfiling(Bool enabled) override {
+    mOperationProfile.enabled = enabled;
+    for (const auto &component : mnaSubComponents())
+      component->mnaSetDetailedProfiling(enabled);
+  }
+  void mnaWriteProfile(std::ostream &profile) const override {
+    mOperationProfile.write(profile, **mName);
+    for (const auto &component : mnaSubComponents())
+      component->mnaWriteProfile(profile);
+  }
+
   /// Active power [Watt]
   const Attribute<Matrix>::Ptr mActivePower;
   /// Reactive power [VAr]
@@ -53,6 +99,12 @@ public:
   const Attribute<Real>::Ptr mNomVoltage;
   /// Defines UID, name and logging level
   RXLoad(String uid, String name, Logger::Level logLevel = Logger::Level::off);
+  /// Optional direct MNA implementation; legacy subcomponents remain the default.
+  RXLoad(String uid, String name, Bool useSubcomponents,
+         Logger::Level logLevel = Logger::Level::off);
+  RXLoad(String name, Bool useSubcomponents,
+         Logger::Level logLevel = Logger::Level::off)
+      : RXLoad(name, name, useSubcomponents, logLevel) {}
   /// Defines name, component parameters and logging level
   RXLoad(String name, Logger::Level logLevel = Logger::Level::off);
   /// Defines name, component parameters and logging level
@@ -74,6 +126,12 @@ public:
   void createSubComponents() override;
   /// Derives values from power flow data and pushes them to subcomponents
   void initializeParentFromNodesAndTerminals(Real frequency) override;
+  void mnaParentInitialize(Real omega, Real timeStep,
+                           Attribute<Matrix>::Ptr leftVector) override;
+  void mnaParentApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
+  void mnaParentApplyRightSideVectorStamp(Matrix &rightVector) override;
+  Bool mnaHasCompactRightSideVectorStamp() const override;
+  void mnaAddCompactRightSideVectorStamp(Matrix &rightVector) override;
 
   // #### MNA section ####
   void mnaCompUpdateCurrent(const Matrix &leftVector) override;
@@ -81,13 +139,12 @@ public:
 
   /// MNA pre and post step operations
   void mnaParentPreStep(Real time, Int timeStepCount) override;
-  void mnaParentPostStep(Real time, Int timeStepCount,
-                         Attribute<Matrix>::Ptr &leftVector) override;
-
   void mnaParentAddPreStepDependencies(
       AttributeBase::List &prevStepDependencies,
       AttributeBase::List &attributeDependencies,
       AttributeBase::List &modifiedAttributes) override;
+  void mnaParentPostStep(Real time, Int timeStepCount,
+                         Attribute<Matrix>::Ptr &leftVector) override;
   void
   mnaParentAddPostStepDependencies(AttributeBase::List &prevStepDependencies,
                                    AttributeBase::List &attributeDependencies,

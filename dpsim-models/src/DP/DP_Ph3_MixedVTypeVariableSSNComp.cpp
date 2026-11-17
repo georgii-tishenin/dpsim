@@ -13,7 +13,7 @@ DP::Ph3::MixedVTypeVariableSSNComp::MixedVTypeVariableSSNComp(
     : MNASimPowerComp<Complex>(uid, name, true, true, logLevel),
       mParameterChanged(false), mRealStateCount(realStateCount),
       mComplexStateCount(complexStateCount), mTimeStep(0.0),
-      mW(MatrixComp::Zero(mPhaseCount, mPhaseCount)),
+      mW(Matrix::Zero(2 * mPhaseCount, 2 * mPhaseCount)),
       mYHist(MatrixComp::Zero(mPhaseCount, 1)),
       mX(mAttributes->create<Matrix>("x")) {
   mPhaseType = PhaseType::ABC;
@@ -61,19 +61,6 @@ MatrixComp DP::Ph3::MixedVTypeVariableSSNComp::unpackComplex(const Matrix &v) {
   return c;
 }
 
-MatrixComp
-DP::Ph3::MixedVTypeVariableSSNComp::foldComplexMatrix(const Matrix &real) {
-  const Matrix::Index m = real.rows() / 2;
-  MatrixComp c(m, real.cols() / 2);
-  for (Matrix::Index i = 0; i < m; ++i)
-    for (Matrix::Index j = 0; j < real.cols() / 2; ++j)
-      // Trust the [[a,-b],[b,a]] complex-multiplication structure of each
-      // 2x2 block (Irc = (U - Vc)/Rc is an exact real-scalar per-phase
-      // relation), as DP::SSNComp does; not re-checked at runtime.
-      c(i, j) = Complex(real(2 * i, 2 * j), real(2 * i + 1, 2 * j));
-  return c;
-}
-
 Attribute<MatrixComp>::Ptr
 DP::Ph3::MixedVTypeVariableSSNComp::inputAttribute() const {
   return mIntfVoltage;
@@ -87,7 +74,8 @@ DP::Ph3::MixedVTypeVariableSSNComp::outputAttribute() const {
 MatrixComp
 DP::Ph3::MixedVTypeVariableSSNComp::buildInitialInputFromNodes(Real) {
   MatrixComp vInit = MatrixComp::Zero(mPhaseCount, 1);
-  vInit(0, 0) = initialSingleVoltage(1) - initialSingleVoltage(0);
+  vInit(0, 0) =
+      RMS3PH_TO_PEAK1PH * (initialSingleVoltage(1) - initialSingleVoltage(0));
   vInit(1, 0) = vInit(0, 0) * SHIFT_TO_PHASE_B;
   vInit(2, 0) = vInit(0, 0) * SHIFT_TO_PHASE_C;
   return vInit;
@@ -140,7 +128,13 @@ void DP::Ph3::MixedVTypeVariableSSNComp::setParameters(
   mdB = Matrix::Zero(n, m);
   mdE = Matrix::Zero(n, 1);
 
-  mW = MatrixComp::Zero(mPhaseCount, mPhaseCount);
+  mHistoryInputScratch = Matrix::Zero(m, 1);
+  mHistoryStateScratch = Matrix::Zero(n, 1);
+  mHistoryOutputScratch = Matrix::Zero(m, 1);
+  mUpdateInputScratch = Matrix::Zero(m, 1);
+  mUpdateStateScratch = Matrix::Zero(n, 1);
+
+  mW = Matrix::Zero(2 * mPhaseCount, 2 * mPhaseCount);
   mYHist = MatrixComp::Zero(mPhaseCount, 1);
 
   mParametersSet = true;
@@ -169,24 +163,40 @@ void DP::Ph3::MixedVTypeVariableSSNComp::setOutputOffset(const Matrix &F) {
 }
 
 Matrix DP::Ph3::MixedVTypeVariableSSNComp::calculateHistoryVectorReal() const {
-  const Matrix u = packComplex(**inputAttribute());
-  return mC * (mdA * (**mX) + mdB * u + mdE) + mF;
+  const MatrixComp &u = **inputAttribute();
+  for (Int phase = 0; phase < mPhaseCount; ++phase) {
+    mHistoryInputScratch(2 * phase, 0) = u(phase, 0).real();
+    mHistoryInputScratch(2 * phase + 1, 0) = u(phase, 0).imag();
+  }
+
+  mHistoryStateScratch.noalias() = mdA * (**mX);
+  mHistoryStateScratch.noalias() += mdB * mHistoryInputScratch;
+  mHistoryStateScratch += mdE;
+  mHistoryOutputScratch.noalias() = mC * mHistoryStateScratch;
+  mHistoryOutputScratch += mF;
+  return mHistoryOutputScratch;
 }
 
 void DP::Ph3::MixedVTypeVariableSSNComp::updateState(const MatrixComp &uOld,
                                                      const MatrixComp &uNew) {
-  const Matrix uOldReal = packComplex(uOld);
-  const Matrix uNewReal = packComplex(uNew);
-  **mX = mdA * (**mX) + mdB * (uNewReal + uOldReal) + mdE;
+  for (Int phase = 0; phase < mPhaseCount; ++phase) {
+    mUpdateInputScratch(2 * phase, 0) =
+        uNew(phase, 0).real() + uOld(phase, 0).real();
+    mUpdateInputScratch(2 * phase + 1, 0) =
+        uNew(phase, 0).imag() + uOld(phase, 0).imag();
+  }
+
+  mUpdateStateScratch.noalias() = mdA * (**mX);
+  mUpdateStateScratch.noalias() += mdB * mUpdateInputScratch;
+  mUpdateStateScratch += mdE;
+  **mX = mUpdateStateScratch;
 }
 
 void DP::Ph3::MixedVTypeVariableSSNComp::recomputeDiscreteModel() {
   Math::calculateStateSpaceTrapezoidalMatrices(mA, mB, mE, mTimeStep, mdA, mdB,
                                                mdE);
 
-  // Fold the 2m x 2m real u->y block into a 3x3 complex admittance; each 2x2
-  // block is required to have the [[a,-b],[b,a]] complex-multiplication form.
-  mW = foldComplexMatrix(mC * mdB + mD);
+  mW = mC * mdB + mD;
 }
 
 void DP::Ph3::MixedVTypeVariableSSNComp::updateStateSpaceModel() {
@@ -308,7 +318,7 @@ void DP::Ph3::MixedVTypeVariableSSNComp::mnaCompAddPostStepDependencies(
 void DP::Ph3::MixedVTypeVariableSSNComp::mnaCompApplySystemMatrixStamp(
     SparseMatrixRow &systemMatrix) {
   MNAStampUtils::stampAdmittanceMatrix(
-      mW, systemMatrix, matrixNodeIndex(0), matrixNodeIndex(1),
+      mW, mPhaseCount, systemMatrix, matrixNodeIndex(0), matrixNodeIndex(1),
       terminalNotGrounded(0), terminalNotGrounded(1), mSLog);
 }
 
@@ -328,7 +338,7 @@ void DP::Ph3::MixedVTypeVariableSSNComp::mnaCompApplyRightSideVectorStamp(
 
 void DP::Ph3::MixedVTypeVariableSSNComp::mnaCompUpdateVoltage(
     const Matrix &leftVector) {
-  **mIntfVoltage = MatrixComp::Zero(mPhaseCount, 1);
+  (**mIntfVoltage).setZero();
 
   if (terminalNotGrounded(1)) {
     for (Int phase = 0; phase < mPhaseCount; ++phase)
@@ -343,7 +353,7 @@ void DP::Ph3::MixedVTypeVariableSSNComp::mnaCompUpdateVoltage(
 }
 
 void DP::Ph3::MixedVTypeVariableSSNComp::mnaCompUpdateCurrent(const Matrix &) {
-  **mIntfCurrent = mW * (**mIntfVoltage) + mYHist;
+  **mIntfCurrent = unpackComplex(mW * packComplex(**mIntfVoltage)) + mYHist;
 }
 
 void DP::Ph3::MixedVTypeVariableSSNComp::mnaCompPostStep(

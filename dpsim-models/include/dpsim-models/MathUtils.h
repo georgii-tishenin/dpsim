@@ -99,6 +99,9 @@ public:
   static void addToMatrixElement(SparseMatrixRow &mat, std::vector<UInt> rows,
                                  std::vector<UInt> columns, Real value);
 
+  static void prepareSparseMatrixValueCache(SparseMatrixRow &mat);
+  static void clearSparseMatrixValueCache(SparseMatrixRow &mat);
+
   static void invertMatrix(const Matrix &mat, Matrix &matInv);
 
   // #### Integration Methods ####
@@ -113,6 +116,27 @@ public:
                                       Matrix C, Real dt, Matrix u);
   static Matrix StateSpaceTrapezoidal(Matrix states, Matrix A, Matrix input,
                                       Real dt);
+  /// Reference-based variants for hot internal call sites that already own
+  /// their matrices. The legacy by-value overloads above remain available.
+  static Matrix StateSpaceTrapezoidalNoCopy(const Matrix &states,
+                                            const Matrix &A, const Matrix &B,
+                                            Real dt, const Matrix &u_new,
+                                            const Matrix &u_old);
+  static Matrix StateSpaceTrapezoidalNoCopy(const Matrix &states,
+                                            const Matrix &A, const Matrix &B,
+                                            const Matrix &C, Real dt,
+                                            const Matrix &u_new,
+                                            const Matrix &u_old);
+  static Matrix StateSpaceTrapezoidalNoCopy(const Matrix &states,
+                                            const Matrix &A, const Matrix &B,
+                                            Real dt, const Matrix &u);
+  static Matrix StateSpaceTrapezoidalNoCopy(const Matrix &states,
+                                            const Matrix &A, const Matrix &B,
+                                            const Matrix &C, Real dt,
+                                            const Matrix &u);
+  static Matrix StateSpaceTrapezoidalNoCopy(const Matrix &states,
+                                            const Matrix &A,
+                                            const Matrix &input, Real dt);
   static Real StateSpaceTrapezoidal(Real states, Real A, Real B, Real C,
                                     Real dt, Real u);
   static Real StateSpaceTrapezoidal(Real states, Real A, Real B, Real dt,
@@ -123,6 +147,14 @@ public:
   static Matrix StateSpaceEuler(Matrix states, Matrix A, Matrix B, Matrix C,
                                 Real dt, Matrix u);
   static Matrix StateSpaceEuler(Matrix states, Matrix A, Matrix input, Real dt);
+  static Matrix StateSpaceEulerNoCopy(const Matrix &states, const Matrix &A,
+                                      const Matrix &B, Real dt,
+                                      const Matrix &u);
+  static Matrix StateSpaceEulerNoCopy(const Matrix &states, const Matrix &A,
+                                      const Matrix &B, const Matrix &C, Real dt,
+                                      const Matrix &u);
+  static Matrix StateSpaceEulerNoCopy(const Matrix &states, const Matrix &A,
+                                      const Matrix &input, Real dt);
   static Real StateSpaceEuler(Real states, Real A, Real B, Real dt, Real u);
   static Real StateSpaceEuler(Real states, Real A, Real B, Real C, Real dt,
                               Real u);

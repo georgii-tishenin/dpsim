@@ -35,11 +35,12 @@ if(WITH_MNASOLVERPLUGIN)
 	list(APPEND DPSIM_SOURCES MNASolverPlugin.cpp)
 endif()
 
-if (WITH_RT)
-	list(APPEND DPSIM_SOURCES
-		RealTimeSimulation.cpp
-		RealTimeDataLogger.cpp
-	)
+if(NOT MSVC)
+	list(APPEND DPSIM_SOURCES RealTimeDataLogger.cpp)
+endif()
+
+if(WITH_RT)
+	list(APPEND DPSIM_SOURCES RealTimeSimulation.cpp)
 endif()
 
 if(WITH_RT AND HAVE_TIMERFD)
@@ -98,9 +99,18 @@ if(WITH_CUDA)
 	endif()
 endif()
 
+if(WITH_METAL)
+	list(APPEND DPSIM_SOURCES GPU/Apple/MetalDenseAdapter.mm GPU/Apple/MetalSparseLUAdapter.mm GPU/Apple/MetalSparseBiCGSTABAdapter.mm GPU/Apple/MetalLinearSSNGroupAdapter.mm GPU/Apple/MetalVBRGeneratorAdapter.mm GPU/Apple/MetalResidentScheduler.mm)
+	set_source_files_properties(GPU/Apple/MetalDenseAdapter.mm GPU/Apple/MetalSparseLUAdapter.mm GPU/Apple/MetalSparseBiCGSTABAdapter.mm GPU/Apple/MetalLinearSSNGroupAdapter.mm GPU/Apple/MetalVBRGeneratorAdapter.mm GPU/Apple/MetalResidentScheduler.mm PROPERTIES COMPILE_OPTIONS "-fno-objc-arc")
+	list(APPEND DPSIM_LIBRARIES
+		"-framework Foundation"
+		"-framework Metal"
+		"-framework MetalPerformanceShaders"
+	)
+endif()
+
 if(WITH_OPENMP)
 	list(APPEND DPSIM_SOURCES OpenMPLevelScheduler.cpp)
-	list(APPEND DPSIM_CXX_FLAGS ${OpenMP_CXX_FLAGS})
 	list(APPEND DPSIM_LIBRARIES OpenMP::OpenMP_CXX)
 endif()
 

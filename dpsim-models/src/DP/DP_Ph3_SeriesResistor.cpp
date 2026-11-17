@@ -30,18 +30,14 @@ void DP::Ph3::SeriesResistor::initializeFromNodesAndTerminals(Real frequency) {
   mTerminals[0]->setPhaseType(PhaseType::ABC);
   mTerminals[1]->setPhaseType(PhaseType::ABC);
 
-  Matrix impedance = Matrix::Zero(3, 1);
-  impedance << **mResistance, **mResistance, **mResistance;
-  (**mIntfVoltage)(0, 0) = initialSingleVoltage(1) - initialSingleVoltage(0);
+  MatrixComp vInitABC = MatrixComp::Zero(3, 1);
+  vInitABC(0, 0) =
+      RMS3PH_TO_PEAK1PH * (initialSingleVoltage(1) - initialSingleVoltage(0));
+  vInitABC(1, 0) = vInitABC(0, 0) * SHIFT_TO_PHASE_B;
+  vInitABC(2, 0) = vInitABC(0, 0) * SHIFT_TO_PHASE_C;
 
-  Real voltMag = Math::abs((**mIntfVoltage)(0, 0));
-  Real voltPhase = Math::phase((**mIntfVoltage)(0, 0));
-  (**mIntfVoltage)(1, 0) = Complex(voltMag * cos(voltPhase - 2. / 3. * PI),
-                                   voltMag * sin(voltPhase - 2. / 3. * PI));
-  (**mIntfVoltage)(2, 0) = Complex(voltMag * cos(voltPhase + 2. / 3. * PI),
-                                   voltMag * sin(voltPhase + 2. / 3. * PI));
-
-  **mIntfCurrent = impedance.cwiseInverse().cwiseProduct(**mIntfVoltage);
+  **mIntfVoltage = vInitABC;
+  **mIntfCurrent = **mIntfVoltage / **mResistance;
 
   SPDLOG_LOGGER_INFO(mSLog,
                      "\n--- Initialization from powerflow ---"
@@ -125,7 +121,7 @@ void DP::Ph3::SeriesResistor::mnaCompPostStep(
 
 void DP::Ph3::SeriesResistor::mnaCompUpdateVoltage(const Matrix &leftVector) {
   // Voltage across component is defined as V1 - V0
-  **mIntfVoltage = MatrixComp::Zero(3, 1);
+  (**mIntfVoltage).setZero();
   if (terminalNotGrounded(1)) {
     (**mIntfVoltage)(0, 0) =
         Math::complexFromVectorElement(leftVector, matrixNodeIndex(1, 0));
@@ -152,7 +148,8 @@ void DP::Ph3::SeriesResistor::mnaCompUpdateVoltage(const Matrix &leftVector) {
 }
 
 void DP::Ph3::SeriesResistor::mnaCompUpdateCurrent(const Matrix &leftVector) {
-  **mIntfCurrent = **mIntfVoltage / **mResistance;
+  const Real conductance = 1. / **mResistance;
+  **mIntfCurrent = **mIntfVoltage * conductance;
 
   SPDLOG_LOGGER_DEBUG(mSLog, "Current A: {} < {}",
                       std::abs((**mIntfCurrent)(0, 0)),

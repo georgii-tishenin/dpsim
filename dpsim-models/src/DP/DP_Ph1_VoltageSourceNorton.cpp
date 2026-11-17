@@ -83,7 +83,16 @@ void DP::Ph1::VoltageSourceNorton::mnaCompApplySystemMatrixStamp(
 }
 
 void DP::Ph1::VoltageSourceNorton::initializeFromNodesAndTerminals(
-    Real frequency) {}
+    Real frequency) {
+  // Like the ideal voltage-source model, derive an unspecified source phasor
+  // from its connected power-flow nodes. This also handles set_parameters(0)
+  // when the user wants the operating point to come from power flow.
+  if (**mVoltageRef == Complex(0, 0))
+    **mVoltageRef = initialSingleVoltage(1) - initialSingleVoltage(0);
+
+  (**mIntfVoltage)(0, 0) = **mVoltageRef;
+  (void)frequency;
+}
 
 void DP::Ph1::VoltageSourceNorton::mnaCompApplyRightSideVectorStamp(
     Matrix &rightVector) {
@@ -98,11 +107,12 @@ void DP::Ph1::VoltageSourceNorton::mnaCompApplyRightSideVectorStamp(
 
 void DP::Ph1::VoltageSourceNorton::updateState(Real time) {
   if (**mSrcFreq >= 0) {
-    (**mIntfVoltage)(0, 0) = Complex(
-        Math::abs(**mVoltageRef) *
-            cos(time * 2. * PI * **mSrcFreq + Math::phase(**mVoltageRef)),
-        Math::abs(**mVoltageRef) *
-            sin(time * 2. * PI * **mSrcFreq + Math::phase(**mVoltageRef)));
+    const Complex voltageRef = **mVoltageRef;
+    const Real magnitude = Math::abs(voltageRef);
+    const Real phase = Math::phase(voltageRef);
+    const Real angle = time * 2. * PI * **mSrcFreq + phase;
+    (**mIntfVoltage)(0, 0) =
+        Complex(magnitude * cos(angle), magnitude * sin(angle));
   } else {
     // If source frequency -1, use system frequency.
     (**mIntfVoltage)(0, 0) = **mVoltageRef;

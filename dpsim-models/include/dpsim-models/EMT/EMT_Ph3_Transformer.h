@@ -8,6 +8,10 @@
 
 #pragma once
 
+#include <stdexcept>
+
+#include <dpsim-models/EMT/EMT_PassiveOperationProfile.h>
+
 #include <dpsim-models/Base/Base_Ph3_Transformer.h>
 #include <dpsim-models/CompositePowerComp.h>
 #include <dpsim-models/EMT/EMT_Ph3_Capacitor.h>
@@ -23,38 +27,115 @@ class Transformer : public CompositePowerComp<Real>,
                     public SharedFactory<Transformer>,
                     public Base::Ph3::Transformer {
 private:
+  /// Three-phase currents from each terminal node into its winding.
+  Attribute<UInt>::Ptr mOutputUpdates;
+  Attribute<Matrix>::Ptr mTerminalCurrent0, mTerminalCurrent1;
   /// True after createSubComponents() runs; prevents double-construction.
   /// Internal resistor to model losses
   std::shared_ptr<EMT::Ph3::Resistor> mSubResistor;
   /// Internal inductor to model losses
   std::shared_ptr<EMT::Ph3::Inductor> mSubInductor;
 
-  /// Internal parallel resistance 1 as snubber
-  std::shared_ptr<EMT::Ph3::Resistor> mSubSnubResistor1;
-  /// Internal parallel resistance 2 as snubber
-  std::shared_ptr<EMT::Ph3::Resistor> mSubSnubResistor2;
-  /// Internal parallel capacitance 1 as snubber
-  std::shared_ptr<EMT::Ph3::Capacitor> mSubSnubCapacitor1;
-  /// Internal parallel capacitance 2 as snubber
-  std::shared_ptr<EMT::Ph3::Capacitor> mSubSnubCapacitor2;
+  /// Second half of the leakage resistance
+  std::shared_ptr<EMT::Ph3::Resistor> mSubResistor2;
+  /// Second half of the leakage inductance
+  std::shared_ptr<EMT::Ph3::Inductor> mSubInductor2;
+  /// Core-loss resistance of the magnetizing branch
+  std::shared_ptr<EMT::Ph3::Resistor> mSubMagnetizingResistor;
+  /// Magnetizing inductance of the magnetizing branch
+  std::shared_ptr<EMT::Ph3::Inductor> mSubMagnetizingInductor;
 
-  /// Snubber resistance 1
-  Matrix mSnubberResistance1;
-  /// Snubber resistance 2
-  Matrix mSnubberResistance2;
-  /// Snubber capacitance 1
-  Matrix mSnubberCapacitance1;
-  /// Snubber capacitance 2
-  Matrix mSnubberCapacitance2;
+  /// Magnetizing resistance [Ohm]
+  Matrix mMagnetizingResistance;
+  /// Magnetizing inductance [H]
+  Matrix mMagnetizingInductance;
+  /// No-load current as a fraction of rated current (IEC 60076 i0)
+  Real mNoLoadCurrent = 0.01;
+  /// No-load loss as a fraction of rated power (IEC 60076 P0)
+  Real mNoLoadLoss = 1e-3;
 
   /// Boolean for considering resistive losses with sub resistor
   Bool mWithResistiveLosses;
 
+  /// Terminal carrying the reference winding
+  UInt mReferenceTerminal = 0;
+  /// Terminal carrying the non-reference winding
+  UInt nonReferenceTerminal() const { return 1 - mReferenceTerminal; }
+  /// Turns ratio out of the reference winding
+  Complex mRatioFromReference;
+  /// Sign carrying series quantities into the terminal 1 to 0 direction
+  Real mOrientationSign = 1.;
+  /// Winding the nameplate impedance is referred to
+  WindingReference mReferenceWinding = WindingReference::Auto;
+  /// Resolves the reference winding
+  void resolveWindingRoles();
+  Bool mUseSubcomponents = true;
+  Bool mUseElementarySSN = false;
+  Attribute<Matrix>::Ptr mDirectState;
+  MatrixFixedSize<3, 3> mSeriesInductanceHalf = MatrixFixedSize<3, 3>::Zero();
+  MatrixFixedSize<3, 3> mSeriesResistanceHalf = MatrixFixedSize<3, 3>::Zero();
+  MatrixFixedSize<3, 3> mDirectInductorAdmittance =
+      MatrixFixedSize<3, 3>::Zero();
+  MatrixFixedSize<3, 3> mDirectMagnetizingInductorAdmittance =
+      MatrixFixedSize<3, 3>::Zero();
+  MatrixFixedSize<3, 3> mDirectMagnetizingConductance =
+      MatrixFixedSize<3, 3>::Zero();
+  MatrixFixedSize<3, 1> mDirectHistory0 = MatrixFixedSize<3, 1>::Zero();
+  MatrixFixedSize<3, 1> mDirectHistory1 = MatrixFixedSize<3, 1>::Zero();
+  MatrixFixedSize<3, 1> mDirectHistoryMag = MatrixFixedSize<3, 1>::Zero();
+
+  PassiveOperationProfile mOperationProfile;
+
 public:
+  /// Select discrete Norton SSNs for the existing R/L/C circuit children.
+  /// Must be called before initialization; physical nodes remain unchanged.
+  void setUseElementarySSN(Bool enabled) {
+    if (mSubCompCreated || !mnaSubComponents().empty())
+      throw std::logic_error("Select elementary SSNs before initialization.");
+    if (enabled && !mUseSubcomponents)
+      throw std::invalid_argument(
+          "Elementary SSNs require the subcomponent circuit.");
+    mUseElementarySSN = enabled;
+  }
+  /// Number of actual R/L/C children, excluding ideal transformer constraints.
+  UInt primitiveCount() const {
+    return static_cast<UInt>(mnaSubComponents().size());
+  }
+
+  void mnaSetDetailedProfiling(Bool enabled) override {
+    mOperationProfile.enabled = enabled;
+    for (const auto &component : mnaSubComponents())
+      component->mnaSetDetailedProfiling(enabled);
+  }
+  void mnaWriteProfile(std::ostream &profile) const override {
+    mOperationProfile.write(profile, **mName);
+    for (const auto &component : mnaSubComponents())
+      component->mnaWriteProfile(profile);
+  }
+
+  /// Sets the magnetizing branch from the no-load test quantities
+  void setMagnetizingBranch(Real noLoadCurrent, Real noLoadLoss) {
+    mNoLoadCurrent = noLoadCurrent;
+    mNoLoadLoss = noLoadLoss;
+  }
+  /// Selects the winding the nameplate impedance is referred to
+  void setReferenceWinding(WindingReference referenceWinding) {
+    mReferenceWinding = referenceWinding;
+  }
   /// Defines UID, name and logging level
   Transformer(String uid, String name,
               Logger::Level logLevel = Logger::Level::off,
               Bool withResistiveLosses = false);
+  /// Optional direct MNA implementation without child components. The legacy
+  /// constructor continues to use child components by default.
+  Transformer(String uid, String name, Bool useSubcomponents,
+              Logger::Level logLevel = Logger::Level::off,
+              Bool withResistiveLosses = false);
+  Transformer(String name, Bool useSubcomponents,
+              Logger::Level logLevel = Logger::Level::off,
+              Bool withResistiveLosses = false)
+      : Transformer(name, name, useSubcomponents, logLevel,
+                    withResistiveLosses) {}
   /// Defines name and logging level
   Transformer(String name, Logger::Level logLevel = Logger::Level::off)
       : Transformer(name, name, logLevel) {}
@@ -63,9 +144,9 @@ public:
 
   // #### General ####
   /// Defines component parameters
-  void setParameters(Real nomVoltageEnd1, Real nomVoltageEnd2, Real ratedPower,
-                     Real ratioAbs, Real ratioPhase, Matrix resistance,
-                     Matrix inductance);
+  void setParameters(Real nomVoltagePrimary, Real nomVoltageSecondary,
+                     Real ratedPower, Real ratioAbs, Real ratioPhase,
+                     Matrix resistance, Matrix inductance);
   /// Constructs and registers MNA subcomponents; idempotent.
   void createSubComponents() override;
   /// Initializes component from power flow data
@@ -75,6 +156,9 @@ public:
   /// Initializes internal variables of the component
   void mnaParentInitialize(Real omega, Real timeStep,
                            Attribute<Matrix>::Ptr leftVector) override;
+  void mnaParentApplyRightSideVectorStamp(Matrix &rightVector) override;
+  Bool mnaHasCompactRightSideVectorStamp() const override;
+  void mnaAddCompactRightSideVectorStamp(Matrix &rightVector) override;
   /// Stamps system matrix
   void mnaCompApplySystemMatrixStamp(SparseMatrixRow &systemMatrix) override;
   /// Updates internal current variable of the component

@@ -98,6 +98,10 @@ void EMT::Ph3::CurrentSource::initializeFromNodesAndTerminals(Real frequency) {
 void EMT::Ph3::CurrentSource::mnaCompInitialize(
     Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
   updateMatrixNodeIndices();
+  // Populate the interface value before the simulation's t=0 log sample.
+  // Otherwise a PF-derived source starts at zero and jumps to its operating
+  // current on the first time step.
+  updateCurrent(0.);
 }
 
 void EMT::Ph3::CurrentSource::mnaCompApplyRightSideVectorStamp(
@@ -120,13 +124,26 @@ void EMT::Ph3::CurrentSource::mnaCompApplyRightSideVectorStamp(
   }
 }
 
+void EMT::Ph3::CurrentSource::mnaAddCompactRightSideVectorStamp(
+    Matrix &rightVector) {
+  for (UInt phase = 0; phase < 3; ++phase) {
+    if (terminalNotGrounded(1))
+      Math::addToVectorElement(rightVector, matrixNodeIndex(1, phase),
+                              -(**mIntfCurrent)(phase, 0));
+    if (terminalNotGrounded(0))
+      Math::addToVectorElement(rightVector, matrixNodeIndex(0, phase),
+                              (**mIntfCurrent)(phase, 0));
+  }
+}
+
 void EMT::Ph3::CurrentSource::updateCurrent(Real time) {
   if (mSrcSig != nullptr) {
     mSrcSig->step(time);
+    const Real signalPhase = Math::phase(mSrcSig->getSignal());
     for (int i = 0; i < 3; i++) {
-      (**mIntfCurrent)(i, 0) = RMS_TO_PEAK * Math::abs((**mCurrentRef)(i, 0)) *
-                               cos(Math::phase(mSrcSig->getSignal()) +
-                                   Math::phase((**mCurrentRef)(i, 0)));
+      (**mIntfCurrent)(i, 0) =
+          RMS_TO_PEAK * Math::abs((**mCurrentRef)(i, 0)) *
+          cos(signalPhase + Math::phase((**mCurrentRef)(i, 0)));
     }
   } else {
     **mIntfCurrent = RMS_TO_PEAK * (**mCurrentRef).real();
@@ -141,7 +158,7 @@ void EMT::Ph3::CurrentSource::mnaCompAddPreStepDependencies(
     AttributeBase::List &modifiedAttributes) {
   attributeDependencies.push_back(mCurrentRef);
   modifiedAttributes.push_back(mRightVector);
-  modifiedAttributes.push_back(mIntfVoltage);
+  modifiedAttributes.push_back(mIntfCurrent);
 }
 
 void EMT::Ph3::CurrentSource::mnaCompPreStep(Real time, Int timeStepCount) {
@@ -165,7 +182,7 @@ void EMT::Ph3::CurrentSource::mnaCompPostStep(
 
 void EMT::Ph3::CurrentSource::mnaCompUpdateVoltage(const Matrix &leftVector) {
   // v1 - v0
-  **mIntfVoltage = Matrix::Zero(3, 1);
+  (**mIntfVoltage).setZero();
   if (terminalNotGrounded(1)) {
     (**mIntfVoltage)(0, 0) =
         Math::realFromVectorElement(leftVector, matrixNodeIndex(1, 0));

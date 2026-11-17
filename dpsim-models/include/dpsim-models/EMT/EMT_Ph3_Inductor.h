@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <dpsim-models/EMT/EMT_PassiveOperationProfile.h>
+
 #include <dpsim-models/Base/Base_Ph3_Inductor.h>
 #include <dpsim-models/MNASimPowerComp.h>
 #include <dpsim-models/Solver/MNATearInterface.h>
@@ -32,7 +34,16 @@ protected:
   /// Equivalent conductance [S]
   Matrix mEquivCond = Matrix::Zero(3, 3);
 
+  PassiveOperationProfile mOperationProfile;
+
 public:
+  void mnaSetDetailedProfiling(Bool enabled) override {
+    mOperationProfile.enabled = enabled;
+  }
+  void mnaWriteProfile(std::ostream &profile) const override {
+    mOperationProfile.write(profile, **mName);
+  }
+
   /// Defines UID, name, component parameters and logging level
   Inductor(String uid, String name,
            Logger::Level logLevel = Logger::Level::off);

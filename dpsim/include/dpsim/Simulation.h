@@ -99,7 +99,9 @@ protected:
   /// (Real) time needed for the timesteps
   std::vector<Real> mStepTimes;
   /// activate collection of step times
-  Bool mLogStepTimes = true;
+  Bool mLogStepTimes = false;
+  /// Activate aggregate MNA phase timing without detailed component clocks.
+  Bool mSolverPhaseProfiling = false;
 
   // #### Solver Settings ####
   ///
@@ -136,9 +138,9 @@ protected:
 
   // #### Initialization ####
   /// steady state initialization time limit
-  Real mSteadStIniTimeLimit = 10;
+  Real mSteadStIniTimeLimit = Solver::DEFAULT_STEAD_ST_INI_TIME_LIMIT;
   /// steady state initialization accuracy limit
-  Real mSteadStIniAccLimit = 0.0001;
+  Real mSteadStIniAccLimit = Solver::DEFAULT_STEAD_ST_INI_ACC_LIMIT;
 
   // #### Task dependencies und scheduling ####
   /// Scheduler used for task scheduling
@@ -255,6 +257,14 @@ public:
   /// If logStepTimes is enabled, the time needed for every timesteps is logged
   /// and can be written to a file or the console using logStepTimes()
   void setLogStepTimes(Bool f) { mLogStepTimes = f; }
+  /// Collect MNA assembly, factorization, solve and voltage-propagation times.
+  /// Set before initialize(); write the measurements with logLUTimes().
+  /// This does not enable per-component or scheduler-task timing.
+  void setSolverPhaseProfiling(Bool enabled) {
+    mSolverPhaseProfiling = enabled;
+  }
+  /// Number of scheduler tasks assembled by initialize().
+  std::size_t taskCount() const { return mTasks.size(); }
 
   // #### Initialization ####
   /// activate steady state initialization

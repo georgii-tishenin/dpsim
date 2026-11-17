@@ -7,6 +7,7 @@
  *********************************************************************************/
 
 #include <dpsim-models/EMT/EMT_Ph3_SynchronGeneratorTrStab.h>
+#include <dpsim-models/MNAStampUtils.h>
 using namespace CPS;
 
 Matrix EMT::Ph3::SynchronGeneratorTrStab::parkTransformPowerInvariant(
@@ -32,6 +33,10 @@ Matrix EMT::Ph3::SynchronGeneratorTrStab::getParkTransformMatrixPowerInvariant(
 
 EMT::Ph3::SynchronGeneratorTrStab::SynchronGeneratorTrStab(
     String uid, String name, Logger::Level logLevel)
+    : SynchronGeneratorTrStab(uid, name, true, logLevel) {}
+
+EMT::Ph3::SynchronGeneratorTrStab::SynchronGeneratorTrStab(
+    String uid, String name, Bool useSubcomponents, Logger::Level logLevel)
     : Base::SynchronGenerator(mAttributes),
       CompositePowerComp<Real>(uid, name, true, true, logLevel),
       mEp(mAttributes->create<Complex>("Ep")),
@@ -39,7 +44,8 @@ EMT::Ph3::SynchronGeneratorTrStab::SynchronGeneratorTrStab(
       mEp_phase(mAttributes->create<Real>("Ep_phase")),
       mDelta_p(mAttributes->create<Real>("delta_r")),
       mRefOmega(mAttributes->createDynamic<Real>("w_ref")),
-      mRefDelta(mAttributes->createDynamic<Real>("delta_ref")) {
+      mRefDelta(mAttributes->createDynamic<Real>("delta_ref")),
+      mUseSubcomponents(useSubcomponents) {
   setVirtualNodeNumber(2);
   setTerminalNumber(1);
   **mIntfVoltage = Matrix::Zero(3, 1);
@@ -49,9 +55,10 @@ EMT::Ph3::SynchronGeneratorTrStab::SynchronGeneratorTrStab(
 }
 
 SimPowerComp<Real>::Ptr EMT::Ph3::SynchronGeneratorTrStab::clone(String name) {
-  auto copy = SynchronGeneratorTrStab::make(name, mLogLevel);
+  auto copy = SynchronGeneratorTrStab::make(name, mUseSubcomponents, mLogLevel);
   copy->setStandardParametersPU(mNomPower, mNomVolt, mNomFreq, mXpd / mBase_Z,
-                                **mInertia, **mRs, mKd);
+                                **mInertia, **mRs / mBase_Z,
+                                mKd * mNomOmega / mNomPower);
   return copy;
 }
 
@@ -119,7 +126,9 @@ void EMT::Ph3::SynchronGeneratorTrStab::setStandardParametersPU(
   mXpd = Xpd * mBase_Z;
   mLpd = Xpd * mBase_L;
 
-  **mRs = Rs;
+  // mImpedance is formed in SI units below, so the pu resistance must be
+  // converted to ohms just like the transient reactance.
+  **mRs = Rs * mBase_Z;
   //The units of D are per unit power divided by per unit speed deviation.
   // D is transformed to an absolute value to obtain Kd, which will be used in the swing equation
   mKd = D * mNomPower / mNomOmega;
@@ -141,6 +150,9 @@ void EMT::Ph3::SynchronGeneratorTrStab::createSubComponents() {
   if (mSubCompCreated)
     return;
   mSubCompCreated = true;
+
+  if (!mUseSubcomponents)
+    return;
 
   mSubVoltageSource =
       EMT::Ph3::VoltageSource::make(**mName + "_src", mLogLevel);
@@ -166,15 +178,15 @@ void EMT::Ph3::SynchronGeneratorTrStab::initializeParentFromNodesAndTerminals(
   mInitElecPower = (mInitElecPower == Complex(0, 0))
                        ? -terminal(0)->singlePower()
                        : mInitElecPower;
-  mInitMechPower = (mInitElecPower == Complex(0, 0)) ? mInitElecPower.real()
-                                                     : mInitMechPower;
+  if (mInitMechPower == 0 && mInitElecPower != Complex(0, 0))
+    mInitMechPower = mInitElecPower.real();
 
   // use complex interface quantities for initialization calculations
   MatrixComp intfVoltageComplex = MatrixComp::Zero(3, 1);
   MatrixComp intfCurrentComplex = MatrixComp::Zero(3, 1);
-  // // derive complex threephase initialization from single phase initial values (only valid for balanced systems)
-  // intfVoltageComplex(0, 0) = RMS3PH_TO_PEAK1PH * initialSingleVoltage(0);
-  intfVoltageComplex(0, 0) = initialSingleVoltage(0);
+  // Power-flow voltages are phase-to-phase RMS; the EMT model works with
+  // phase-to-ground peak values.
+  intfVoltageComplex(0, 0) = RMS3PH_TO_PEAK1PH * initialSingleVoltage(0);
   intfVoltageComplex(1, 0) = intfVoltageComplex(0, 0) * SHIFT_TO_PHASE_B;
   intfVoltageComplex(2, 0) = intfVoltageComplex(0, 0) * SHIFT_TO_PHASE_C;
   intfCurrentComplex(0, 0) =
@@ -210,13 +222,29 @@ void EMT::Ph3::SynchronGeneratorTrStab::initializeParentFromNodesAndTerminals(
 
   // Initialize node between X'd and Ep
   mVirtualNodes[0]->setInitialVoltage(PEAK1PH_TO_RMS3PH * **mEp);
+  if (!mUseSubcomponents) {
+    MatrixComp terminalVoltage = CPS::Math::singlePhaseVariableToThreePhase(
+        RMS3PH_TO_PEAK1PH * initialSingleVoltage(0));
+    MatrixComp sourceVoltage =
+        CPS::Math::singlePhaseVariableToThreePhase(**mEp);
+    mDirectInductorVoltage = (terminalVoltage - sourceVoltage).real();
+    const Real omega = 2. * PI * frequency;
+    mDirectInductorCurrent =
+        (mDirectInductorVoltage.cast<Complex>() / Complex(0., omega * mLpd))
+            .real();
+  }
 
   MatrixComp vref = MatrixComp::Zero(3, 1);
-  vref = CPS::Math::singlePhaseVariableToThreePhase(**mEp);
+  vref = CPS::Math::singlePhaseVariableToThreePhase(PEAK1PH_TO_RMS3PH * **mEp);
 
-  // Set emf on the already-created voltage source; the framework's generic
-  // sub-init loop will initialize it after this hook returns.
-  mSubVoltageSource->setParameters(vref, frequency);
+  if (mUseSubcomponents) {
+    // Set emf on the already-created voltage source; the framework's generic
+    // sub-init loop will initialize it after this hook returns.
+    mSubVoltageSource->setParameters(vref, frequency);
+  } else {
+    mDirectSourceSignal = Signal::SineWaveGenerator::make(**mName + "_source");
+    mDirectSourceSignal->setParameters(Complex(1., 0.), frequency);
+  }
 
   SPDLOG_LOGGER_INFO(mSLog,
                      "\n--- Initialize according to powerflow ---"
@@ -241,10 +269,10 @@ void EMT::Ph3::SynchronGeneratorTrStab::step(Real time) {
   **mElecActivePower = -1. * (intfVoltageDQ(0, 0) * intfCurrentDQ(0, 0) +
                               intfVoltageDQ(1, 0) * intfCurrentDQ(1, 0));
 
-  // The damping factor Kd is adjusted to obtain a damping ratio of 0.3
-  // Real MaxElecActivePower= Math::abs(mEp) * Math::abs((**mIntfVoltage)(0,0)) / mXpd;
-  // mKd=4*0.3*sqrt(mNomOmega*mInertia*MaxElecActivePower*0.5);
-  mKd = 1 * mNomPower;
+  // Keep the damping coefficient established by the parameter setter.  It is
+  // already converted from pu power / pu speed to W / (rad/s); replacing it
+  // here with the nominal power both discarded the user parameter and changed
+  // its units.
 
   // #### Calculate state for time step k+1 ####
   // semi-implicit Euler or symplectic Euler method for mechanical equations
@@ -271,14 +299,64 @@ void EMT::Ph3::SynchronGeneratorTrStab::step(Real time) {
 void EMT::Ph3::SynchronGeneratorTrStab::mnaParentInitialize(
     Real omega, Real timeStep, Attribute<Matrix>::Ptr leftVector) {
   mTimeStep = timeStep;
-  mMnaTasks.push_back(std::make_shared<AddBStep>(*this));
+  if (mUseSubcomponents) {
+    mMnaTasks.push_back(std::make_shared<AddBStep>(*this));
+  } else {
+    mDirectInductorConductance =
+        (timeStep / 2.) * Matrix::Identity(3, 3) / mLpd;
+    mDirectInductorHistory =
+        mDirectInductorConductance * mDirectInductorVoltage +
+        mDirectInductorCurrent;
+  }
+}
+
+void EMT::Ph3::SynchronGeneratorTrStab::mnaParentApplySystemMatrixStamp(
+    SparseMatrixRow &systemMatrix) {
+  if (mUseSubcomponents)
+    return;
+
+  updateMatrixNodeIndices();
+  const UInt emfNode = mVirtualNodes[0]->matrixNodeIndex(PhaseType::A);
+  const UInt sourceCurrent = mVirtualNodes[1]->matrixNodeIndex(PhaseType::A);
+  MNAStampUtils::stampConductanceMatrix(
+      mDirectInductorConductance, systemMatrix, emfNode, matrixNodeIndex(0),
+      true, terminalNotGrounded(0), mSLog);
+  for (UInt phase = 0; phase < 3; ++phase) {
+    Math::addToMatrixElement(systemMatrix, emfNode + phase,
+                             sourceCurrent + phase, 1.);
+    Math::addToMatrixElement(systemMatrix, sourceCurrent + phase,
+                             emfNode + phase, 1.);
+  }
+}
+
+void EMT::Ph3::SynchronGeneratorTrStab::mnaParentApplyRightSideVectorStamp(
+    Matrix &rightVector) {
+  if (mUseSubcomponents)
+    return;
+
+  const UInt emfNode = mVirtualNodes[0]->matrixNodeIndex(PhaseType::A);
+  const UInt sourceCurrent = mVirtualNodes[1]->matrixNodeIndex(PhaseType::A);
+  for (UInt phase = 0; phase < 3; ++phase) {
+    Math::setVectorElement(rightVector, sourceCurrent + phase,
+                           mDirectSourceVoltage(phase, 0));
+    if (terminalNotGrounded(0)) {
+      Math::setVectorElement(rightVector, emfNode + phase,
+                             mDirectInductorHistory(phase, 0));
+      Math::setVectorElement(rightVector, matrixNodeIndex(0, phase),
+                             -mDirectInductorHistory(phase, 0));
+    }
+  }
 }
 
 void EMT::Ph3::SynchronGeneratorTrStab::mnaParentAddPreStepDependencies(
     AttributeBase::List &prevStepDependencies,
     AttributeBase::List &attributeDependencies,
     AttributeBase::List &modifiedAttributes) {
-  prevStepDependencies.push_back(mIntfVoltage);
+  if (!mUseSubcomponents) {
+    prevStepDependencies.push_back(mIntfVoltage);
+    prevStepDependencies.push_back(mIntfCurrent);
+  }
+  modifiedAttributes.push_back(mRightVector);
 };
 
 void EMT::Ph3::SynchronGeneratorTrStab::mnaParentAddPostStepDependencies(
@@ -293,10 +371,26 @@ void EMT::Ph3::SynchronGeneratorTrStab::mnaParentAddPostStepDependencies(
 void EMT::Ph3::SynchronGeneratorTrStab::mnaParentPreStep(Real time,
                                                          Int timeStepCount) {
   step(time);
-  //change magnitude of subvoltage source
-  MatrixComp vref = MatrixComp::Zero(3, 1);
-  vref = CPS::Math::singlePhaseVariableToThreePhase(PEAK1PH_TO_RMS3PH * **mEp);
-  mSubVoltageSource->mVoltageRef->set(vref);
+  if (mUseSubcomponents) {
+    //change magnitude of subvoltage source
+    MatrixComp vref = MatrixComp::Zero(3, 1);
+    vref =
+        CPS::Math::singlePhaseVariableToThreePhase(PEAK1PH_TO_RMS3PH * **mEp);
+    mSubVoltageSource->mVoltageRef->set(vref);
+  } else {
+    mDirectSourceSignal->step(time);
+    const Real signalPhase = Math::phase(mDirectSourceSignal->getSignal());
+    const MatrixComp vref =
+        CPS::Math::singlePhaseVariableToThreePhase(PEAK1PH_TO_RMS3PH * **mEp);
+    for (UInt phase = 0; phase < 3; ++phase)
+      mDirectSourceVoltage(phase, 0) =
+          RMS3PH_TO_PEAK1PH * Math::abs(vref(phase, 0)) *
+          std::cos(signalPhase + Math::phase(vref(phase, 0)));
+    mDirectInductorHistory =
+        mDirectInductorConductance * mDirectInductorVoltage +
+        mDirectInductorCurrent;
+    mnaCompApplyRightSideVectorStamp(**mRightVector);
+  }
 }
 
 void EMT::Ph3::SynchronGeneratorTrStab::AddBStep::execute(Real time,
@@ -326,5 +420,17 @@ void EMT::Ph3::SynchronGeneratorTrStab::mnaCompUpdateCurrent(
     const Matrix &leftVector) {
   SPDLOG_LOGGER_DEBUG(mSLog, "Read current from {:d}", matrixNodeIndex(0));
 
-  **mIntfCurrent = **mSubInductor->mIntfCurrent;
+  if (mUseSubcomponents) {
+    **mIntfCurrent = **mSubInductor->mIntfCurrent;
+  } else {
+    const UInt emfNode = mVirtualNodes[0]->matrixNodeIndex(PhaseType::A);
+    mDirectInductorVoltage = **mIntfVoltage;
+    for (UInt phase = 0; phase < 3; ++phase)
+      mDirectInductorVoltage(phase, 0) -=
+          Math::realFromVectorElement(leftVector, emfNode + phase);
+    mDirectInductorCurrent =
+        mDirectInductorConductance * mDirectInductorVoltage +
+        mDirectInductorHistory;
+    **mIntfCurrent = mDirectInductorCurrent;
+  }
 }
